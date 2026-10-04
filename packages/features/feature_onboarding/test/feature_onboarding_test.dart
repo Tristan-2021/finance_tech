@@ -26,6 +26,12 @@ class FakeAuthRepository implements AuthRepository {
   @override
   Future<({String? segment, Failure? failure})> getProfileSegment() async =>
       (segment: failure == null ? segment : null, failure: failure);
+
+  @override
+  Future<Failure?> signOut() async => failure;
+
+  @override
+  AuthUser? getCurrentUser() => null;
 }
 
 void main() {

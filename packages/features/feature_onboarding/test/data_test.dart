@@ -26,6 +26,14 @@ class FakeRemote implements AuthRemoteDataSource {
     if (error != null) throw error!;
     return segment;
   }
+
+  @override
+  Future<void> signOut() async {
+    if (error != null) throw error!;
+  }
+
+  @override
+  AuthUser? get currentUser => null;
 }
 
 void main() {
