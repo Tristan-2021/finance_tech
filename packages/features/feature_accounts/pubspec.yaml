@@ -12,6 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   core_errors: ^0.0.1
+  core_network: ^0.0.1
 
 dev_dependencies:
   flutter_test:
