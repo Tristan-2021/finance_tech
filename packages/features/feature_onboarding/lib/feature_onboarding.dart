@@ -1,5 +1,9 @@
 library;
 
+export 'src/data/auth_remote_data_source.dart';
+export 'src/data/auth_repository_impl.dart';
+export 'src/data/sign_up_metadata.dart';
+export 'src/data/supabase_auth_remote_data_source.dart';
 export 'src/domain/auth_repository.dart';
 export 'src/domain/get_profile_segment.dart';
 export 'src/domain/sign_in.dart';
