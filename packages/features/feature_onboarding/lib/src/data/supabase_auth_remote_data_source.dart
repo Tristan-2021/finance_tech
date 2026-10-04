@@ -41,4 +41,10 @@ class SupabaseAuthRemoteDataSource implements AuthRemoteDataSource {
     final row = await _client.from('profiles').select('segment').maybeSingle();
     return row?['segment'] as String?;
   }
+
+  @override
+  Future<Map<String, dynamic>?> fetchProfile() {
+    // RLS limita `profiles` a la fila del usuario autenticado (sin `user_id`).
+    return _client.from('profiles').select('full_name, segment').maybeSingle();
+  }
 }

@@ -14,4 +14,7 @@ abstract class AuthRemoteDataSource {
 
   /// `null` si el perfil no existe o aún no tiene segmento.
   Future<String?> fetchSegment();
+
+  /// Fila de `profiles` con `full_name` y `segment`, o `null` si no existe.
+  Future<Map<String, dynamic>?> fetchProfile();
 }
