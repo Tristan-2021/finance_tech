@@ -9,6 +9,7 @@ workspace:
   - packages/app
   - packages/core/core_network
   - packages/features/feature_onboarding
+  - packages/core/core_ui
 dev_dependencies:
   melos: ^8.9.0
 
