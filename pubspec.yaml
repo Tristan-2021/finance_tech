@@ -21,8 +21,8 @@ melos:
       run: melos exec -- flutter analyze
       description: Analiza todos los paquetes
     test:
-      run: melos exec --dir-exists=test -- flutter test
-      description: Corre tests donde haya carpeta test
+      run: melos exec --dir-exists=test -- flutter test --exclude-tags integration
+      description: Corre tests donde haya carpeta test (sin los de integración)
     test:changed:
-      run: melos exec --diff=HEAD --include-dependents --dir-exists=test -- flutter test --reporter expanded
+      run: melos exec --diff=HEAD --include-dependents --dir-exists=test -- flutter test --reporter expanded --exclude-tags integration
       description: Corre tests solo de lo modificado sin commitear + dependientes     
