@@ -27,6 +27,9 @@ class FakeRemote implements AuthRemoteDataSource {
 
   @override
   Future<String?> fetchSegment() async => null;
+
+  @override
+  Future<Map<String, dynamic>?> fetchProfile() async => null;
 }
 
 void main() {

@@ -32,6 +32,10 @@ class FakeAuthRepository implements AuthRepository {
 
   @override
   AuthUser? getCurrentUser() => null;
+
+  @override
+  Future<({UserProfile? profile, Failure? failure})> getUserProfile() async =>
+      (profile: null, failure: failure);
 }
 
 void main() {
