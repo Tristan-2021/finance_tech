@@ -2,6 +2,7 @@ import 'package:core_errors/core_errors.dart';
 import 'package:core_network/core_network.dart';
 
 import '../domain/auth_repository.dart';
+import '../domain/auth_user.dart';
 import '../domain/sign_up_params.dart';
 import 'auth_remote_data_source.dart';
 
@@ -31,6 +32,19 @@ class AuthRepositoryImpl implements AuthRepository {
       return mapToFailure(e);
     }
   }
+
+  @override
+  Future<Failure?> signOut() async {
+    try {
+      await _remote.signOut();
+      return null;
+    } catch (e) {
+      return mapToFailure(e);
+    }
+  }
+
+  @override
+  AuthUser? getCurrentUser() => _remote.currentUser;
 
   @override
   Future<({String? segment, Failure? failure})> getProfileSegment() async {
