@@ -13,14 +13,61 @@ void main() {
       expect(() => SupabaseConfig.fromEnvironment(), throwsStateError);
     });
 
-    test('constructor guarda url y anonKey', () {
-      const c = SupabaseConfig(url: 'http://x', anonKey: 'k');
+    test('constructor guarda url y publishableKey', () {
+      const c = SupabaseConfig(url: 'http://x', publishableKey: 'k');
       expect(c.url, 'http://x');
-      expect(c.anonKey, 'k');
+      expect(c.publishableKey, 'k');
     });
   });
 
   group('retry', () {
+    Duration noDelay(int _) => Duration.zero;
+
+    test('se rinde tras el máximo de reintentos', () async {
+      var calls = 0;
+      final client = buildRetryClient(
+        MockClient((_) async {
+          calls++;
+          return http.Response('busy', 503);
+        }),
+        noDelay,
+      );
+      final r = await client.get(Uri.parse('http://x'));
+      expect(r.statusCode, 503);
+      expect(calls, 4); // 1 intento + 3 reintentos
+    });
+
+    for (final status in [400, 401]) {
+      test('no reintenta $status', () async {
+        var calls = 0;
+        final client = buildRetryClient(
+          MockClient((_) async {
+            calls++;
+            return http.Response('no', status);
+          }),
+          noDelay,
+        );
+        final r = await client.get(Uri.parse('http://x'));
+        expect(r.statusCode, status);
+        expect(calls, 1);
+      });
+    }
+
+    test('reintenta error de socket y luego 200', () async {
+      var calls = 0;
+      final client = buildRetryClient(
+        MockClient((_) async {
+          calls++;
+          if (calls < 2) throw const SocketException('caído');
+          return http.Response('ok', 200);
+        }),
+        noDelay,
+      );
+      final r = await client.get(Uri.parse('http://x'));
+      expect(r.statusCode, 200);
+      expect(calls, 2);
+    });
+
     test('reintenta 503 y luego 200', () async {
       var calls = 0;
       final client = buildRetryClient(
@@ -29,6 +76,7 @@ void main() {
           if (calls < 3) return http.Response('busy', 503);
           return http.Response('ok', 200);
         }),
+        noDelay,
       );
       final r = await client.get(Uri.parse('http://x'));
       expect(r.statusCode, 200);
