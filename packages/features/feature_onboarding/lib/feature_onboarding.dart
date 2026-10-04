@@ -14,3 +14,4 @@ export 'src/domain/sign_out.dart';
 export 'src/domain/sign_up.dart';
 export 'src/domain/sign_up_params.dart';
 export 'src/domain/user_profile.dart';
+export 'src/presentation/login/login_page.dart';
