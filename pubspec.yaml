@@ -7,6 +7,7 @@ workspace:
   - packages/core/core_errors
   - packages/features/feature_accounts
   - packages/app
+  - packages/core/core_network
 
 dev_dependencies:
   melos: ^8.9.0
