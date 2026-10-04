@@ -2,7 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:core_network/core_network.dart';
-import 'package:feature_onboarding/feature_onboarding.dart';
+import 'package:feature_onboarding/src/data/auth_remote_data_source.dart';
+import 'package:feature_onboarding/src/data/auth_repository_impl.dart';
+import 'package:feature_onboarding/src/domain/auth_user.dart';
+import 'package:feature_onboarding/src/domain/get_profile_segment.dart';
+import 'package:feature_onboarding/src/domain/get_user_profile.dart';
+import 'package:feature_onboarding/src/domain/sign_up_params.dart';
+import 'package:feature_onboarding/src/domain/user_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeRemote implements AuthRemoteDataSource {
