@@ -2,6 +2,7 @@ import 'package:core_errors/core_errors.dart';
 
 import 'auth_user.dart';
 import 'sign_up_params.dart';
+import 'user_profile.dart';
 
 abstract class AuthRepository {
   /// Devuelve `null` si el registro fue exitoso.
@@ -19,4 +20,7 @@ abstract class AuthRepository {
 
   /// El segmento lo calcula el backend; la app solo lo lee.
   Future<({String? segment, Failure? failure})> getProfileSegment();
+
+  /// Nombre y segmento del usuario autenticado.
+  Future<({UserProfile? profile, Failure? failure})> getUserProfile();
 }
