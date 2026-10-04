@@ -23,7 +23,22 @@ dependencias de terceros). Todo se importa desde `package:core_ui/core_ui.dart`.
 - `AppStepIndicator(current, total)`: segmentos más el texto "Paso N de M",
   anunciado como una sola etiqueta. `current` es base 1.
 
+## Dinero y fechas (pieza 3)
+
+- `formatCents(int cents, {currency = 'USD'})`: `$1,234.56`, `-$1.00`. Solo
+  aritmética entera. Otras monedas muestran su código (`EUR 1.00`).
+- `formatDateEs` (`14 may 2026`) y `formatDateTimeEs` (`14 may 2026, 09:30`),
+  en hora local y 24 h. Meses: ene feb mar abr may jun jul ago sep oct nov dic.
+- `spokenAmountEs(int cents)`: `50 dólares con 00 centavos`, `1 dólar con 00
+  centavos`, `0 dólares con 01 centavo`; negativos con `menos`.
+- `AmountText(cents, isCredit, style)`: `+$50.00` / `−$12.30` (U+2212), color
+  de `AppSemanticColors` y etiqueta "Ingreso de ..." / "Egreso de ...". Recibe
+  la magnitud: usa el valor absoluto de `cents`. Requiere `AppTheme`.
+
 ## Decisiones anotadas
+
+- Sin `intl`: el formato es manual para no añadir dependencias.
+- El día no lleva cero a la izquierda (`5 mar 2026`); la hora sí (`07:05`).
 
 - `AppButtonVariant` no tenía valores fijados en el contrato más allá de
   `primary`; se añadieron `secondary` y `text`.
