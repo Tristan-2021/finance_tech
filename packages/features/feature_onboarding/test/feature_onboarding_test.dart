@@ -1,5 +1,11 @@
 import 'package:core_errors/core_errors.dart';
-import 'package:feature_onboarding/feature_onboarding.dart';
+import 'package:feature_onboarding/src/domain/auth_repository.dart';
+import 'package:feature_onboarding/src/domain/auth_user.dart';
+import 'package:feature_onboarding/src/domain/get_profile_segment.dart';
+import 'package:feature_onboarding/src/domain/sign_in.dart';
+import 'package:feature_onboarding/src/domain/sign_up.dart';
+import 'package:feature_onboarding/src/domain/sign_up_params.dart';
+import 'package:feature_onboarding/src/domain/user_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeAuthRepository implements AuthRepository {

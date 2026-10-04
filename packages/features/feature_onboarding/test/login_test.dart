@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:core_errors/core_errors.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
+import 'package:feature_onboarding/src/domain/auth_repository.dart';
+import 'package:feature_onboarding/src/domain/sign_up_params.dart';
 import 'package:feature_onboarding/src/presentation/login/login_cubit.dart';
 import 'package:feature_onboarding/src/presentation/login/login_state.dart';
 import 'package:feature_onboarding/src/presentation/login/login_view.dart';
