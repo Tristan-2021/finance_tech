@@ -5,6 +5,7 @@ import 'package:core_network/core_network.dart';
 import 'package:feature_accounts/feature_accounts.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get_it/get_it.dart';
 
 const _url = String.fromEnvironment('SUPABASE_URL');
 const _key = String.fromEnvironment('SUPABASE_ANON_KEY');
@@ -18,8 +19,11 @@ const _password = 'demo1234';
 
 class _Session {
   final SupabaseClient client;
-  final AuthRepositoryImpl auth;
-  const _Session(this.client, this.auth);
+
+  /// Contenedor propio con `registerOnboardingDependencies`: así se prueba la
+  /// API pública de feature_onboarding tal como la usará el shell.
+  final GetIt getIt;
+  const _Session(this.client, this.getIt);
 
   GetBalance get getBalance => GetBalance(
     AccountRepositoryImpl(SupabaseAccountsRemoteDataSource(client)),
@@ -33,10 +37,12 @@ class _Session {
 Future<_Session> _login(String email) async {
   final client = SupabaseClient(_url, _key);
   addTearDown(client.dispose);
-  final auth = AuthRepositoryImpl(SupabaseAuthRemoteDataSource(client));
-  final failure = await auth.signIn(email: email, password: _password);
+  final getIt = GetIt.asNewInstance();
+  getIt.registerSingleton<SupabaseClient>(client);
+  registerOnboardingDependencies(getIt);
+  final failure = await getIt<SignIn>()(email: email, password: _password);
   expect(failure, isNull, reason: 'login de $email');
-  return _Session(client, auth);
+  return _Session(client, getIt);
 }
 
 void main() {
@@ -49,9 +55,10 @@ void main() {
     group(demo.email, () {
       test('segmento correcto', () async {
         final s = await _login(demo.email);
-        final r = await GetProfileSegment(s.auth)();
+        // El segmento sale de UserProfile (GetUserProfile).
+        final r = await s.getIt<GetUserProfile>()();
         expect(r.failure, isNull);
-        expect(r.segment, demo.segment);
+        expect(r.profile?.segment, demo.segment);
       }, skip: _skip);
 
       test('saldo coherente con sus movimientos', () async {
