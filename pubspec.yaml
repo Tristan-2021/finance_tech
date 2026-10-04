@@ -23,3 +23,6 @@ melos:
     test:
       run: melos exec --dir-exists=test -- flutter test
       description: Corre tests donde haya carpeta test
+    test:changed:
+      run: melos exec --diff=HEAD --include-dependents --dir-exists=test -- flutter test
+      description: Corre tests solo de lo modificado sin commitear + dependientes     
