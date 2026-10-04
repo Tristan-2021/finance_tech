@@ -1,12 +1,16 @@
+import 'package:feature_accounts/feature_accounts.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:feature_accounts/feature_accounts.dart';
-
 void main() {
-  test('adds one to input values', () {
-    final calculator = Calculator();
-    expect(calculator.addOne(2), 3);
-    expect(calculator.addOne(-7), -6);
-    expect(calculator.addOne(0), 1);
+  test('retorna balance para userId válido', () async {
+    final r = await GetBalance().call('user-123');
+    expect(r.failure, isNull);
+    expect(r.balance, 1250.75);
+  });
+
+  test('retorna Failure para userId vacío', () async {
+    final r = await GetBalance().call('');
+    expect(r.balance, isNull);
+    expect(r.failure!.code, 'INVALID_INPUT');
   });
 }
