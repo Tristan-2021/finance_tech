@@ -26,4 +26,13 @@ jobs:
         run: melos exec -- flutter analyze
 
       - name: test changed packages
-        run: melos exec --diff=origin/main...HEAD --include-dependents -- flutter test
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            REF="origin/${{ github.base_ref }}...HEAD"
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            melos exec --dir-exists=test -- flutter test
+            exit 0
+          else
+            REF="${{ github.event.before }}"
+          fi
+          melos exec --diff="$REF" --include-dependents --dir-exists=test -- flutter test
