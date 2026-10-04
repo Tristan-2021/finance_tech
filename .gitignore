@@ -1,0 +1,33 @@
+cat > .gitignore <<'EOF'
+# Dart / Flutter
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# macOS
+.DS_Store
+
+# Coverage
+coverage/
+*.lcov
+
+# Melos
+.melos_tool/
+pubspec_overrides.yaml
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+EOF

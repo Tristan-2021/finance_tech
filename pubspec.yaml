@@ -1,0 +1,17 @@
+name: banco_digital
+publish_to: none
+environment:
+  sdk: ^3.9.0
+
+workspace:
+  - packages/core/core_errors
+  - packages/features/feature_accounts
+  - packages/app
+
+dev_dependencies:
+  melos: ^8.9.0
+
+melos:
+  command:
+    version:
+      branch: main
