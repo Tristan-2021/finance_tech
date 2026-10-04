@@ -18,7 +18,7 @@ RetryClient buildRetryClient([http.Client? inner]) {
 Future<SupabaseClient> initSupabase(SupabaseConfig config) async {
   await Supabase.initialize(
     url: config.url,
-    anonKey: config.anonKey,
+    publishableKey: config.anonKey,
     httpClient: buildRetryClient(),
   );
   return Supabase.instance.client;
