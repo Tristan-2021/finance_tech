@@ -17,12 +17,10 @@ class RegisterCubit extends Cubit<RegisterState> {
   String _password = '';
 
   RegisterCubit({
-    required SignUp signUp,
-    required GetCurrentUser getCurrentUser,
+    required this._signUp,
+    required this._getCurrentUser,
     DateTime Function()? clock,
-  }) : _signUp = signUp,
-       _getCurrentUser = getCurrentUser,
-       _clock = clock ?? DateTime.now,
+  }) : _clock = clock ?? DateTime.now,
        super(const RegisterState());
 
   /// "Hoy" según el reloj inyectado (la vista lo usa para el selector).
