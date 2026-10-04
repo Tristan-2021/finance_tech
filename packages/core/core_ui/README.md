@@ -35,7 +35,23 @@ dependencias de terceros). Todo se importa desde `package:core_ui/core_ui.dart`.
   de `AppSemanticColors` y etiqueta "Ingreso de ..." / "Egreso de ...". Recibe
   la magnitud: usa el valor absoluto de `cents`. Requiere `AppTheme`.
 
+## Estados y errores (pieza 4)
+
+- `LoadingView`, `EmptyView(message)`, `ErrorView(message, onRetry)` con botón
+  "Reintentar", `OfflineBanner(onRetry)` (icono, texto y acción; región en
+  vivo; requiere `AppTheme`).
+- `EmptyView` y `ErrorView` están centradas cuando caben y hacen scroll si el
+  alto o el texto no alcanzan (nunca desbordan). Necesitan alto acotado, como
+  el cuerpo de un `Scaffold`; no colocarlas dentro de otro scroll sin altura.
+- `messageForFailure(Failure)` (usa `core_errors`): `network`, `auth`,
+  `rls_denied`, `insufficient_funds`; cualquier otro código, o ninguno, da
+  "Algo salió mal. Inténtalo de nuevo.". Nunca muestra `failure.message`
+  (puede ser técnico).
+
 ## Decisiones anotadas
+
+- El texto de `OfflineBanner` no estaba fijado en el contrato: "Sin conexión.
+  Algunos datos pueden no estar al día." y acción "Reintentar".
 
 - Sin `intl`: el formato es manual para no añadir dependencias.
 - El día no lleva cero a la izquierda (`5 mar 2026`); la hora sí (`07:05`).
