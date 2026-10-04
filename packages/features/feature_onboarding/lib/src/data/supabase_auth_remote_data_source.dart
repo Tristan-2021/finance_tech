@@ -1,5 +1,6 @@
 import 'package:core_network/core_network.dart';
 
+import '../domain/auth_user.dart';
 import '../domain/sign_up_params.dart';
 import 'auth_remote_data_source.dart';
 import 'sign_up_metadata.dart';
@@ -20,6 +21,18 @@ class SupabaseAuthRemoteDataSource implements AuthRemoteDataSource {
   @override
   Future<void> signIn({required String email, required String password}) async {
     await _client.auth.signInWithPassword(email: email, password: password);
+  }
+
+  @override
+  Future<void> signOut() async {
+    await _client.auth.signOut();
+  }
+
+  @override
+  AuthUser? get currentUser {
+    final user = _client.auth.currentUser;
+    if (user == null) return null;
+    return AuthUser(id: user.id, email: user.email ?? '');
   }
 
   @override
