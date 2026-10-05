@@ -39,6 +39,8 @@ dependencies:
   core_ui: ^0.0.1
   http: ^1.2.0
   feature_accounts: ^0.0.1
+  feature_exchange: ^0.0.1
+  feature_notifications: ^0.0.1
   feature_onboarding: ^0.0.1
   feature_personalization: ^0.0.1
   get_it: ^8.0.0

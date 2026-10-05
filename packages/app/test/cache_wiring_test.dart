@@ -104,6 +104,9 @@ Future<void> pumpApp(WidgetTester tester) async {
 }
 
 Future<void> signOutFromMenu(WidgetTester tester) async {
+  await tester.tap(find.text('Cuenta')); // la app abre en Inicio
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
   await tester.tap(find.byTooltip('Menú'));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 500));
