@@ -10,13 +10,10 @@ import 'layout_source.dart';
 /// [current] nunca espera ni falla.
 class HomeLayoutRepositoryImpl implements HomeLayoutRepository {
   final LayoutSource _source;
-  final HomeLayoutParser _parser;
+  final HomeLayoutParser _parser = const HomeLayoutParser();
   late HomeLayout _current;
 
-  HomeLayoutRepositoryImpl(
-    this._source, {
-    HomeLayoutParser parser = const HomeLayoutParser(),
-  }) : _parser = parser {
+  HomeLayoutRepositoryImpl(this._source) {
     _current = _parser.parse(defaultHomeLayoutJson)!;
   }
 
