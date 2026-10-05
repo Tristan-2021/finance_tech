@@ -4,11 +4,11 @@ import 'package:core_telemetry/core_telemetry.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:feature_accounts/feature_accounts.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
-import 'package:feature_personalization/feature_personalization.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
 import 'app_strings.dart';
+import 'home_shell.dart';
 
 /// Ruta de entrada tras autenticarse. Lee el perfil (feature_onboarding) y,
 /// con el nombre y el segmento, muestra la pantalla de cuentas
@@ -47,10 +47,18 @@ class _WelcomePageState extends State<WelcomePage> {
   bool _signingOut = false;
   String? _signOutError;
 
+  final _shell = ShellNavigator();
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _shell.dispose();
+    super.dispose();
   }
 
   /// La caché se asocia al usuario ANTES de pedir datos: así nada se guarda ni
@@ -126,14 +134,15 @@ class _WelcomePageState extends State<WelcomePage> {
   Widget build(BuildContext context) {
     final profile = _profile;
     if (profile != null) {
-      return AccountsPage(
-        greetingName: profile.fullName,
-        segment: profile.segment,
-        onSignOut: _signOut,
-        // Los bloques solo se muestran si el feature está registrado.
-        extra: GetIt.instance.isRegistered<HomeCubit>()
-            ? PersonalizedHome(segment: profile.segment)
-            : null,
+      return HomeShell(
+        navigator: _shell,
+        homeBuilder: (_) =>
+            HomeTab(name: profile.fullName, segment: profile.segment),
+        accountsBuilder: (_) => AccountsPage(
+          greetingName: profile.fullName,
+          segment: profile.segment,
+          onSignOut: _signOut,
+        ),
       );
     }
 

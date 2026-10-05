@@ -140,7 +140,15 @@ Future<void> settle(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// La app abre en Inicio; el menú y el saldo viven en la pestaña Cuenta.
+Future<void> openAccountsTab(WidgetTester tester) async {
+  await tester.tap(find.text('Cuenta'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
 Future<void> signOutFromMenu(WidgetTester tester) async {
+  await openAccountsTab(tester);
   await tester.tap(find.byTooltip('Menú'));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 500));
@@ -374,6 +382,7 @@ void main() {
 
     testWidgets('saludo, segmento joven y saldo de la cuenta', (tester) async {
       await pumpApp(tester);
+      await openAccountsTab(tester);
       expect(find.text('Hola, Ana Pérez'), findsOneWidget);
       expect(find.text('Segmento: joven'), findsOneWidget);
       expect(find.byType(Chip), findsOneWidget);
@@ -387,6 +396,7 @@ void main() {
         failure: null,
       );
       await pumpApp(tester);
+      await openAccountsTab(tester);
       expect(find.text('Hola, Luis Gómez'), findsOneWidget);
       expect(find.text('Segmento: adulto'), findsOneWidget);
     });
