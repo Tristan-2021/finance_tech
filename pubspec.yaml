@@ -12,6 +12,7 @@ workspace:
   - packages/core/core_ui
   - packages/core/core_storage
   - packages/core/core_telemetry
+  - packages/features/feature_notifications
   - packages/features/feature_personalization
 dev_dependencies:
   melos: ^8.9.0
