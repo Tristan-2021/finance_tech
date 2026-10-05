@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'cache_store.dart';
 import 'secret_store.dart';
@@ -8,6 +10,8 @@ import 'secret_store.dart';
 /// [CacheStore] sobre una caja de `hive_ce` cifrada con AES-256. La clave vive
 /// en el [SecretStore]; la caché es descartable: si no se puede abrir (clave
 /// perdida o archivo dañado) se borra y se empieza de cero.
+///
+/// Pensado para móvil y escritorio (usa archivos).
 class HiveCacheStore implements CacheStore {
   static const _boxName = 'core_storage_cache';
   static const _ownerKey = '__owner__';
@@ -17,28 +21,38 @@ class HiveCacheStore implements CacheStore {
 
   HiveCacheStore._(this._box, this._clock);
 
-  /// Abre la caché. Sin [path] usa el directorio de la app (`initFlutter`);
-  /// con [path] usa esa carpeta (útil en pruebas).
+  /// Abre la caché. Sin [path] usa el directorio de documentos de la app; con
+  /// [path] usa esa carpeta (útil en pruebas).
   static Future<HiveCacheStore> open({
     required EncryptionKeyProvider keyProvider,
     String? path,
     DateTime Function()? clock,
   }) async {
     final cipher = HiveAesCipher(await keyProvider.loadOrCreate());
-    if (path == null) {
-      await Hive.initFlutter();
-    } else {
-      Hive.init(path);
-    }
+    final directory = path ?? (await getApplicationDocumentsDirectory()).path;
+    Hive.init(directory);
 
     Box<String> box;
     try {
       box = await Hive.openBox<String>(_boxName, encryptionCipher: cipher);
     } catch (_) {
-      await Hive.deleteBoxFromDisk(_boxName);
+      _discardBoxFiles(directory);
       box = await Hive.openBox<String>(_boxName, encryptionCipher: cipher);
     }
     return HiveCacheStore._(box, clock ?? DateTime.now);
+  }
+
+  /// Borra los archivos de la caja a mano. No se usa `deleteBoxFromDisk`
+  /// porque falla si el archivo `.lock` ya no existe tras una apertura fallida.
+  static void _discardBoxFiles(String directory) {
+    for (final extension in const ['hive', 'hivec', 'lock']) {
+      try {
+        final file = File('$directory/$_boxName.$extension');
+        if (file.existsSync()) file.deleteSync();
+      } catch (_) {
+        // Un archivo que no se puede borrar no debe impedir reabrir.
+      }
+    }
   }
 
   @override
