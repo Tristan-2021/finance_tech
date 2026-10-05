@@ -194,6 +194,59 @@ Comprueba, en orden: pantalla de login, entrar con un usuario, saludo y saldo
 de la cuenta, primera página de movimientos y, al desplazar hasta el final, la
 segunda página.
 
+## Demostración de conectividad (guion para el video)
+
+La app guarda una copia cifrada de las cuentas y de la **primera página** de
+movimientos (patrón *cache-then-network*) y, solo en **depuración**, trae un
+panel que inyecta fallos de red. En **release** el panel y la inyección no se
+crean ni se muestran.
+
+**Panel de depuración:** botón discreto con un ícono de bicho, abajo a la
+derecha. Permite activar *Sin conexión*, elegir *Latencia* (ninguna, 1, 3 u 8 s),
+fijar el porcentaje de *Fallos 503*, *Restablecer* y *Borrar caché*.
+
+Guion paso a paso (backend corriendo, entrar con `joven@demo.com`):
+
+1. **Con red.** Inicia sesión: se ven el saldo y los movimientos reales. Esa
+   carga deja una copia guardada.
+2. **Sin conexión → datos guardados.** Abre el panel y activa *Sin conexión*.
+   Desliza hacia abajo (pull-to-refresh) o pulsa *Reintentar* en el aviso:
+   aparece brevemente *Reintentando…* mientras `RetryClient` reintenta y luego
+   el aviso **«Mostrando datos guardados el {fecha}»**; el saldo y los
+   movimientos siguen visibles.
+3. **Latencia alta → estado de carga.** Pon *Latencia* en 8 s, cierra sesión y
+   vuelve a entrar: durante 8 s se ve el estado de carga.
+4. **503 intermitentes → reintentos y recuperación.** Desactiva *Sin conexión*,
+   deja la latencia en *Ninguna* y sube *Fallos 503* al 50 %. Refresca varias
+   veces: se ve *Reintentando…* y, cuando una petición pasa, los datos se
+   actualizan solos.
+5. **Restablecer → datos frescos.** Pulsa *Restablecer* y refresca: el aviso de
+   datos guardados desaparece y vuelven los datos del servidor, sin tocar nada
+   más.
+6. **Sin copia y sin red.** Activa *Sin conexión*, pulsa *Borrar caché*, cierra
+   sesión, vuelve a entrar con red y repite la carga sin conexión: sin copia no
+   hay datos que mostrar y aparece el error con *Reintentar*.
+
+Dos comprobaciones extra:
+
+- **Conectividad real.** Con datos guardados en pantalla, activa y desactiva el
+  modo avión del dispositivo: al volver la red la pantalla se refresca sola
+  (`connectivity_plus` solo avisa de la interfaz de red; la verdad la dan las
+  peticiones).
+- **Aislamiento entre usuarios.** Cierra sesión (limpia la caché) y entra con
+  `adulto@demo.com`: no se ve ningún dato de `joven@demo.com`, ni sin conexión.
+
+### Requisitos de plataforma de la caché cifrada
+
+`flutter_secure_storage` guarda la clave de la caché en el Keychain / Keystore:
+
+- **Android:** `minSdk` 23 o superior (la app usa `flutter.minSdkVersion`; con
+  un Flutter reciente ya cumple) y auto-backup desactivado
+  (`android:allowBackup="false"` en el manifest principal, ya aplicado).
+- **macOS:** `keychain-access-groups` en `DebugProfile.entitlements` y
+  `Release.entitlements` (ya aplicado).
+- **iOS:** sin cambios adicionales.
+
 ## Realtime y reconexión
 
 Realtime usa WebSocket y no pasa por el `RetryClient` de `core_network`; la
