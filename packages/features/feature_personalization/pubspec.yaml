@@ -13,7 +13,11 @@ dependencies:
     sdk: flutter
   core_errors: ^0.0.1
   core_network: ^0.0.1
+  core_telemetry: ^0.0.1
+  core_ui: ^0.0.1
   firebase_remote_config: ^6.7.0
+  flutter_bloc: ^9.1.0
+  get_it: ^8.0.0
 
 dev_dependencies:
   flutter_test:

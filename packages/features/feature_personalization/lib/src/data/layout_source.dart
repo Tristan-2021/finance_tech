@@ -13,39 +13,56 @@ abstract interface class LayoutSource {
   Stream<String?> get updates;
 }
 
+/// Remote Config se obtiene de forma perezosa ([_remoteConfig]): si Firebase no
+/// se pudo inicializar, el fallo queda dentro de [fetch] o [updates] y la app
+/// sigue con el layout embebido.
 class RemoteConfigLayoutSource implements LayoutSource {
   static const parameterKey = 'home_layout';
 
-  final FirebaseRemoteConfig _remoteConfig;
+  final FirebaseRemoteConfig Function() _remoteConfig;
   bool _configured = false;
 
   RemoteConfigLayoutSource(this._remoteConfig);
 
-  Future<void> _configure() async {
-    if (_configured) return;
-    await _remoteConfig.setConfigSettings(
-      RemoteConfigSettings(
-        fetchTimeout: const Duration(seconds: 10),
-        minimumFetchInterval: const Duration(hours: 1),
-      ),
-    );
-    _configured = true;
+  Future<FirebaseRemoteConfig> _ready() async {
+    final remoteConfig = _remoteConfig();
+    if (!_configured) {
+      await remoteConfig.setConfigSettings(
+        RemoteConfigSettings(
+          fetchTimeout: const Duration(seconds: 10),
+          minimumFetchInterval: const Duration(hours: 1),
+        ),
+      );
+      _configured = true;
+    }
+    return remoteConfig;
   }
 
-  @override
-  Future<String?> fetch() async {
-    await _configure();
-    await _remoteConfig.fetchAndActivate();
-    final value = _remoteConfig.getString(parameterKey);
+  static String? _valueOf(FirebaseRemoteConfig remoteConfig) {
+    final value = remoteConfig.getString(parameterKey);
     return value.isEmpty ? null : value;
   }
 
   @override
-  Stream<String?> get updates => _remoteConfig.onConfigUpdated
-      .where((update) => update.updatedKeys.contains(parameterKey))
-      .asyncMap((_) async {
-        await _remoteConfig.activate();
-        final value = _remoteConfig.getString(parameterKey);
-        return value.isEmpty ? null : value;
-      });
+  Future<String?> fetch() async {
+    final remoteConfig = await _ready();
+    await remoteConfig.fetchAndActivate();
+    return _valueOf(remoteConfig);
+  }
+
+  @override
+  Stream<String?> get updates async* {
+    final FirebaseRemoteConfig remoteConfig;
+    try {
+      remoteConfig = _remoteConfig();
+    } catch (_) {
+      return;
+    }
+    yield* remoteConfig.onConfigUpdated
+        .where((update) => update.updatedKeys.contains(parameterKey))
+        .asyncMap((_) async {
+          await remoteConfig.activate();
+          return _valueOf(remoteConfig);
+        });
+  }
 }

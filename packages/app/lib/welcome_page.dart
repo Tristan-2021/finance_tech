@@ -1,9 +1,12 @@
 import 'package:core_errors/core_errors.dart';
 import 'package:core_storage/core_storage.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:feature_accounts/feature_accounts.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
+import 'package:feature_personalization/feature_personalization.dart';
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 
 import 'app_strings.dart';
 
@@ -69,6 +72,9 @@ class _WelcomePageState extends State<WelcomePage> {
     final result = await widget.getUserProfile();
     if (!mounted) return;
     final profile = result.profile;
+    if (profile != null && GetIt.instance.isRegistered<Telemetry>()) {
+      GetIt.instance<Telemetry>().setSegment(profile.segment);
+    }
     setState(() {
       _loading = false;
       _profile = profile;
@@ -124,6 +130,10 @@ class _WelcomePageState extends State<WelcomePage> {
         greetingName: profile.fullName,
         segment: profile.segment,
         onSignOut: _signOut,
+        // Los bloques solo se muestran si el feature está registrado.
+        extra: GetIt.instance.isRegistered<HomeCubit>()
+            ? PersonalizedHome(segment: profile.segment)
+            : null,
       );
     }
 

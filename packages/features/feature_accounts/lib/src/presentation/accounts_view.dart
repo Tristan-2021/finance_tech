@@ -23,6 +23,7 @@ class AccountsView extends StatefulWidget {
   final String greetingName;
   final String segment;
   final VoidCallback onSignOut;
+  final Widget? extra;
   final NetworkStatusNotifier? networkStatus;
   final ConnectivityMonitor? connectivity;
 
@@ -33,6 +34,7 @@ class AccountsView extends StatefulWidget {
     required this.greetingName,
     required this.segment,
     required this.onSignOut,
+    this.extra,
     this.networkStatus,
     this.connectivity,
   });
@@ -90,6 +92,7 @@ class _AccountsViewState extends State<AccountsView> {
                             cubit: widget.cubit,
                             movementsCubitFactory: widget.movementsCubitFactory,
                             connectivity: widget.connectivity,
+                            extra: widget.extra,
                           ),
                 },
               ),
@@ -203,6 +206,7 @@ class _AccountBody extends StatefulWidget {
   final AccountsCubit cubit;
   final MovementsCubitFactory movementsCubitFactory;
   final ConnectivityMonitor? connectivity;
+  final Widget? extra;
 
   const _AccountBody({
     super.key,
@@ -210,6 +214,7 @@ class _AccountBody extends StatefulWidget {
     required this.cubit,
     required this.movementsCubitFactory,
     required this.connectivity,
+    required this.extra,
   });
 
   @override
@@ -320,6 +325,10 @@ class _AccountBodyState extends State<_AccountBody> {
                         const SizedBox(height: AppSpacing.lg),
                       ],
                       _BalanceCard(account: account),
+                      if (widget.extra case final extra?) ...[
+                        const SizedBox(height: AppSpacing.lg),
+                        extra,
+                      ],
                     ],
                   ),
                 ),

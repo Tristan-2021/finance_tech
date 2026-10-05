@@ -15,7 +15,7 @@ const String defaultHomeLayoutJson = '''
     ],
     "adulto": [
       {"id": "spending_adulto", "type": "spending_summary"},
-      {"id": "rate_adulto", "type": "exchange_rate"},
+      {"id": "rate_adulto", "type": "exchange_rate", "params": {"pair": "USD/EUR", "rate": "0.92"}},
       {"id": "tip_adulto", "type": "tip", "params": {"text": "Revisa tus servicios recurrentes."}}
     ]
   }

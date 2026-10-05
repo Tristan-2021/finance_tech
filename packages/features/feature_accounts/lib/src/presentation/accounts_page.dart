@@ -19,11 +19,16 @@ class AccountsPage extends StatefulWidget {
   final String segment;
   final VoidCallback onSignOut;
 
+  /// Contenido que el shell inserta bajo el saldo (p. ej. los bloques
+  /// personalizados); este feature no conoce su origen.
+  final Widget? extra;
+
   const AccountsPage({
     super.key,
     required this.greetingName,
     required this.segment,
     required this.onSignOut,
+    this.extra,
   });
 
   @override
@@ -59,6 +64,7 @@ class _AccountsPageState extends State<AccountsPage> {
       greetingName: widget.greetingName,
       segment: widget.segment,
       onSignOut: widget.onSignOut,
+      extra: widget.extra,
       networkStatus: _optional<NetworkStatusNotifier>(),
       connectivity: _optional<ConnectivityMonitor>(),
     );

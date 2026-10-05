@@ -2,6 +2,7 @@ import 'package:core_network/core_network.dart';
 import 'package:core_storage/core_storage.dart';
 import 'package:feature_accounts/feature_accounts.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
+import 'package:feature_personalization/feature_personalization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 import 'package:http/http.dart' as http;
@@ -73,4 +74,5 @@ void registerDependencies(
   }
   registerOnboardingDependencies(sl);
   registerAccountsDependencies(sl);
+  registerPersonalizationDependencies(sl);
 }
