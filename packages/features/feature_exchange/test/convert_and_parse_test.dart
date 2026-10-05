@@ -73,4 +73,11 @@ void main() {
     expect(_rate(1120400).rateText, '1.120400');
     expect(_rate(2000000).rateText, '2.000000');
   });
+
+  test('shortRateText quita ceros finales pero deja dos decimales', () {
+    expect(_rate(1120400).shortRateText, '1.1204');
+    expect(_rate(1170000).shortRateText, '1.17');
+    expect(_rate(2000000).shortRateText, '2.00');
+    expect(_rate(1123456).shortRateText, '1.123456');
+  });
 }
