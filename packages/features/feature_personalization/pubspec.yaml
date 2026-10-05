@@ -1,0 +1,21 @@
+name: feature_personalization
+resolution: workspace
+description: "Home dinámico por segmento con Remote Config y resumen de gastos."
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.13.5
+  flutter: ">=1.17.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  core_errors: ^0.0.1
+  core_network: ^0.0.1
+  firebase_remote_config: ^6.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
