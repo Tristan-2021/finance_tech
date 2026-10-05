@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:core_network/core_network.dart';
-import 'package:feature_accounts/feature_accounts.dart';
+import 'package:feature_accounts/src/data/account_repository_impl.dart';
+import 'package:feature_accounts/src/data/accounts_remote_data_source.dart';
+import 'package:feature_accounts/src/data/money_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeRemote implements AccountsRemoteDataSource {

@@ -1,5 +1,7 @@
 import 'package:core_errors/core_errors.dart';
-import 'package:feature_accounts/feature_accounts.dart';
+import 'package:feature_accounts/src/domain/account.dart';
+import 'package:feature_accounts/src/domain/account_repository.dart';
+import 'package:feature_accounts/src/domain/get_balance.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeAccountRepository implements AccountRepository {
