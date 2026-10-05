@@ -4,7 +4,6 @@ import 'package:core_network/core_network.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
 import 'package:feature_onboarding/src/data/auth_remote_data_source.dart';
 import 'package:feature_onboarding/src/domain/auth_repository.dart';
-import 'package:feature_onboarding/src/domain/sign_up.dart';
 import 'package:feature_onboarding/src/presentation/login/login_cubit.dart';
 import 'package:feature_onboarding/src/presentation/register/register_cubit.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -79,6 +78,7 @@ void main() {
         'src/domain/get_user_profile.dart',
         'src/domain/sign_in.dart',
         'src/domain/sign_out.dart',
+        'src/domain/sign_up.dart',
         'src/domain/user_profile.dart',
         'src/onboarding_dependencies.dart',
         'src/presentation/login/login_page.dart',
