@@ -16,6 +16,7 @@ Future<void> main() async {
   // vez para que los features la reciban por GetIt.
   final telemetry = await initTelemetry();
   if (!sl.isRegistered<Telemetry>()) sl.registerSingleton<Telemetry>(telemetry);
+  telemetry.logEvent('app_opened', {'source': 'launch'});
 
   final SupabaseConfig config;
   try {
