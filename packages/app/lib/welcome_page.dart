@@ -1,13 +1,17 @@
 import 'package:core_errors/core_errors.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:feature_accounts/feature_accounts.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
 import 'package:flutter/material.dart';
 
 import 'app_strings.dart';
 
-/// Pantalla PROVISIONAL tras autenticarse: saludo, segmento y cierre de
-/// sesión. Se sustituirá por la pantalla de cuentas: mantenerla en un solo
-/// archivo para reemplazarla fácilmente.
+/// Ruta de entrada tras autenticarse. Lee el perfil (feature_onboarding) y,
+/// con el nombre y el segmento, muestra la pantalla de cuentas
+/// (feature_accounts): el shell es el único que conoce a los dos features.
+///
+/// Mientras llega el perfil, o si falla, ofrece carga, reintento y cierre de
+/// sesión.
 class WelcomePage extends StatefulWidget {
   final GetUserProfile getUserProfile;
   final SignOut signOut;
@@ -47,9 +51,7 @@ class _WelcomePageState extends State<WelcomePage> {
       _profile = profile;
       _loadError = profile != null
           ? null
-          : messageForFailure(
-              result.failure ?? const Failure('', 'unknown'),
-            );
+          : messageForFailure(result.failure ?? const Failure('', 'unknown'));
     });
   }
 
@@ -62,6 +64,7 @@ class _WelcomePageState extends State<WelcomePage> {
   }
 
   Future<void> _signOut() async {
+    if (_signingOut) return;
     setState(() {
       _signingOut = true;
       _signOutError = null;
@@ -69,10 +72,16 @@ class _WelcomePageState extends State<WelcomePage> {
     final failure = await widget.signOut();
     if (!mounted) return;
     if (failure != null) {
+      final message = messageForFailure(failure);
       setState(() {
         _signingOut = false;
-        _signOutError = messageForFailure(failure);
+        _signOutError = message;
       });
+      if (_profile != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
       return;
     }
     widget.onSignedOut();
@@ -80,12 +89,25 @@ class _WelcomePageState extends State<WelcomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final profile = _profile;
+    if (profile != null) {
+      return AccountsPage(
+        greetingName: profile.fullName,
+        segment: profile.segment,
+        onSignOut: _signOut,
+      );
+    }
+
     final theme = Theme.of(context);
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
-            Expanded(child: _body(theme)),
+            Expanded(
+              child: _loading
+                  ? const LoadingView()
+                  : ErrorView(message: _loadError!, onRetry: _retry),
+            ),
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
               child: Center(
@@ -119,44 +141,6 @@ class _WelcomePageState extends State<WelcomePage> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _body(ThemeData theme) {
-    if (_loading) return const LoadingView();
-
-    final profile = _profile;
-    if (profile == null) {
-      return ErrorView(message: _loadError!, onRetry: _retry);
-    }
-
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                AppStrings.greeting(profile.fullName),
-                style: theme.textTheme.titleLarge,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Chip(
-                label: Text(AppStrings.segmentLabel(profile.segment)),
-                visualDensity: VisualDensity.compact,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Text(
-                AppStrings.accountsPlaceholder,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ],
-          ),
         ),
       ),
     );

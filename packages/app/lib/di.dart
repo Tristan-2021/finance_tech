@@ -1,4 +1,5 @@
 import 'package:core_network/core_network.dart';
+import 'package:feature_accounts/feature_accounts.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
 import 'package:get_it/get_it.dart';
 
@@ -16,4 +17,5 @@ Future<void> setupDi(SupabaseConfig config) async {
 void registerDependencies(SupabaseClient client) {
   sl.registerSingleton<SupabaseClient>(client);
   registerOnboardingDependencies(sl);
+  registerAccountsDependencies(sl);
 }

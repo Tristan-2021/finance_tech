@@ -2,7 +2,13 @@ import 'dart:io';
 
 import 'package:core_errors/core_errors.dart';
 import 'package:core_network/core_network.dart';
-import 'package:feature_accounts/feature_accounts.dart';
+import 'package:feature_accounts/src/data/page_range.dart';
+import 'package:feature_accounts/src/data/transaction_repository_impl.dart';
+import 'package:feature_accounts/src/data/transactions_remote_data_source.dart';
+import 'package:feature_accounts/src/domain/get_transactions.dart';
+import 'package:feature_accounts/src/domain/transaction.dart';
+import 'package:feature_accounts/src/domain/transaction_repository.dart';
+import 'package:feature_accounts/src/domain/transaction_type.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeRemote implements TransactionsRemoteDataSource {
