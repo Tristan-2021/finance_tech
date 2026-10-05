@@ -44,8 +44,12 @@ class NotificationsController {
     } catch (_) {
       // Sin canal las notificaciones pueden no verse, pero la app sigue.
     }
-    _gateway.onForegroundMessage.listen(_showForeground);
-    _gateway.onOpened.listen((_) => _handleOpen());
+    try {
+      _gateway.onForegroundMessage.listen(_showForeground);
+      _gateway.onOpened.listen((_) => _handleOpen());
+    } catch (_) {
+      // Si Firebase no arrancó, la app funciona sin avisos.
+    }
     try {
       if (await _gateway.getInitialMessage() != null) _handleOpen();
     } catch (_) {}

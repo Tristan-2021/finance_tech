@@ -4,6 +4,7 @@ import 'push_message.dart';
 /// mensajes con este `channel_id`, así que debe existir antes de que llegue uno.
 const movementsChannelId = 'movements';
 const movementsChannelName = 'Movimientos';
+const movementsChannelDescription = 'Avisos de los movimientos de tu cuenta';
 
 /// Frontera con los plugins de Firebase Messaging y de notificaciones locales.
 /// El controlador solo conoce esta interfaz; las pruebas usan un falso.
