@@ -1,4 +1,4 @@
 library;
 
-// La API pública (ExchangeCard y registerExchangeDependencies) se añade con la
-// presentación.
+export 'src/exchange_dependencies.dart';
+export 'src/presentation/exchange_card.dart';
