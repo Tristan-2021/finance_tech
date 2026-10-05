@@ -3,12 +3,14 @@ import 'package:get_it/get_it.dart';
 
 import 'accounts_cubit.dart';
 import 'accounts_view.dart';
+import 'movements_cubit.dart';
 
 /// Pantalla de cuentas. El nombre, el segmento y el cierre de sesión los pasa
 /// el shell: este feature no depende de feature_onboarding.
 ///
-/// Resuelve su [AccountsCubit] desde `GetIt.instance` (registrado por
-/// `registerAccountsDependencies`) y lo cierra al salir.
+/// Resuelve su [AccountsCubit] y la fábrica de movimientos desde
+/// `GetIt.instance` (registrados por `registerAccountsDependencies`) y cierra
+/// el Cubit al salir.
 class AccountsPage extends StatefulWidget {
   final String greetingName;
   final String segment;
@@ -27,6 +29,8 @@ class AccountsPage extends StatefulWidget {
 
 class _AccountsPageState extends State<AccountsPage> {
   late final AccountsCubit _cubit = GetIt.instance<AccountsCubit>();
+  late final MovementsCubitFactory _movementsCubitFactory =
+      GetIt.instance<MovementsCubitFactory>();
 
   @override
   void initState() {
@@ -44,6 +48,7 @@ class _AccountsPageState extends State<AccountsPage> {
   Widget build(BuildContext context) {
     return AccountsView(
       cubit: _cubit,
+      movementsCubitFactory: _movementsCubitFactory,
       greetingName: widget.greetingName,
       segment: widget.segment,
       onSignOut: widget.onSignOut,

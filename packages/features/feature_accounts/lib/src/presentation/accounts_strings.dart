@@ -7,4 +7,13 @@ abstract final class AccountsStrings {
   static const signOut = 'Cerrar sesión';
   static const balanceLabel = 'Saldo disponible';
   static const noAccounts = 'Aún no tienes cuentas';
+
+  // Movimientos
+  static const movementsTitle = 'Movimientos';
+  static const noMovements = 'Aún no tienes movimientos';
+  static const uncategorized = 'Sin categoría';
+  static const movementFallback = 'Movimiento';
+  static const loadingMore = 'Cargando más movimientos';
+  static const retry = 'Reintentar';
+  static String balanceAfter(String amount) => 'Saldo: $amount';
 }

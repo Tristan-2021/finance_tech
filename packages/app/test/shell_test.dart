@@ -101,6 +101,21 @@ class FakeGetAccounts implements GetAccounts {
   Future<AccountsResult> call() => impl();
 }
 
+typedef TransactionsResult = ({
+  List<Transaction>? transactions,
+  Failure? failure,
+});
+
+/// Sin movimientos: estos tests prueban la composición del shell, no la lista.
+class FakeGetTransactions implements GetTransactions {
+  @override
+  Future<TransactionsResult> call(
+    String accountId, {
+    int offset = 0,
+    int limit = 20,
+  }) async => (transactions: <Transaction>[], failure: null);
+}
+
 const user = AuthUser(id: 'u1', email: 'a@b.com');
 
 void useFake<T extends Object>(T fake) {
@@ -112,18 +127,23 @@ Future<void> pumpApp(WidgetTester tester) async {
   await tester.pumpWidget(const BancoApp());
   await tester.pump(); // la puerta resuelve y navega
   await tester.pump(const Duration(seconds: 1)); // transición de ruta
-  await tester.pump(); // perfil y cuentas cargados
+  await tester.pump(); // perfil cargado
+  await tester.pump(); // cuentas cargadas
+  await tester.pump(); // movimientos cargados
 }
 
 Future<void> settle(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(seconds: 1));
   await tester.pump();
+  await tester.pump();
+  await tester.pump();
 }
 
 Future<void> signOutFromMenu(WidgetTester tester) async {
   await tester.tap(find.byTooltip('Menú'));
-  await tester.pumpAndSettle();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
   await tester.tap(find.text('Cerrar sesión'));
   await tester.pump();
 }
@@ -155,6 +175,7 @@ void main() {
     useFake<SignOut>(signOut);
     useFake<GetUserProfile>(getUserProfile);
     useFake<GetAccounts>(getAccounts);
+    useFake<GetTransactions>(FakeGetTransactions());
   });
 
   tearDown(() async => sl.reset());
@@ -180,7 +201,9 @@ void main() {
       expect(find.byType(LoadingView), findsNothing);
     });
 
-    testWidgets('si la consulta falla -> ErrorView y reintento', (tester) async {
+    testWidgets('si la consulta falla -> ErrorView y reintento', (
+      tester,
+    ) async {
       var attempts = 0;
       getCurrentUser.impl = () {
         attempts++;
@@ -380,8 +403,9 @@ void main() {
         profile: const UserProfile(fullName: 'Ana Pérez', segment: 'joven'),
         failure: null,
       ));
-      await tester.pump();
-      await tester.pump();
+      await tester.pump(); // perfil
+      await tester.pump(); // cuentas
+      await tester.pump(); // movimientos
       expect(find.byType(LoadingView), findsNothing);
       expect(find.text('Hola, Ana Pérez'), findsOneWidget);
     });
@@ -419,7 +443,9 @@ void main() {
       expect(find.text('Hola, Ana Pérez'), findsOneWidget);
     });
 
-    testWidgets('con el perfil en error se puede cerrar sesión', (tester) async {
+    testWidgets('con el perfil en error se puede cerrar sesión', (
+      tester,
+    ) async {
       getUserProfile.impl = () async =>
           (profile: null, failure: const Failure('x', 'rls_denied'));
       await pumpApp(tester);
@@ -435,7 +461,9 @@ void main() {
   });
 
   group('MaterialApp', () {
-    testWidgets('usa el tema de core_ui, modo sistema y español', (tester) async {
+    testWidgets('usa el tema de core_ui, modo sistema y español', (
+      tester,
+    ) async {
       await pumpApp(tester);
       final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
       expect(app.themeMode, ThemeMode.system);

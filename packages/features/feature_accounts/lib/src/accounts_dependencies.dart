@@ -13,6 +13,7 @@ import 'domain/get_balance.dart';
 import 'domain/get_transactions.dart';
 import 'domain/transaction_repository.dart';
 import 'presentation/accounts_cubit.dart';
+import 'presentation/movements_cubit.dart';
 
 /// Registra en [getIt] data sources, repositorios, casos de uso (singletons
 /// perezosos) y las fábricas de Cubit del feature.
@@ -43,5 +44,9 @@ void registerAccountsDependencies(GetIt getIt) {
     )
     ..registerFactory<AccountsCubit>(
       () => AccountsCubit(getIt<GetAccounts>()),
+    )
+    ..registerLazySingleton<MovementsCubitFactory>(
+      () =>
+          (accountId) => MovementsCubit(getIt<GetTransactions>(), accountId),
     );
 }

@@ -6,9 +6,12 @@ import 'package:feature_accounts/src/domain/account_repository.dart';
 import 'package:feature_accounts/src/presentation/accounts_cubit.dart';
 import 'package:feature_accounts/src/presentation/accounts_state.dart';
 import 'package:feature_accounts/src/presentation/accounts_view.dart';
+import 'package:feature_accounts/src/presentation/movements_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
+
+import 'fake_transaction_repository.dart';
 
 class FakeAccountRepository implements AccountRepository {
   List<Account>? accounts = [];
@@ -112,6 +115,8 @@ void main() {
       theme: AppTheme.light(),
       home: AccountsView(
         cubit: cubit,
+        movementsCubitFactory: (id) =>
+            MovementsCubit(GetTransactions(FakeTransactionRepository()), id),
         greetingName: 'Ana Pérez',
         segment: 'joven',
         onSignOut: () => signOuts++,
@@ -187,7 +192,8 @@ void main() {
       await tester.pump();
 
       await tester.tap(find.byTooltip('Menú'));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.tap(find.text('Cerrar sesión'));
       await tester.pump();
       expect(signOuts, 1);
