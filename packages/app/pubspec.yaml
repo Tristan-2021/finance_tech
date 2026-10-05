@@ -45,6 +45,11 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   firebase_core: ^4.15.0
+  # Declaradas aquí solo para que `flutterfire configure` aplique sus plugins de
+  # Gradle. El código las usa únicamente a través de core_telemetry.
+  firebase_crashlytics: ^5.4.0
+  firebase_analytics: ^12.6.0
+  firebase_performance: ^0.11.6
 
 dev_dependencies:
   flutter_test:
