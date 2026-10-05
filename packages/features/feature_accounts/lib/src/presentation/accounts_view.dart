@@ -6,10 +6,15 @@ import '../domain/account.dart';
 import 'accounts_cubit.dart';
 import 'accounts_state.dart';
 import 'accounts_strings.dart';
+import 'movements_cubit.dart';
+import 'movements_slivers.dart';
+import 'movements_state.dart';
 
-/// Pantalla de cuentas. Recibe el Cubit (no usa GetIt) para probarse sola.
+/// Pantalla de cuentas. Recibe el Cubit y la fábrica de movimientos (no usa
+/// GetIt) para probarse sola.
 class AccountsView extends StatelessWidget {
   final AccountsCubit cubit;
+  final MovementsCubitFactory movementsCubitFactory;
   final String greetingName;
   final String segment;
   final VoidCallback onSignOut;
@@ -17,6 +22,7 @@ class AccountsView extends StatelessWidget {
   const AccountsView({
     super.key,
     required this.cubit,
+    required this.movementsCubitFactory,
     required this.greetingName,
     required this.segment,
     required this.onSignOut,
@@ -45,7 +51,13 @@ class AccountsView extends StatelessWidget {
                   AccountsStatus.loaded =>
                     state.accounts.isEmpty
                         ? const EmptyView(message: AccountsStrings.noAccounts)
-                        : _Loaded(state: state, cubit: cubit),
+                        : _AccountBody(
+                            // Cambiar de cuenta crea un Cubit de movimientos nuevo.
+                            key: ValueKey(state.selected!.id),
+                            state: state,
+                            cubit: cubit,
+                            movementsCubitFactory: movementsCubitFactory,
+                          ),
                 },
               ),
             ),
@@ -114,24 +126,113 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _Loaded extends StatelessWidget {
+/// Saldo y movimientos de la cuenta seleccionada, en un solo scroll con
+/// pull-to-refresh y carga de la página siguiente al acercarse al final.
+class _AccountBody extends StatefulWidget {
   final AccountsState state;
   final AccountsCubit cubit;
+  final MovementsCubitFactory movementsCubitFactory;
 
-  const _Loaded({required this.state, required this.cubit});
+  const _AccountBody({
+    super.key,
+    required this.state,
+    required this.cubit,
+    required this.movementsCubitFactory,
+  });
+
+  @override
+  State<_AccountBody> createState() => _AccountBodyState();
+}
+
+class _AccountBodyState extends State<_AccountBody> {
+  late final MovementsCubit _movements = widget.movementsCubitFactory(
+    widget.state.selected!.id,
+  );
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+    _movements.loadFirst();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    _movements.close();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scroll.hasClients && _scroll.position.extentAfter < 300) {
+      _movements.loadMore();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final state = widget.state;
     final account = state.selected!;
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      children: [
-        if (state.accounts.length > 1) ...[
-          _AccountSelector(state: state, cubit: cubit),
-          const SizedBox(height: AppSpacing.lg),
-        ],
-        _BalanceCard(account: account),
-      ],
+
+    return BlocConsumer<MovementsCubit, MovementsState>(
+      bloc: _movements,
+      listenWhen: (previous, current) =>
+          current.refreshError != null ||
+          current.items.length != previous.items.length,
+      listener: (context, movements) {
+        final refreshError = movements.refreshError;
+        if (refreshError != null) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(refreshError)));
+          return;
+        }
+        // Si la primera página no llena la pantalla, no habría scroll que
+        // dispare la siguiente: se pide una vez dibujada la lista.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              _scroll.hasClients &&
+              _scroll.position.maxScrollExtent <= 0) {
+            _movements.loadMore();
+          }
+        });
+      },
+      builder: (context, movements) => RefreshIndicator(
+        onRefresh: _movements.refresh,
+        child: CustomScrollView(
+          controller: _scroll,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                0,
+              ),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (state.accounts.length > 1) ...[
+                      _AccountSelector(state: state, cubit: widget.cubit),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    _BalanceCard(account: account),
+                  ],
+                ),
+              ),
+            ),
+            ...movementsSlivers(
+              state: movements,
+              cubit: _movements,
+              currency: account.currency,
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
+          ],
+        ),
+      ),
     );
   }
 }
