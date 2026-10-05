@@ -25,13 +25,9 @@ class _Session {
   final GetIt getIt;
   const _Session(this.client, this.getIt);
 
-  GetBalance get getBalance => GetBalance(
-    AccountRepositoryImpl(SupabaseAccountsRemoteDataSource(client)),
-  );
+  GetBalance get getBalance => getIt<GetBalance>();
 
-  GetTransactions get getTransactions => GetTransactions(
-    TransactionRepositoryImpl(SupabaseTransactionsRemoteDataSource(client)),
-  );
+  GetTransactions get getTransactions => getIt<GetTransactions>();
 }
 
 Future<_Session> _login(String email) async {
@@ -40,6 +36,7 @@ Future<_Session> _login(String email) async {
   final getIt = GetIt.asNewInstance();
   getIt.registerSingleton<SupabaseClient>(client);
   registerOnboardingDependencies(getIt);
+  registerAccountsDependencies(getIt);
   final failure = await getIt<SignIn>()(email: email, password: _password);
   expect(failure, isNull, reason: 'login de $email');
   return _Session(client, getIt);
