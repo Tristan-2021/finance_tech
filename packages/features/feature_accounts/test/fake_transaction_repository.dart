@@ -1,5 +1,6 @@
 import 'package:core_errors/core_errors.dart';
 import 'package:feature_accounts/feature_accounts.dart';
+import 'package:feature_accounts/src/domain/stale_list.dart';
 import 'package:feature_accounts/src/domain/transaction_repository.dart';
 
 /// Movimiento de prueba `i`: pares son ingresos, impares egresos; el monto
@@ -16,9 +17,11 @@ Transaction makeTx(int i, {String accountId = 'a1'}) => Transaction(
 );
 
 /// Repositorio falso que pagina [all] con offset/limit y registra las llamadas.
+/// Con [staleAt] devuelve las páginas como datos servidos desde la caché.
 class FakeTransactionRepository implements TransactionRepository {
   List<Transaction> all = [];
   Failure? failure;
+  DateTime? staleAt;
   final calls = <({String accountId, int offset, int limit})>[];
 
   @override
@@ -29,8 +32,11 @@ class FakeTransactionRepository implements TransactionRepository {
   }) async {
     calls.add((accountId: accountId, offset: offset, limit: limit));
     if (failure != null) return (transactions: null, failure: failure);
+
+    final page = all.skip(offset).take(limit).toList();
+    final stale = staleAt;
     return (
-      transactions: all.skip(offset).take(limit).toList(),
+      transactions: stale == null ? page : StaleList<Transaction>(page, stale),
       failure: null,
     );
   }

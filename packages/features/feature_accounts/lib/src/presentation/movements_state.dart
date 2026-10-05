@@ -10,6 +10,10 @@ class MovementsState {
   final bool hasMore;
   final bool loadingMore;
 
+  /// Si no es `null`, la primera página viene de una copia guardada en esa
+  /// fecha (UTC) porque no se pudo contactar al servidor.
+  final DateTime? cachedAt;
+
   /// Fallo al cargar la página siguiente: lo ya mostrado se conserva.
   final String? loadMoreError;
 
@@ -24,14 +28,15 @@ class MovementsState {
     this.items = const [],
     this.hasMore = false,
     this.loadingMore = false,
+    this.cachedAt,
     this.loadMoreError,
     this.refreshError,
     this.message,
   });
 
-  /// Los datos (`status`, `items`, `hasMore`, `loadingMore`) se conservan si no
-  /// se pasan. Los errores y el mensaje se reemplazan siempre: sin argumento
-  /// quedan en `null`.
+  /// Los datos (`status`, `items`, `hasMore`, `loadingMore`, `cachedAt`) se
+  /// conservan si no se pasan. Los errores y el mensaje se reemplazan siempre:
+  /// sin argumento quedan en `null`.
   MovementsState copyWith({
     MovementsStatus? status,
     List<Transaction>? items,
@@ -46,6 +51,7 @@ class MovementsState {
       items: items ?? this.items,
       hasMore: hasMore ?? this.hasMore,
       loadingMore: loadingMore ?? this.loadingMore,
+      cachedAt: cachedAt,
       loadMoreError: loadMoreError,
       refreshError: refreshError,
       message: message,
