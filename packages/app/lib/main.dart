@@ -1,4 +1,5 @@
 import 'package:core_network/core_network.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
@@ -10,6 +11,11 @@ import 'firebase_options.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _initFirebase();
+
+  // Devuelve NoopTelemetry si Firebase no se inicializó. Se registra una sola
+  // vez para que los features la reciban por GetIt.
+  final telemetry = await initTelemetry();
+  if (!sl.isRegistered<Telemetry>()) sl.registerSingleton<Telemetry>(telemetry);
 
   final SupabaseConfig config;
   try {

@@ -11,6 +11,7 @@ workspace:
   - packages/features/feature_onboarding
   - packages/core/core_ui
   - packages/core/core_storage
+  - packages/core/core_telemetry
 dev_dependencies:
   melos: ^8.9.0
 
