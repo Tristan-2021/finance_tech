@@ -1,4 +1,5 @@
 import 'package:core_errors/core_errors.dart';
+import 'package:core_storage/core_storage.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:feature_accounts/feature_accounts.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
@@ -10,18 +11,25 @@ import 'app_strings.dart';
 /// con el nombre y el segmento, muestra la pantalla de cuentas
 /// (feature_accounts): el shell es el único que conoce a los dos features.
 ///
+/// Si hay [cache], antes de cargar nada la asocia al usuario actual (descarta
+/// la de otro usuario) y la limpia al cerrar sesión.
+///
 /// Mientras llega el perfil, o si falla, ofrece carga, reintento y cierre de
 /// sesión.
 class WelcomePage extends StatefulWidget {
+  final GetCurrentUser getCurrentUser;
   final GetUserProfile getUserProfile;
   final SignOut signOut;
+  final CacheStore? cache;
   final VoidCallback onSignedOut;
 
   const WelcomePage({
     super.key,
+    required this.getCurrentUser,
     required this.getUserProfile,
     required this.signOut,
     required this.onSignedOut,
+    this.cache,
   });
 
   @override
@@ -42,7 +50,22 @@ class _WelcomePageState extends State<WelcomePage> {
     _load();
   }
 
+  /// La caché se asocia al usuario ANTES de pedir datos: así nada se guarda ni
+  /// se sirve bajo otro dueño.
+  Future<void> _bindCache() async {
+    final cache = widget.cache;
+    if (cache == null) return;
+    final user = widget.getCurrentUser();
+    if (user == null) return;
+    try {
+      await cache.bindOwner(user.id);
+    } catch (_) {
+      // Sin caché la app sigue funcionando.
+    }
+  }
+
   Future<void> _load() async {
+    await _bindCache();
     final result = await widget.getUserProfile();
     if (!mounted) return;
     final profile = result.profile;
@@ -84,6 +107,12 @@ class _WelcomePageState extends State<WelcomePage> {
       }
       return;
     }
+    try {
+      await widget.cache?.clear();
+    } catch (_) {
+      // Cerrar sesión no debe fallar por la caché.
+    }
+    if (!mounted) return;
     widget.onSignedOut();
   }
 

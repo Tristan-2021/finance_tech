@@ -1,9 +1,13 @@
+import 'package:core_network/core_network.dart';
+import 'package:core_storage/core_storage.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_strings.dart';
+import 'debug/debug_panel.dart';
 import 'di.dart';
 import 'routes.dart';
 import 'session_gate.dart';
@@ -24,6 +28,19 @@ class BancoApp extends StatelessWidget {
       locale: const Locale('es'),
       supportedLocales: const [Locale('es')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      // El panel de depuración solo existe en depuración: en release
+      // `kDebugMode` es falso y esta rama se elimina al compilar.
+      builder: (context, child) {
+        final content = child ?? const SizedBox.shrink();
+        if (kDebugMode && sl.isRegistered<DebugNetworkConfig>()) {
+          return DebugPanelOverlay(
+            config: sl<DebugNetworkConfig>(),
+            cache: sl.isRegistered<CacheStore>() ? sl<CacheStore>() : null,
+            child: content,
+          );
+        }
+        return content;
+      },
       initialRoute: AppRoutes.gate,
       routes: {
         AppRoutes.gate: (context) => SessionGate(
@@ -45,8 +62,10 @@ class BancoApp extends StatelessWidget {
               Navigator.of(context).pushReplacementNamed(AppRoutes.login),
         ),
         AppRoutes.welcome: (context) => WelcomePage(
+          getCurrentUser: sl<GetCurrentUser>(),
           getUserProfile: sl<GetUserProfile>(),
           signOut: sl<SignOut>(),
+          cache: sl.isRegistered<CacheStore>() ? sl<CacheStore>() : null,
           onSignedOut: () => Navigator.of(
             context,
           ).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false),
