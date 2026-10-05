@@ -35,10 +35,17 @@ class BancoApp extends StatelessWidget {
         AppRoutes.login: (context) => LoginPage(
           onAuthenticated: () =>
               Navigator.of(context).pushReplacementNamed(AppRoutes.welcome),
-          // El registro se conecta en la siguiente pieza.
-          onGoToRegister: () {},
+          onGoToRegister: () =>
+              Navigator.of(context).pushReplacementNamed(AppRoutes.register),
+        ),
+        AppRoutes.register: (context) => RegisterPage(
+          onRegistered: () =>
+              Navigator.of(context).pushReplacementNamed(AppRoutes.welcome),
+          onGoToLogin: () =>
+              Navigator.of(context).pushReplacementNamed(AppRoutes.login),
         ),
         AppRoutes.welcome: (context) => WelcomePage(
+          getUserProfile: sl<GetUserProfile>(),
           signOut: sl<SignOut>(),
           onSignedOut: () => Navigator.of(
             context,

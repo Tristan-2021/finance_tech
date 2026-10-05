@@ -3,7 +3,8 @@ abstract final class AppStrings {
   static const appTitle = 'Banco Digital';
 
   // Pantalla provisional
-  static const welcomeTitle = 'Bienvenido';
+  static String greeting(String name) => 'Hola, $name';
+  static String segmentLabel(String segment) => 'Segmento: $segment';
   static const accountsPlaceholder = 'Tus cuentas aparecerán aquí';
   static const signOutAction = 'Cerrar sesión';
 
