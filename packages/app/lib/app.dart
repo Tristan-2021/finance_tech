@@ -1,6 +1,8 @@
 import 'package:core_network/core_network.dart';
 import 'package:core_storage/core_storage.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:feature_notifications/feature_notifications.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ import 'debug/debug_panel.dart';
 import 'di.dart';
 import 'routes.dart';
 import 'session_gate.dart';
+import 'shell_telemetry.dart';
 import 'welcome_page.dart';
 
 /// El shell es el único lugar que conoce a varios features: aquí se conectan
@@ -35,12 +38,20 @@ class BancoApp extends StatelessWidget {
         if (kDebugMode && sl.isRegistered<DebugNetworkConfig>()) {
           return DebugPanelOverlay(
             config: sl<DebugNetworkConfig>(),
+            ratesConfig:
+                sl.isRegistered<DebugNetworkConfig>(
+                  instanceName: ratesConfigName,
+                )
+                ? sl<DebugNetworkConfig>(instanceName: ratesConfigName)
+                : null,
+            telemetry: sl.isRegistered<Telemetry>() ? sl<Telemetry>() : null,
             cache: sl.isRegistered<CacheStore>() ? sl<CacheStore>() : null,
             child: content,
           );
         }
         return content;
       },
+      navigatorObservers: [ScreenViewObserver()],
       initialRoute: AppRoutes.gate,
       routes: {
         AppRoutes.gate: (context) => SessionGate(
@@ -50,14 +61,18 @@ class BancoApp extends StatelessWidget {
           ),
         ),
         AppRoutes.login: (context) => LoginPage(
-          onAuthenticated: () =>
-              Navigator.of(context).pushReplacementNamed(AppRoutes.welcome),
+          onAuthenticated: () {
+            trackEvent('login_success');
+            Navigator.of(context).pushReplacementNamed(AppRoutes.welcome);
+          },
           onGoToRegister: () =>
               Navigator.of(context).pushReplacementNamed(AppRoutes.register),
         ),
         AppRoutes.register: (context) => RegisterPage(
-          onRegistered: () =>
-              Navigator.of(context).pushReplacementNamed(AppRoutes.welcome),
+          onRegistered: () {
+            trackEvent('register_completed');
+            Navigator.of(context).pushReplacementNamed(AppRoutes.welcome);
+          },
           onGoToLogin: () =>
               Navigator.of(context).pushReplacementNamed(AppRoutes.login),
         ),
@@ -66,6 +81,9 @@ class BancoApp extends StatelessWidget {
           getUserProfile: sl<GetUserProfile>(),
           signOut: sl<SignOut>(),
           cache: sl.isRegistered<CacheStore>() ? sl<CacheStore>() : null,
+          notifications: sl.isRegistered<NotificationsController>()
+              ? sl<NotificationsController>()
+              : null,
           onSignedOut: () => Navigator.of(
             context,
           ).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false),
