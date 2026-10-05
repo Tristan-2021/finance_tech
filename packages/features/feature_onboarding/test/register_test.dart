@@ -5,7 +5,6 @@ import 'package:core_ui/core_ui.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
 import 'package:feature_onboarding/src/data/sign_up_metadata.dart';
 import 'package:feature_onboarding/src/domain/auth_repository.dart';
-import 'package:feature_onboarding/src/domain/sign_up.dart';
 import 'package:feature_onboarding/src/domain/sign_up_params.dart';
 import 'package:feature_onboarding/src/presentation/onboarding_strings.dart';
 import 'package:feature_onboarding/src/presentation/register/register_cubit.dart';
