@@ -178,6 +178,22 @@ melos exec --scope=banco_app -- flutter test --tags integration --reporter expan
   --dart-define=SUPABASE_ANON_KEY=<publishable-key>
 ```
 
+### Prueba E2E en dispositivo (login -> saldo -> movimientos)
+
+`integration_test/login_balance_test.dart` recorre el flujo crítico de punta a
+punta con casos de uso falsos registrados en GetIt: **no necesita backend ni
+`--dart-define`**. Se ejecuta en un dispositivo o emulador y **no corre en el
+CI** (`flutter test` solo ejecuta `test/`):
+
+```bash
+cd packages/app
+flutter test integration_test/login_balance_test.dart -d <id-del-dispositivo>
+```
+
+Comprueba, en orden: pantalla de login, entrar con un usuario, saludo y saldo
+de la cuenta, primera página de movimientos y, al desplazar hasta el final, la
+segunda página.
+
 ## Realtime y reconexión
 
 Realtime usa WebSocket y no pasa por el `RetryClient` de `core_network`; la
