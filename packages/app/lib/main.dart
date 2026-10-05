@@ -1,5 +1,6 @@
 import 'package:core_network/core_network.dart';
 import 'package:core_telemetry/core_telemetry.dart';
+import 'package:feature_notifications/feature_notifications.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
@@ -28,7 +29,18 @@ Future<void> main() async {
   }
 
   await setupDi(config);
+  await _initNotifications();
   runApp(const BancoApp());
+}
+
+/// Crea el canal de Android y engancha los eventos de mensajes antes del login.
+/// Los avisos son una mejora: si algo falla, la app arranca igual.
+Future<void> _initNotifications() async {
+  try {
+    await sl<NotificationsController>().initialize();
+  } catch (_) {
+    // La app funciona sin avisos.
+  }
 }
 
 /// Firebase es una mejora (monitoreo, personalización), no un requisito: si no

@@ -3,6 +3,8 @@ abstract final class DebugStrings {
   static const open = 'Panel de depuración';
   static const title = 'Depuración de red';
   static const close = 'Cerrar panel';
+  static const supabaseService = 'Backend (Supabase)';
+  static const ratesService = 'Tasas de cambio';
   static const offline = 'Sin conexión';
   static const latency = 'Latencia';
   static const noLatency = 'Ninguna';
@@ -11,4 +13,9 @@ abstract final class DebugStrings {
   static const reset = 'Restablecer';
   static const clearCache = 'Borrar caché';
   static const cacheCleared = 'Caché borrada';
+  static const monitoring = 'Monitoreo';
+  static const testEvent = 'Evento de prueba';
+  static const testError = 'Error de prueba';
+  static const eventSent = 'Evento enviado';
+  static const errorSent = 'Error enviado';
 }

@@ -3,19 +3,25 @@ import 'package:core_storage/core_storage.dart';
 import 'package:core_telemetry/core_telemetry.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:feature_accounts/feature_accounts.dart';
+import 'package:feature_notifications/feature_notifications.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
 import 'app_strings.dart';
 import 'home_shell.dart';
+import 'shell_telemetry.dart';
 
 /// Ruta de entrada tras autenticarse. Lee el perfil (feature_onboarding) y,
-/// con el nombre y el segmento, muestra la pantalla de cuentas
-/// (feature_accounts): el shell es el único que conoce a los dos features.
+/// con el nombre y el segmento, muestra las pestañas Inicio y Cuenta: el shell
+/// es el único que conoce a los features.
 ///
 /// Si hay [cache], antes de cargar nada la asocia al usuario actual (descarta
 /// la de otro usuario) y la limpia al cerrar sesión.
+///
+/// Si hay [notifications], tras cargar el perfil muestra el pre-aviso
+/// ([prePrompt]) y, si el usuario acepta, las inicia; al cerrar sesión las
+/// detiene **antes** de cerrar la sesión.
 ///
 /// Mientras llega el perfil, o si falla, ofrece carga, reintento y cierre de
 /// sesión.
@@ -24,6 +30,8 @@ class WelcomePage extends StatefulWidget {
   final GetUserProfile getUserProfile;
   final SignOut signOut;
   final CacheStore? cache;
+  final NotificationsController? notifications;
+  final Future<bool> Function(BuildContext context) prePrompt;
   final VoidCallback onSignedOut;
 
   const WelcomePage({
@@ -33,6 +41,8 @@ class WelcomePage extends StatefulWidget {
     required this.signOut,
     required this.onSignedOut,
     this.cache,
+    this.notifications,
+    this.prePrompt = showNotificationsPrePrompt,
   });
 
   @override
@@ -48,10 +58,13 @@ class _WelcomePageState extends State<WelcomePage> {
   String? _signOutError;
 
   final _shell = ShellNavigator();
+  bool _notificationsAsked = false;
+  bool _notificationsStarted = false;
 
   @override
   void initState() {
     super.initState();
+    _shell.addListener(_onTabChanged);
     _load();
   }
 
@@ -60,6 +73,10 @@ class _WelcomePageState extends State<WelcomePage> {
     _shell.dispose();
     super.dispose();
   }
+
+  void _onTabChanged() => trackEvent('screen_viewed', {
+    'screen': _shell.tab == ShellTab.home ? 'home' : 'accounts',
+  });
 
   /// La caché se asocia al usuario ANTES de pedir datos: así nada se guarda ni
   /// se sirve bajo otro dueño.
@@ -80,8 +97,15 @@ class _WelcomePageState extends State<WelcomePage> {
     final result = await widget.getUserProfile();
     if (!mounted) return;
     final profile = result.profile;
-    if (profile != null && GetIt.instance.isRegistered<Telemetry>()) {
-      GetIt.instance<Telemetry>().setSegment(profile.segment);
+    if (profile != null) {
+      if (GetIt.instance.isRegistered<Telemetry>()) {
+        GetIt.instance<Telemetry>().setSegment(profile.segment);
+      }
+      trackEvent('screen_viewed', {'screen': 'home'});
+      // El pre-aviso es un diálogo: se muestra con la pantalla ya dibujada.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _startNotifications(),
+      );
     }
     setState(() {
       _loading = false;
@@ -90,6 +114,17 @@ class _WelcomePageState extends State<WelcomePage> {
           ? null
           : messageForFailure(result.failure ?? const Failure('', 'unknown'));
     });
+  }
+
+  /// Una vez por sesión: pre-aviso y, si acepta, permiso y registro del token.
+  Future<void> _startNotifications() async {
+    final notifications = widget.notifications;
+    if (notifications == null || _notificationsAsked || !mounted) return;
+    _notificationsAsked = true;
+    final accepted = await widget.prePrompt(context);
+    if (!accepted || !mounted) return;
+    _notificationsStarted = true;
+    await notifications.start(onOpenAccounts: _shell.openAccounts);
   }
 
   void _retry() {
@@ -106,6 +141,16 @@ class _WelcomePageState extends State<WelcomePage> {
       _signingOut = true;
       _signOutError = null;
     });
+
+    // Antes de cerrar la sesión: el token del dispositivo se borra del backend
+    // mientras la sesión sigue válida, para que el siguiente usuario del mismo
+    // teléfono no reciba los avisos de este. Un fallo aquí no impide salir.
+    final wasStarted = _notificationsStarted;
+    _notificationsStarted = false;
+    try {
+      await widget.notifications?.stop();
+    } catch (_) {}
+
     final failure = await widget.signOut();
     if (!mounted) return;
     if (failure != null) {
@@ -119,8 +164,14 @@ class _WelcomePageState extends State<WelcomePage> {
           SnackBar(content: Text(message)),
         );
       }
+      // Sigue con la sesión abierta: se vuelven a activar los avisos.
+      if (wasStarted) {
+        _notificationsStarted = true;
+        widget.notifications?.start(onOpenAccounts: _shell.openAccounts);
+      }
       return;
     }
+    trackEvent('sign_out');
     try {
       await widget.cache?.clear();
     } catch (_) {
