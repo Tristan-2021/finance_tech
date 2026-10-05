@@ -1,39 +1,64 @@
-<!--
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# feature_accounts
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages).
+Cuentas, saldo y movimientos del cliente, con caché cifrada y modo sin
+conexión, más el registro de un movimiento manual de demostración.
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages).
--->
+## Qué incluye
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+- **Cuentas y saldo:** `AccountsPage` (el shell le pasa nombre, segmento y el
+  cierre de sesión; opcionalmente `extra`, un widget que se dibuja bajo el saldo).
+- **Movimientos:** lista paginada (offset/limit) con pull-to-refresh.
+- **Caché y sin conexión:** *cache-then-network*; si falla la red se sirven los
+  datos guardados con un aviso y la fecha (`StaleList`).
+- **Registrar movimiento:** botón en la pantalla de cuentas que abre un
+  formulario.
 
-## Features
+Registro en el contenedor: `registerAccountsDependencies(GetIt)` (asume un
+`SupabaseClient`; usa `CacheStore`, `Telemetry` y los demás extras solo si están
+registrados).
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+## Registrar movimiento (demostración)
 
-## Getting started
+En un banco real los movimientos los genera el núcleo bancario, no el cliente.
+Esta función es un **sustituto declarado** para poder demostrar el flujo
+acción → saldo → push → resumen, y así se rotula en la interfaz ("Gasto manual
+(demostración)"). Los movimientos son **inmutables**: no hay editar ni borrar, a
+propósito.
 
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
+- **RPC:** `add_demo_movement(p_account_id, p_type, p_amount, p_category,
+  p_description)`. Valida que la cuenta sea del usuario y rechaza un débito mayor
+  al saldo con `insufficient_funds` ("Saldo insuficiente.").
+- **Dinero sin `double`:** el texto del monto (coma o punto, máx. 2 decimales,
+  mayor que cero, tope 1.000.000,00) se interpreta a centavos con enteros y se
+  envía como **cadena decimal exacta** (`1230` → `"12.30"`).
+- **Formulario:** tipo (gasto o ingreso), monto, categoría de una lista fija
+  (gasto: comida, transporte, ocio, servicios, otros; ingreso: ingreso, otros) y
+  descripción opcional de hasta 80 caracteres (por defecto "Gasto manual" /
+  "Ingreso manual").
+- **Al guardar:** cierra el formulario y refresca el saldo y la primera página de
+  movimientos (lo que también actualiza la caché).
+- **Telemetría:** `movement_added` con `result` (y `code` si falla); nunca
+  importes.
 
-## Usage
+### Prueba contra el backend real
 
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder.
+Las pruebas con falsos no detectan si el RPC acepta la cadena para su parámetro
+`numeric`. Con `supabase start` y el usuario demo creado:
 
-```dart
-const like = 'sample';
+```bash
+cd packages/features/feature_accounts
+flutter test test/movement_rpc_integration_test.dart \
+  --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
+  --dart-define=SUPABASE_ANON_KEY=<la-clave-publicable>
 ```
 
-## Additional information
+Crea un movimiento de 0,01 en la cuenta del usuario demo y comprueba que el
+saldo sube un centavo. Sin los `--dart-define` se omite (el CI no la ejecuta).
 
-TODO: Tell users more about the package: where to find more information, how to
-contribute to the package, how to file issues, what response they can expect
-from the package authors, and more.
+### Recortes
+
+- **Sin conexión no se puede registrar:** falla con un mensaje claro. No hay cola
+  de envíos pendientes (fuera de alcance).
+- Las categorías son una lista fija en el cliente, no se leen del backend.
+- La escritura va en `MovementWriteRepository`, una interfaz aparte de
+  `TransactionRepository`, para no ampliar la de lectura.
