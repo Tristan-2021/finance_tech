@@ -6,12 +6,13 @@ import 'package:banco_app/di.dart';
 import 'package:core_errors/core_errors.dart';
 import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:feature_accounts/feature_accounts.dart';
 import 'package:feature_onboarding/feature_onboarding.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-// Casos de uso falsos: se implementan (no se heredan) para no necesitar el
-// AuthRepository, que el barril de feature_onboarding no exporta.
+// Casos de uso falsos: se implementan (no se heredan) para no necesitar los
+// repositorios, que los barriles de los features no exportan.
 class FakeGetCurrentUser implements GetCurrentUser {
   AuthUser? Function() impl;
   int calls = 0;
@@ -67,9 +68,10 @@ class FakeSignOut implements SignOut {
 typedef ProfileResult = ({UserProfile? profile, Failure? failure});
 
 class FakeGetUserProfile implements GetUserProfile {
-  Future<ProfileResult> Function() impl = () async =>
-      (profile: const UserProfile(fullName: 'Ana Pérez', segment: 'joven'),
-       failure: null);
+  Future<ProfileResult> Function() impl = () async => (
+    profile: const UserProfile(fullName: 'Ana Pérez', segment: 'joven'),
+    failure: null,
+  );
   int calls = 0;
 
   @override
@@ -77,6 +79,26 @@ class FakeGetUserProfile implements GetUserProfile {
     calls++;
     return impl();
   }
+}
+
+typedef AccountsResult = ({List<Account>? accounts, Failure? failure});
+
+class FakeGetAccounts implements GetAccounts {
+  Future<AccountsResult> Function() impl = () async => (
+    accounts: const [
+      Account(
+        id: 'a1',
+        name: 'Cuenta de ahorros',
+        type: 'savings',
+        currency: 'USD',
+        balanceCents: 50000,
+      ),
+    ],
+    failure: null,
+  );
+
+  @override
+  Future<AccountsResult> call() => impl();
 }
 
 const user = AuthUser(id: 'u1', email: 'a@b.com');
@@ -90,11 +112,20 @@ Future<void> pumpApp(WidgetTester tester) async {
   await tester.pumpWidget(const BancoApp());
   await tester.pump(); // la puerta resuelve y navega
   await tester.pump(const Duration(seconds: 1)); // transición de ruta
+  await tester.pump(); // perfil y cuentas cargados
 }
 
 Future<void> settle(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(seconds: 1));
+  await tester.pump();
+}
+
+Future<void> signOutFromMenu(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Menú'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Cerrar sesión'));
+  await tester.pump();
 }
 
 NavigatorState navigator(WidgetTester tester) =>
@@ -106,36 +137,40 @@ void main() {
   late FakeSignUp signUp;
   late FakeSignOut signOut;
   late FakeGetUserProfile getUserProfile;
+  late FakeGetAccounts getAccounts;
 
   setUp(() async {
     await sl.reset();
     registerOnboardingDependencies(sl);
+    registerAccountsDependencies(sl);
     getCurrentUser = FakeGetCurrentUser(() => null);
     signIn = FakeSignIn();
     signUp = FakeSignUp();
     signOut = FakeSignOut();
     getUserProfile = FakeGetUserProfile();
+    getAccounts = FakeGetAccounts();
     useFake<GetCurrentUser>(getCurrentUser);
     useFake<SignIn>(signIn);
     useFake<SignUp>(signUp);
     useFake<SignOut>(signOut);
     useFake<GetUserProfile>(getUserProfile);
+    useFake<GetAccounts>(getAccounts);
   });
 
   tearDown(() async => sl.reset());
 
   group('SessionGate', () {
-    testWidgets('con usuario -> pantalla provisional', (tester) async {
+    testWidgets('con usuario -> pantalla de cuentas', (tester) async {
       getCurrentUser.impl = () => user;
       await pumpApp(tester);
-      expect(find.text('Tus cuentas aparecerán aquí'), findsOneWidget);
+      expect(find.text('Hola, Ana Pérez'), findsOneWidget);
       expect(find.text('Inicia sesión'), findsNothing);
     });
 
     testWidgets('sin usuario -> login', (tester) async {
       await pumpApp(tester);
       expect(find.text('Inicia sesión'), findsOneWidget);
-      expect(find.text('Tus cuentas aparecerán aquí'), findsNothing);
+      expect(find.text('Hola, Ana Pérez'), findsNothing);
     });
 
     testWidgets('muestra LoadingView mientras consulta', (tester) async {
@@ -163,7 +198,7 @@ void main() {
 
       expect(getCurrentUser.calls, 2);
       expect(find.byType(ErrorView), findsNothing);
-      expect(find.text('Tus cuentas aparecerán aquí'), findsOneWidget);
+      expect(find.text('Hola, Ana Pérez'), findsOneWidget);
     });
 
     testWidgets('la puerta se reemplaza: no hay ruta a la que volver', (
@@ -175,7 +210,7 @@ void main() {
   });
 
   group('flujo de sesión', () {
-    testWidgets('login exitoso -> pantalla provisional sin poder volver', (
+    testWidgets('login exitoso -> pantalla de cuentas sin poder volver', (
       tester,
     ) async {
       await pumpApp(tester);
@@ -186,7 +221,7 @@ void main() {
       await settle(tester);
 
       expect(signIn.received, (email: 'a@b.com', password: 'secret123'));
-      expect(find.text('Tus cuentas aparecerán aquí'), findsOneWidget);
+      expect(find.text('Hola, Ana Pérez'), findsOneWidget);
       expect(find.text('Inicia sesión'), findsNothing);
       expect(navigator(tester).canPop(), isFalse);
     });
@@ -203,20 +238,19 @@ void main() {
       await tester.pump();
 
       expect(find.text('Correo o contraseña incorrectos.'), findsOneWidget);
-      expect(find.text('Tus cuentas aparecerán aquí'), findsNothing);
+      expect(find.text('Hola, Ana Pérez'), findsNothing);
     });
 
     testWidgets('cerrar sesión -> login sin poder volver', (tester) async {
       getCurrentUser.impl = () => user;
       await pumpApp(tester);
 
-      await tester.tap(find.text('Cerrar sesión'));
-      await tester.pump();
+      await signOutFromMenu(tester);
       await settle(tester);
 
       expect(signOut.calls, 1);
       expect(find.text('Inicia sesión'), findsOneWidget);
-      expect(find.text('Tus cuentas aparecerán aquí'), findsNothing);
+      expect(find.text('Hola, Ana Pérez'), findsNothing);
       expect(navigator(tester).canPop(), isFalse);
     });
 
@@ -227,15 +261,14 @@ void main() {
       signOut.failure = const Failure('técnico', 'network');
       await pumpApp(tester);
 
-      await tester.tap(find.text('Cerrar sesión'));
-      await tester.pump();
+      await signOutFromMenu(tester);
       await tester.pump();
 
       expect(
         find.text('Sin conexión. Revisa tu internet e inténtalo de nuevo.'),
         findsOneWidget,
       );
-      expect(find.text('Tus cuentas aparecerán aquí'), findsOneWidget);
+      expect(find.text('Hola, Ana Pérez'), findsOneWidget);
     });
   });
 
@@ -313,14 +346,16 @@ void main() {
     });
   });
 
-  group('pantalla provisional: perfil', () {
+  group('pantalla de cuentas: composición con el perfil', () {
     setUp(() => getCurrentUser.impl = () => user);
 
-    testWidgets('saludo y segmento joven', (tester) async {
+    testWidgets('saludo, segmento joven y saldo de la cuenta', (tester) async {
       await pumpApp(tester);
       expect(find.text('Hola, Ana Pérez'), findsOneWidget);
       expect(find.text('Segmento: joven'), findsOneWidget);
       expect(find.byType(Chip), findsOneWidget);
+      expect(find.text('Cuenta de ahorros'), findsOneWidget);
+      expect(find.text('\$500.00'), findsOneWidget);
     });
 
     testWidgets('segmento adulto', (tester) async {
@@ -345,6 +380,7 @@ void main() {
         profile: const UserProfile(fullName: 'Ana Pérez', segment: 'joven'),
         failure: null,
       ));
+      await tester.pump();
       await tester.pump();
       expect(find.byType(LoadingView), findsNothing);
       expect(find.text('Hola, Ana Pérez'), findsOneWidget);
@@ -374,6 +410,7 @@ void main() {
       expect(find.text('técnico'), findsNothing);
 
       await tester.tap(find.text('Reintentar'));
+      await tester.pump();
       await tester.pump();
       await tester.pump();
 
@@ -433,7 +470,7 @@ void main() {
   });
 
   group('registerDependencies', () {
-    test('registra el SupabaseClient y todo lo de onboarding', () async {
+    test('registra el SupabaseClient y todo lo de los features', () async {
       await sl.reset();
       // Cliente real con URL y clave de mentira: no abre red si no se usa.
       final client = SupabaseClient('https://example.test', 'test-key');
@@ -447,6 +484,9 @@ void main() {
       expect(sl<SignUp>(), isA<SignUp>());
       expect(sl<SignOut>(), isA<SignOut>());
       expect(sl<GetUserProfile>(), isA<GetUserProfile>());
+      expect(sl<GetAccounts>(), isA<GetAccounts>());
+      expect(sl<GetBalance>(), isA<GetBalance>());
+      expect(sl<GetTransactions>(), isA<GetTransactions>());
     });
   });
 }
