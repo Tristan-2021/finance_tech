@@ -76,7 +76,7 @@ void main() {
       expect(find.text('pantalla inicio'), findsOneWidget);
     });
 
-    testWidgets('cambiar de pestaña conserva el estado de cada una', (
+    testWidgets('Cuenta conserva su estado; Inicio se recarga al volver', (
       tester,
     ) async {
       await pumpShell(tester);
@@ -85,7 +85,9 @@ void main() {
       await tester.tap(find.text('Inicio'));
       await tester.pump();
 
-      expect(created, ['pantalla inicio', 'pantalla cuenta']);
+      // Cuenta no se recreó; Inicio sí, para reflejar lo hecho en Cuenta
+      // (p. ej. el resumen de gastos tras registrar un movimiento).
+      expect(created, ['pantalla inicio', 'pantalla cuenta', 'pantalla inicio']);
     });
 
     testWidgets('openAccounts va a Cuenta y la recarga', (tester) async {
@@ -96,6 +98,7 @@ void main() {
       expect(navigator.tab, ShellTab.accounts);
       expect(find.text('pantalla cuenta'), findsOneWidget);
       // La pestaña Cuenta se recreó (así recarga el saldo); Inicio no.
+      // (Inicio solo se recarga al volver a ella desde otra pestaña.)
       expect(created, ['pantalla inicio', 'pantalla cuenta', 'pantalla cuenta']);
     });
   });

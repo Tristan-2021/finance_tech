@@ -1,255 +1,261 @@
 # banco_app
 
-Shell de la app (`packages/app`): compone los features y decide qué pantalla se
-ve. Hoy muestra el flujo de **registro, login, pantalla provisional con nombre
-y segmento, y cierre de sesión**. La pantalla provisional (`lib/welcome_page.dart`)
-la reemplazará la pantalla de cuentas.
+Shell de la app (`packages/app`): compone todos los features, decide qué pantalla
+se ve y es el **único** lugar que conoce a varios features. Recorre el flujo
+completo: registro, login, **Inicio** (home personalizado por segmento con
+Remote Config), **Cuenta** (saldo, movimientos, registrar un movimiento),
+conversor de remesas, notificaciones push, caché sin conexión y monitoreo con
+Firebase.
 
 ```
 lib/
-  main.dart             Lee la configuración e inicia la app (o muestra el error)
-  di.dart               Raíz de composición (GetIt): SupabaseClient + features
-  app.dart              MaterialApp, temas, localización y rutas
-  session_gate.dart     Decide login o pantalla provisional según la sesión
-  welcome_page.dart     Pantalla provisional (saludo, segmento, cerrar sesión)
-  config_error_app.dart Se muestra si faltan los --dart-define
+  main.dart             Firebase, telemetría, configuración y arranque
+  di.dart               Raíz de composición (GetIt): clientes HTTP y features
+  app.dart              MaterialApp, temas, rutas y panel de depuración
+  session_gate.dart     Decide login o pantallas según la sesión
+  welcome_page.dart     Perfil, pestañas, avisos push y cierre de sesión
+  home_shell.dart       Barra inferior (Inicio / Cuenta) y bloque exchange_rate
+  shell_telemetry.dart  Eventos del shell (sin datos personales)
+  debug/                Panel de depuración (solo en debug)
+integration_test/       E2E contra el backend real (no entra al CI)
 ```
 
 ## 1. Configuración: `--dart-define`
 
 La URL y la clave **no están en el repo**; se pasan al ejecutar. Sin ellas la
-app no se cae: muestra la pantalla "Falta configurar la app" con los nombres
-esperados.
+app no se cae: muestra "Falta configurar la app" con los nombres esperados.
 
 | Define              | Valor |
 | ------------------- | ----- |
 | `SUPABASE_URL`      | URL del backend (ver cada plataforma abajo) |
 | `SUPABASE_ANON_KEY` | La clave **publicable** del backend local. El nombre del define es el antiguo; el valor es la *publishable key* |
+| `TELEMETRY_DEBUG`   | Opcional. `true` activa Analytics/Crashlytics/Performance también en debug |
 
-Nunca uses la `service_role` ni la secret key en la app.
+Nunca uses la `service_role` ni la secret key en la app. La clave sale de
+`supabase status` en el proyecto del backend.
 
-**Obtener la clave publicable:** en el proyecto del backend, con Supabase
-levantado:
-
-```bash
-supabase status
-```
-
-Copia el valor de la clave publicable (en versiones anteriores del CLI aparece
-como `anon key`).
-
-## 2. Levantar el backend (lo haces tú, en el repo del backend)
+## 2. Levantar el backend (en el repo del backend)
 
 ```bash
 supabase start                      # API en http://127.0.0.1:54421
 ./scripts/create_demo_users.sh      # joven@demo.com y adulto@demo.com
-./scripts/seed_demo_movements.sh    # opcional: movimientos de ejemplo
+./scripts/seed_demo_movements.sh    # movimientos de ejemplo en 2 meses
+supabase functions serve            # Edge Functions (push al crear un movimiento)
 ```
 
-Usuarios demo (contraseña `demo1234`):
+Usuarios demo (contraseña `demo1234`): `joven@demo.com` (segmento `joven`) y
+`adulto@demo.com` (segmento `adulto`). `supabase db reset` borra los usuarios:
+vuelve a correr `create_demo_users.sh`.
 
-| Correo            | Segmento esperado |
-| ----------------- | ----------------- |
-| `joven@demo.com`  | `joven`  (24 años) |
-| `adulto@demo.com` | `adulto` (41 años) |
+## 3. Ejecutar en un Android físico
 
-`supabase db reset` borra los usuarios: vuelve a correr `create_demo_users.sh`.
-
-## 3. Caso principal: dispositivo Android físico
-
-El backend corre en tu Mac en `http://127.0.0.1:54421`. Desde el teléfono,
-`127.0.0.1` es el propio teléfono, no el Mac. La forma soportada es
-`adb reverse`: el teléfono llega al backend como `http://127.0.0.1:54421`, sin
-depender de la red ni del firewall.
+El backend corre en tu Mac; desde el teléfono, `127.0.0.1` es el propio
+teléfono. Se usa `adb reverse`:
 
 ```bash
-# 1. El teléfono debe aparecer como "device" (no "unauthorized" ni vacío)
-adb devices
-
-# 2. Redirige el puerto del teléfono al de tu Mac
-adb reverse tcp:54421 tcp:54421
-
-# 3. Comprueba la redirección (debe listar tcp:54421 tcp:54421)
-adb reverse --list
-
-# 4. Obtén el id del dispositivo y ejecuta
-flutter devices
+adb devices                          # debe aparecer como "device"
+adb reverse tcp:54421 tcp:54421      # se pierde al desconectar el cable
+flutter devices                      # apunta el id del dispositivo
 cd packages/app
 flutter run -d <id-del-dispositivo> \
   --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
   --dart-define=SUPABASE_ANON_KEY=<publishable-key>
 ```
 
-> `adb reverse` **se pierde** al desconectar el cable o reiniciar el teléfono.
-> Si la app deja de conectar, repite el paso 2.
+Alternativa sin `adb reverse`: usa la IP del Mac en el mismo Wi-Fi
+(`ipconfig getifaddr en0`) como `SUPABASE_URL` y permite el puerto 54421 en el
+firewall.
 
-### Alternativa: IP de la red local del Mac
+| Otra plataforma  | `SUPABASE_URL`           |
+| ---------------- | ------------------------ |
+| Emulador Android | `http://10.0.2.2:54421`  |
+| Simulador iOS    | `http://127.0.0.1:54421` |
+| macOS            | `http://127.0.0.1:54421` |
 
-Si no puedes usar `adb reverse`:
+### Tráfico http solo en desarrollo
 
-```bash
-ipconfig getifaddr en0     # IP del Mac en el Wi-Fi, p. ej. 192.168.1.20
-flutter run -d <id> \
-  --dart-define=SUPABASE_URL=http://<IP-del-Mac>:54421 \
-  --dart-define=SUPABASE_ANON_KEY=<publishable-key>
-```
+`android:usesCleartextTraffic="true"` está **solo** en
+`android/app/src/debug/AndroidManifest.xml`; el manifest `main` (release) solo
+declara `INTERNET`, `POST_NOTIFICATIONS` y el canal de notificaciones.
 
-El teléfono y el Mac deben estar en el **mismo Wi-Fi**, y el firewall del Mac
-debe permitir conexiones entrantes al puerto 54421.
-
-## 4. Otras plataformas
-
-| Plataforma         | `SUPABASE_URL`                     |
-| ------------------ | ---------------------------------- |
-| Emulador Android   | `http://10.0.2.2:54421`            |
-| Simulador iOS      | `http://127.0.0.1:54421`           |
-| macOS              | `http://127.0.0.1:54421`           |
-
-```bash
-cd packages/app
-flutter run -d <emulador|simulador|macos> \
-  --dart-define=SUPABASE_URL=<url-de-la-tabla> \
-  --dart-define=SUPABASE_ANON_KEY=<publishable-key>
-```
-
-En macOS la app necesita el permiso de red saliente
-(`com.apple.security.network.client`), que ya está en
-`macos/Runner/DebugProfile.entitlements` y `Release.entitlements`.
-
-## 5. Qué deberías ver
-
-1. **Sin `--dart-define`:** la pantalla "Falta configurar la app" con los
-   nombres `SUPABASE_URL` y `SUPABASE_ANON_KEY`.
-2. **Primer arranque sin sesión:** un instante de carga y luego el **login**
-   ("Inicia sesión").
-3. **Login con `joven@demo.com`:** pantalla con "Hola, <nombre>", el chip
-   "Segmento: joven" y "Tus cuentas aparecerán aquí".
-4. **Login con `adulto@demo.com`:** igual, con "Segmento: adulto".
-5. **Contraseña incorrecta:** el mensaje "Correo o contraseña incorrectos." sin
-   vaciar los campos.
-6. **Cerrar sesión:** vuelve al login; el botón de retroceso no regresa a la
-   pantalla anterior.
-7. **Crear cuenta:** registro en 3 pasos (correo y contraseña de 8 o más
-   caracteres; nombre y fecha de nacimiento, **mayor de 18 años**; uso de la
-   cuenta). Al terminar entra a la pantalla con tu nombre y el segmento que
-   calcula el backend según tu edad (18 a 29 = `joven`, 30 o más = `adulto`).
-8. **Relanzar la app con la sesión abierta:** entra directo a la pantalla
-   provisional, sin pasar por el login.
-9. **Tema oscuro y texto del sistema al máximo:** todo debe seguir legible y sin
-   desbordes.
-
-## 6. Problemas frecuentes
+### Problemas frecuentes
 
 | Síntoma | Causa probable |
 | ------- | -------------- |
-| "Falta configurar la app" | Faltan `SUPABASE_URL` o `SUPABASE_ANON_KEY` en `flutter run` |
-| Error de red / "Sin conexión" en Android físico | Se perdió `adb reverse`; repite `adb reverse tcp:54421 tcp:54421` |
-| El login falla con usuarios demo | Backend apagado, o se hizo `supabase db reset` sin recrear los usuarios |
-| "Correo o contraseña incorrectos." con credenciales correctas | Usuario inexistente en este backend; corre `create_demo_users.sh` |
-| `adb devices` no lista el teléfono | Depuración USB desactivada o sin autorizar el equipo |
+| "Falta configurar la app" | Faltan `SUPABASE_URL` o `SUPABASE_ANON_KEY` |
+| "Sin conexión" en Android físico | Se perdió `adb reverse`; repite el comando |
+| El login falla con los usuarios demo | Backend apagado o `supabase db reset` sin recrear los usuarios |
+| No llega la notificación | Falta la clave de FCM en el backend (modo prueba solo registra el mensaje) o no se aceptó el permiso |
 
-## 7. Tráfico http solo en desarrollo
+## 4. Firebase (monitoreo)
 
-El backend local usa http, no https:
-
-- **Android:** `android:usesCleartextTraffic="true"` está **solo** en
-  `android/app/src/debug/AndroidManifest.xml`. El manifest `main` (el de
-  release) solo declara el permiso `INTERNET`, sin tráfico no cifrado.
-- **iOS:** por defecto no se necesita nada. Si el simulador bloquea la
-  conexión, añade `NSAllowsLocalNetworking` en `NSAppTransportSecurity` solo
-  para debug y no en el `Info.plist` de release.
-
-## 8. Pruebas
-
-Desde la raíz del repo, igual que el CI:
+Proyecto `banco-demo-05487`. Para ver los eventos en `DebugView`:
 
 ```bash
-melos exec -- flutter analyze
-melos exec --scope=banco_app -- flutter test --reporter expanded --exclude-tags integration
-```
-
-Las pruebas de widgets usan casos de uso falsos registrados en GetIt: no
-necesitan backend. La prueba de integración
-(`test/integration/demo_users_test.dart`) sí lo necesita y **no corre en el CI**:
-
-```bash
-melos exec --scope=banco_app -- flutter test --tags integration --reporter expanded \
+adb shell setprop debug.firebase.analytics.app com.bancointernacional.banco_app
+flutter run -d <id> --dart-define=TELEMETRY_DEBUG=true \
   --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
   --dart-define=SUPABASE_ANON_KEY=<publishable-key>
 ```
 
-### Prueba E2E en dispositivo (login -> saldo -> movimientos)
+Eventos del shell: `app_opened`, `login_success`, `register_completed`,
+`sign_out` y `screen_viewed` (con `screen`). Un filtro de privacidad deja pasar
+solo una lista cerrada de parámetros (nunca correos, nombres ni importes).
 
-`integration_test/login_balance_test.dart` recorre el flujo crítico de punta a
-punta con casos de uso falsos registrados en GetIt: **no necesita backend ni
-`--dart-define`**. Se ejecuta en un dispositivo o emulador y **no corre en el
-CI** (`flutter test` solo ejecuta `test/`):
+## 5. Pruebas
+
+Desde la raíz, igual que el CI:
 
 ```bash
-cd packages/app
-flutter test integration_test/login_balance_test.dart -d <id-del-dispositivo>
+melos exec -- flutter analyze
+melos exec --diff=HEAD~1 --include-dependents --dir-exists=test -- flutter test --exclude-tags integration
 ```
 
-Comprueba, en orden: pantalla de login, entrar con un usuario, saludo y saldo
-de la cuenta, primera página de movimientos y, al desplazar hasta el final, la
-segunda página.
+La segunda corre solo lo que cambió y lo que depende de ello; para todo,
+`melos run test`. Las pruebas de widgets usan casos de uso falsos: no necesitan
+backend ni red.
 
-## Demostración de conectividad (guion para el video)
+### E2E del flujo crítico (dispositivo, backend real, fuera del CI)
 
-La app guarda una copia cifrada de las cuentas y de la **primera página** de
-movimientos (patrón *cache-then-network*) y, solo en **depuración**, trae un
-panel que inyecta fallos de red. En **release** el panel y la inyección no se
-crean ni se muestran.
+`integration_test/critical_flow_test.dart` es **una sola prueba** que recorre:
+login con `joven@demo.com` → home personalizado → pestaña Cuenta con saldo y
+movimientos reales → modo sin conexión (por código, con `DebugNetworkConfig`) y
+refrescar → aviso de **datos guardados con su fecha** → vuelve la conectividad →
+los datos **se recuperan solos** → cerrar sesión.
 
-**Panel de depuración:** botón discreto con un ícono de bicho, abajo a la
-derecha. Permite activar *Sin conexión*, elegir *Latencia* (ninguna, 1, 3 u 8 s),
-fijar el porcentaje de *Fallos 503*, *Restablecer* y *Borrar caché*.
+```bash
+adb reverse tcp:54421 tcp:54421
+cd packages/app
+flutter test integration_test/critical_flow_test.dart -d <id-del-dispositivo> \
+  --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
+  --dart-define=SUPABASE_ANON_KEY=<publishable-key>
+```
 
-Guion paso a paso (backend corriendo, entrar con `joven@demo.com`):
+Necesita `supabase start` y los usuarios demo. `integration_test/login_balance_test.dart`
+es la variante con casos de uso falsos (sin backend).
 
-1. **Con red.** Inicia sesión: se ven el saldo y los movimientos reales. Esa
-   carga deja una copia guardada.
-2. **Sin conexión → datos guardados.** Abre el panel y activa *Sin conexión*.
-   Desliza hacia abajo (pull-to-refresh) o pulsa *Reintentar* en el aviso:
-   aparece brevemente *Reintentando…* mientras `RetryClient` reintenta y luego
-   el aviso **«Mostrando datos guardados el {fecha}»**; el saldo y los
-   movimientos siguen visibles.
-3. **Latencia alta → estado de carga.** Pon *Latencia* en 8 s, cierra sesión y
-   vuelve a entrar: durante 8 s se ve el estado de carga.
-4. **503 intermitentes → reintentos y recuperación.** Desactiva *Sin conexión*,
-   deja la latencia en *Ninguna* y sube *Fallos 503* al 50 %. Refresca varias
-   veces: se ve *Reintentando…* y, cuando una petición pasa, los datos se
-   actualizan solos.
-5. **Restablecer → datos frescos.** Pulsa *Restablecer* y refresca: el aviso de
-   datos guardados desaparece y vuelven los datos del servidor, sin tocar nada
-   más.
-6. **Sin copia y sin red.** Activa *Sin conexión*, pulsa *Borrar caché*, cierra
-   sesión, vuelve a entrar con red y repite la carga sin conexión: sin copia no
-   hay datos que mostrar y aparece el error con *Reintentar*.
+## 6. Colaborar
 
-Dos comprobaciones extra:
+### Trunk Based Development
 
-- **Conectividad real.** Con datos guardados en pantalla, activa y desactiva el
-  modo avión del dispositivo: al volver la red la pantalla se refresca sola
-  (`connectivity_plus` solo avisa de la interfaz de red; la verdad la dan las
-  peticiones).
-- **Aislamiento entre usuarios.** Cierra sesión (limpia la caché) y entra con
-  `adulto@demo.com`: no se ve ningún dato de `joven@demo.com`, ni sin conexión.
+- Se parte siempre de `main` actualizado (`git pull origin main`).
+- **Una pieza pequeña por rama corta** `feat/<paquete>-<qué>`, con 1 o 2 commits,
+  push, **merge a `main` con `--no-ff` el mismo día** y rama borrada (local y
+  remota). Nada de `develop`, `release` ni ramas de más de 24 horas.
+- Cada merge deja `analyze` y `test` en verde, en local y en GitHub Actions. Si
+  el CI está rojo no se abre la siguiente rama.
+- Commits y merges **en inglés**, modo imperativo, minúsculas tras el tipo:
+  `feat(feature_exchange): add exchange card`, `test(app): ...`,
+  `fix(app): ...`, `docs(repo): ...`, `merge(<paquete>): ...`.
+
+### Crear un paquete nuevo
+
+1. Crea la carpeta bajo `packages/core/` o `packages/features/` con su
+   `pubspec.yaml` (`resolution: workspace`, el mismo SDK que los demás) y su
+   `analysis_options.yaml`.
+2. Regístralo en `workspace:` del `pubspec.yaml` raíz.
+3. Dependencias internas por nombre, sin `path:`. Un feature depende solo de
+   paquetes `core_*`, nunca de otro feature.
+4. `melos bootstrap`, y expón solo lo público en el barril `lib/<paquete>.dart`.
+
+### Reglas de arquitectura
+
+Un feature nunca depende de otro; el shell los une. Ningún widget ni Cubit
+importa `supabase_flutter` (solo la capa de datos, con los tipos que reexporta
+`core_network`). Dominio sin Flutter ni plugins. **Dinero en centavos `int`,
+nunca `double`.** Textos en español en un archivo del paquete. Nada de URLs ni
+claves hardcodeadas.
+
+### Quién es dueño de qué
+
+| Paquete | Frente |
+| ------- | ------ |
+| `core_errors`, `core_network`, `core_storage`, `core_ui` | Base (red, caché, tema) |
+| `feature_onboarding`, `feature_accounts` | Base; el registro de movimientos es del frente D |
+| `core_telemetry`, `feature_personalization` | Frente A (Firebase y Remote Config) |
+| `feature_notifications` | Frente B (push) |
+| `feature_exchange` | Frente C (tasas de cambio) |
+| `packages/app` | Frente E (integración, E2E y guion) |
+
+## 7. Guion de demostración (video)
+
+Backend corriendo, `adb reverse` activo y la app lanzada con
+`TELEMETRY_DEBUG=true`. Mantén abiertas la consola de Firebase (Remote Config,
+Analytics `DebugView`, Crashlytics) y el panel de depuración (ícono de bicho,
+abajo a la derecha, sobre la barra de pestañas).
+
+1. **Registro.** "Crear cuenta": correo y contraseña, nombre y fecha de
+   nacimiento (mayor de 18; 18–29 años = `joven`, 30 o más = `adulto`) y uso de la
+   cuenta. Entra con su nombre y el segmento que calcula el backend. Acepta el
+   pre-aviso "Te avisaremos de tus movimientos" y el permiso del sistema.
+2. **Login.** Cierra sesión (menú de **Cuenta**) y entra con `joven@demo.com`.
+3. **Home personalizado.** En **Inicio**, los bloques del segmento `joven`
+   (promoción, resumen de gastos, consejo). Cierra sesión y entra con
+   `adulto@demo.com`: otros bloques y orden (resumen, tipo de cambio, consejo).
+4. **Cambio en vivo en Remote Config.** Con `joven` en **Inicio**, en la consola
+   edita `home_layout` y añade a la lista `joven`:
+   `{"id": "rate_live", "type": "exchange_rate"}` y un
+   `{"id": "tip_demo", "type": "tip", "params": {"text": "Bloque nuevo desde Remote Config"}}`;
+   **Publicar cambios**. Los bloques aparecen **sin reinstalar ni reiniciar**.
+   (El JSON y las reglas están en `packages/features/feature_personalization/README.md`.)
+5. **Conversor con datos reales.** En la tarjeta de remesas escribe `100`: se ve
+   el resultado en dólares, la tasa usada y su **fecha** ("Tasa del … (BCE)"; es
+   una tasa diaria, no en vivo).
+6. **Registrar un movimiento.** Pestaña **Cuenta** → "Registrar movimiento"
+   ("Gasto manual (demostración)"): gasto de `12,30`, categoría comida. Se ve
+   bajar el **saldo** y aparecer en la **lista**; vuelve a **Inicio** y el
+   **resumen de gastos** cambia. Llega la **notificación push** del backend
+   (pruébala con la app abierta, en segundo plano y cerrada); al tocarla la app
+   abre la pestaña **Cuenta** con el saldo actualizado. Con un gasto mayor al
+   saldo se ve "Saldo insuficiente.".
+7. **Conectividad degradada** (panel de depuración, un bloque por servicio):
+   - **Sin conexión** en *Backend*: refresca en **Cuenta** (pull-to-refresh) y
+     aparece "Mostrando datos guardados el {fecha}" con el saldo y los
+     movimientos visibles. Apágalo: se recupera solo.
+   - **Latencia 8 s**: cierra sesión y vuelve a entrar; se ve el estado de carga.
+   - **Fallos 503 al 50 %**: refresca varias veces; se ve "Reintentando…" y, al
+     pasar una petición, los datos se actualizan solos. *Restablecer* devuelve la
+     red normal.
+   - **Indisponibilidad parcial, solo tasas**: activa *Sin conexión* únicamente
+     en *Tasas de cambio*, ve a **Cuenta** y vuelve a **Inicio**: el conversor
+     muestra la tasa guardada con "Sin conexión: tasa guardada del {fecha}" y
+     *Reintentar*, mientras el resto de la app funciona.
+   - **Indisponibilidad parcial, solo backend**: apaga *Backend* y deja *Tasas*
+     activas: saldo y movimientos salen de la caché y el conversor sigue
+     respondiendo.
+   - **Sin copia y sin red**: con *Sin conexión* en *Backend*, *Borrar caché* y
+     cerrar sesión y volver a entrar: no hay datos y aparece el error con
+     *Reintentar*.
+8. **Monitoreo.** En el panel pulsa **Evento de prueba** y **Error de prueba**:
+   `debug_test_event` aparece en `DebugView` y el error en Crashlytics (puede
+   tardar unos minutos). En `DebugView` también se ven `app_opened`,
+   `login_success`, `screen_viewed` y `block_viewed`.
+9. **Pruebas y CI.** En la terminal: `melos exec -- flutter analyze` y
+   `melos run test`; muestra el CI en verde en GitHub Actions y, en el
+   dispositivo, el E2E (`critical_flow_test.dart`).
+
+Aislamiento entre usuarios: cierra sesión y entra con el otro usuario; no se ven
+datos ni notificaciones del anterior (la caché se limpia y el token de
+notificaciones se borra del backend antes de cerrar la sesión).
+
+## 8. Notas técnicas
 
 ### Requisitos de plataforma de la caché cifrada
 
-`flutter_secure_storage` guarda la clave de la caché en el Keychain / Keystore:
+`flutter_secure_storage` guarda la clave en Keychain / Keystore: en Android,
+`minSdk` 23 o superior y `android:allowBackup="false"` (ya aplicado); en macOS,
+`keychain-access-groups` en los entitlements (ya aplicado).
 
-- **Android:** `minSdk` 23 o superior (la app usa `flutter.minSdkVersion`; con
-  un Flutter reciente ya cumple) y auto-backup desactivado
-  (`android:allowBackup="false"` en el manifest principal, ya aplicado).
-- **macOS:** `keychain-access-groups` en `DebugProfile.entitlements` y
-  `Release.entitlements` (ya aplicado).
-- **iOS:** sin cambios adicionales.
+### Realtime y reconexión
 
-## Realtime y reconexión
+Realtime usa WebSocket y no pasa por el `RetryClient` de `core_network`; los
+eventos ocurridos durante una desconexión no se reenvían, así que al recuperar
+conectividad la app refresca saldo y movimientos por la API.
 
-Realtime usa WebSocket y no pasa por el `RetryClient` de `core_network`; la
-reconexión la gestiona la librería. Los eventos ocurridos durante una
-desconexión no se reenvían, así que al recuperar conectividad la app debe
-refrescar saldo y movimientos por la API.
+### Recortes conocidos
+
+- Android únicamente (iOS/macOS sin configurar para push ni Firebase).
+- El pre-aviso de notificaciones sale en cada arranque con sesión, aunque el
+  permiso ya esté concedido.
+- Sin conexión no se puede registrar un movimiento ni hay cola de envíos.
+- Remote Config en tiempo real no está soportado en Windows.

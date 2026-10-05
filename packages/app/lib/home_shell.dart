@@ -13,15 +13,21 @@ enum ShellTab { home, accounts }
 class ShellNavigator extends ChangeNotifier {
   ShellTab _tab = ShellTab.home;
   int _accountsVersion = 0;
+  int _homeVersion = 0;
 
   ShellTab get tab => _tab;
 
   /// Cambia cada vez que la pestaña Cuenta debe recargar sus datos.
   int get accountsVersion => _accountsVersion;
 
+  /// Cambia cada vez que se vuelve a Inicio, para que recargue sus bloques: así
+  /// el resumen de gastos y la tasa reflejan lo hecho en la pestaña Cuenta.
+  int get homeVersion => _homeVersion;
+
   void select(ShellTab tab) {
     if (tab == _tab) return;
     _tab = tab;
+    if (tab == ShellTab.home) _homeVersion++;
     notifyListeners();
   }
 
@@ -55,7 +61,10 @@ class HomeShell extends StatelessWidget {
         body: IndexedStack(
           index: navigator.tab.index,
           children: [
-            homeBuilder(context),
+            KeyedSubtree(
+              key: ValueKey(navigator.homeVersion),
+              child: homeBuilder(context),
+            ),
             KeyedSubtree(
               key: ValueKey(navigator.accountsVersion),
               child: accountsBuilder(context),
