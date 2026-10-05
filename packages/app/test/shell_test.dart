@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:banco_app/app.dart';
 import 'package:banco_app/config_error_app.dart';
 import 'package:banco_app/di.dart';
@@ -36,6 +38,21 @@ class FakeSignIn implements SignIn {
   }
 }
 
+/// El parámetro es `Object?` (un supertipo de `SignUpParams`, que el barril no
+/// exporta): es un override válido y evita importar de `src/`.
+class FakeSignUp implements SignUp {
+  Failure? failure;
+  Object? received;
+  int calls = 0;
+
+  @override
+  Future<Failure?> call(Object? params) async {
+    calls++;
+    received = params;
+    return failure;
+  }
+}
+
 class FakeSignOut implements SignOut {
   Failure? failure;
   int calls = 0;
@@ -44,6 +61,21 @@ class FakeSignOut implements SignOut {
   Future<Failure?> call() async {
     calls++;
     return failure;
+  }
+}
+
+typedef ProfileResult = ({UserProfile? profile, Failure? failure});
+
+class FakeGetUserProfile implements GetUserProfile {
+  Future<ProfileResult> Function() impl = () async =>
+      (profile: const UserProfile(fullName: 'Ana Pérez', segment: 'joven'),
+       failure: null);
+  int calls = 0;
+
+  @override
+  Future<ProfileResult> call() {
+    calls++;
+    return impl();
   }
 }
 
@@ -56,8 +88,13 @@ void useFake<T extends Object>(T fake) {
 
 Future<void> pumpApp(WidgetTester tester) async {
   await tester.pumpWidget(const BancoApp());
-  await tester.pump(); // la puerta resuelve
+  await tester.pump(); // la puerta resuelve y navega
   await tester.pump(const Duration(seconds: 1)); // transición de ruta
+}
+
+Future<void> settle(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
 }
 
 NavigatorState navigator(WidgetTester tester) =>
@@ -66,17 +103,23 @@ NavigatorState navigator(WidgetTester tester) =>
 void main() {
   late FakeGetCurrentUser getCurrentUser;
   late FakeSignIn signIn;
+  late FakeSignUp signUp;
   late FakeSignOut signOut;
+  late FakeGetUserProfile getUserProfile;
 
   setUp(() async {
     await sl.reset();
     registerOnboardingDependencies(sl);
     getCurrentUser = FakeGetCurrentUser(() => null);
     signIn = FakeSignIn();
+    signUp = FakeSignUp();
     signOut = FakeSignOut();
+    getUserProfile = FakeGetUserProfile();
     useFake<GetCurrentUser>(getCurrentUser);
     useFake<SignIn>(signIn);
+    useFake<SignUp>(signUp);
     useFake<SignOut>(signOut);
+    useFake<GetUserProfile>(getUserProfile);
   });
 
   tearDown(() async => sl.reset());
@@ -98,8 +141,7 @@ void main() {
     testWidgets('muestra LoadingView mientras consulta', (tester) async {
       await tester.pumpWidget(const BancoApp());
       expect(find.byType(LoadingView), findsOneWidget);
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
       expect(find.byType(LoadingView), findsNothing);
     });
 
@@ -112,15 +154,12 @@ void main() {
       };
       await tester.pumpWidget(const BancoApp());
       await tester.pump();
-      await tester.pump();
 
       expect(find.byType(ErrorView), findsOneWidget);
       expect(find.text('Algo salió mal. Inténtalo de nuevo.'), findsOneWidget);
 
       await tester.tap(find.text('Reintentar'));
-      await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
 
       expect(getCurrentUser.calls, 2);
       expect(find.byType(ErrorView), findsNothing);
@@ -144,8 +183,7 @@ void main() {
       await tester.enterText(find.byType(TextField).at(1), 'secret123');
       await tester.tap(find.text('Iniciar sesión'));
       await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
 
       expect(signIn.received, (email: 'a@b.com', password: 'secret123'));
       expect(find.text('Tus cuentas aparecerán aquí'), findsOneWidget);
@@ -174,8 +212,7 @@ void main() {
 
       await tester.tap(find.text('Cerrar sesión'));
       await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
+      await settle(tester);
 
       expect(signOut.calls, 1);
       expect(find.text('Inicia sesión'), findsOneWidget);
@@ -199,6 +236,164 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Tus cuentas aparecerán aquí'), findsOneWidget);
+    });
+  });
+
+  group('navegación login <-> registro', () {
+    testWidgets('"Crear cuenta" abre el registro', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(find.text('Crear cuenta'));
+      await settle(tester);
+
+      expect(find.text('Paso 1 de 3'), findsOneWidget);
+      expect(find.text('Crea tu cuenta'), findsOneWidget);
+      expect(find.text('Inicia sesión'), findsNothing);
+      expect(navigator(tester).canPop(), isFalse);
+    });
+
+    testWidgets('"Ya tengo una cuenta" vuelve al login', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(find.text('Crear cuenta'));
+      await settle(tester);
+
+      await tester.tap(find.text('Ya tengo una cuenta'));
+      await settle(tester);
+
+      expect(find.text('Inicia sesión'), findsOneWidget);
+      expect(find.text('Paso 1 de 3'), findsNothing);
+    });
+
+    testWidgets('registro completo -> onRegistered lleva a la pantalla', (
+      tester,
+    ) async {
+      // Hay sesión solo después de que SignUp se ejecutó.
+      getCurrentUser.impl = () => signUp.calls > 0 ? user : null;
+      await pumpApp(tester);
+      await tester.tap(find.text('Crear cuenta'));
+      await settle(tester);
+
+      // Paso 1
+      await tester.enterText(find.byType(TextField).at(0), 'a@b.com');
+      await tester.enterText(find.byType(TextField).at(1), 'secret123');
+      await tester.tap(find.text('Continuar'));
+      await tester.pump();
+
+      // Paso 2: nombre y fecha (el selector propone exactamente 18 años)
+      await tester.enterText(find.byType(TextField).at(0), 'Ana Pérez');
+      await tester.tap(find.textContaining('Fecha de nacimiento'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byType(DatePickerDialog),
+              matching: find.byType(TextButton),
+            )
+            .last,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continuar'));
+      await tester.pump();
+
+      // Paso 3
+      expect(find.text('Paso 3 de 3'), findsOneWidget);
+      await tester.tap(find.text('Ahorrar'));
+      await tester.pump();
+      await tester.tap(find.text('Crear cuenta'));
+      await tester.pump();
+      await settle(tester);
+
+      expect(signUp.calls, 1);
+      final params = signUp.received as dynamic;
+      expect(params.email, 'a@b.com');
+      expect(params.fullName, 'Ana Pérez');
+      expect(params.accountUsage, 'Ahorrar');
+      expect(find.text('Hola, Ana Pérez'), findsOneWidget);
+      expect(find.text('Paso 3 de 3'), findsNothing);
+      expect(navigator(tester).canPop(), isFalse);
+    });
+  });
+
+  group('pantalla provisional: perfil', () {
+    setUp(() => getCurrentUser.impl = () => user);
+
+    testWidgets('saludo y segmento joven', (tester) async {
+      await pumpApp(tester);
+      expect(find.text('Hola, Ana Pérez'), findsOneWidget);
+      expect(find.text('Segmento: joven'), findsOneWidget);
+      expect(find.byType(Chip), findsOneWidget);
+    });
+
+    testWidgets('segmento adulto', (tester) async {
+      getUserProfile.impl = () async => (
+        profile: const UserProfile(fullName: 'Luis Gómez', segment: 'adulto'),
+        failure: null,
+      );
+      await pumpApp(tester);
+      expect(find.text('Hola, Luis Gómez'), findsOneWidget);
+      expect(find.text('Segmento: adulto'), findsOneWidget);
+    });
+
+    testWidgets('mientras carga el perfil muestra LoadingView', (tester) async {
+      final gate = Completer<ProfileResult>();
+      getUserProfile.impl = () => gate.future;
+      await pumpApp(tester);
+
+      expect(find.byType(LoadingView), findsOneWidget);
+      expect(find.text('Cerrar sesión'), findsOneWidget);
+
+      gate.complete((
+        profile: const UserProfile(fullName: 'Ana Pérez', segment: 'joven'),
+        failure: null,
+      ));
+      await tester.pump();
+      expect(find.byType(LoadingView), findsNothing);
+      expect(find.text('Hola, Ana Pérez'), findsOneWidget);
+    });
+
+    testWidgets('error de perfil -> ErrorView, reintento y datos', (
+      tester,
+    ) async {
+      var attempts = 0;
+      getUserProfile.impl = () async {
+        attempts++;
+        if (attempts == 1) {
+          return (profile: null, failure: const Failure('técnico', 'network'));
+        }
+        return (
+          profile: const UserProfile(fullName: 'Ana Pérez', segment: 'joven'),
+          failure: null,
+        );
+      };
+      await pumpApp(tester);
+
+      expect(find.byType(ErrorView), findsOneWidget);
+      expect(
+        find.text('Sin conexión. Revisa tu internet e inténtalo de nuevo.'),
+        findsOneWidget,
+      );
+      expect(find.text('técnico'), findsNothing);
+
+      await tester.tap(find.text('Reintentar'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(getUserProfile.calls, 2);
+      expect(find.byType(ErrorView), findsNothing);
+      expect(find.text('Hola, Ana Pérez'), findsOneWidget);
+    });
+
+    testWidgets('con el perfil en error se puede cerrar sesión', (tester) async {
+      getUserProfile.impl = () async =>
+          (profile: null, failure: const Failure('x', 'rls_denied'));
+      await pumpApp(tester);
+      expect(find.byType(ErrorView), findsOneWidget);
+
+      await tester.tap(find.text('Cerrar sesión'));
+      await tester.pump();
+      await settle(tester);
+
+      expect(signOut.calls, 1);
+      expect(find.text('Inicia sesión'), findsOneWidget);
     });
   });
 
@@ -249,6 +444,7 @@ void main() {
       expect(sl<SupabaseClient>(), same(client));
       expect(sl<GetCurrentUser>(), isA<GetCurrentUser>());
       expect(sl<SignIn>(), isA<SignIn>());
+      expect(sl<SignUp>(), isA<SignUp>());
       expect(sl<SignOut>(), isA<SignOut>());
       expect(sl<GetUserProfile>(), isA<GetUserProfile>());
     });
