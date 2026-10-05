@@ -1,8 +1,9 @@
 # finance_tech
 
 Plataforma financiera digital en Flutter, organizada como monorepo con Pub
-Workspaces y Melos. Hoy incluye el flujo de **registro, login, cuentas, saldo y
-movimientos** contra un backend Supabase local.
+Workspaces y Melos. Incluye **registro, login, cuentas, saldo y movimientos**
+contra un backend Supabase local, modo sin conexión, **telemetría con Firebase**
+y un **home personalizado por segmento** controlado con Remote Config.
 
 ```
 packages/
@@ -10,12 +11,18 @@ packages/
   core/
     core_errors/        Failure compartido
     core_network/       Supabase, reintentos y mapeo de errores
+    core_storage/       Caché local cifrada
+    core_telemetry/     Analytics, Crashlytics y Performance con filtro de privacidad
     core_ui/            Tema accesible y componentes compartidos
   features/
-    feature_onboarding/ Registro en 3 pasos, login y sesión
-    feature_accounts/   Cuentas, saldo y movimientos
+    feature_onboarding/       Registro en 3 pasos, login y sesión
+    feature_accounts/         Cuentas, saldo y movimientos
+    feature_personalization/  Home por segmento (Remote Config) y resumen de gastos
 docs/                   Contrato del backend y documentos de arquitectura
 ```
+
+El trabajo se desarrolla con **Trunk Based Development**: commits pequeños
+directos a `main`, con CI en cada push.
 
 ## Ejecutar en local
 
@@ -66,6 +73,33 @@ Sin los `--dart-define`, la app muestra "Falta configurar la app" con los
 nombres esperados. El detalle de cada plataforma (emulador Android, simulador
 iOS, IP de la red local, problemas frecuentes) está en
 [`packages/app/README.md`](packages/app/README.md).
+
+## Firebase, telemetría y home personalizado
+
+Proyecto de Firebase: `banco-demo-05487` (Android: `com.bancointernacional.banco_app`).
+
+- **Telemetría** (`core_telemetry`): eventos de Analytics, errores en Crashlytics
+  y trazas de Performance. Un filtro de privacidad solo deja pasar una lista
+  cerrada de parámetros (sin correos, nombres, saldos ni importes). La recolección
+  está apagada en debug; para verla en `DebugView`:
+
+  ```bash
+  adb shell setprop debug.firebase.analytics.app com.bancointernacional.banco_app
+  cd packages/app
+  flutter run -d <id-del-dispositivo> --dart-define=TELEMETRY_DEBUG=true \
+    --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
+    --dart-define=SUPABASE_ANON_KEY=<la-clave-publicable>
+  ```
+
+  Eventos: `app_opened` y `block_viewed` (con `block_id`, `block_type`, `segment`).
+
+- **Home personalizado** (`feature_personalization`): el parámetro `home_layout`
+  de Remote Config (JSON) define qué bloques ve cada segmento y en qué orden.
+  Si Remote Config falla o publica un JSON inválido, la app usa el último layout
+  válido o el embebido. Para probarlo, edita el JSON en la consola de Firebase,
+  publica y la app lo aplica sin reiniciar. El JSON de ejemplo y las reglas del
+  parser están en
+  [`packages/features/feature_personalization/README.md`](packages/features/feature_personalization/README.md).
 
 ## Probar
 
