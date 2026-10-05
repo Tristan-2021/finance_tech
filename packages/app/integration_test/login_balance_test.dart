@@ -115,7 +115,9 @@ void main() {
     await tester.tap(find.text('Iniciar sesión'));
     await tester.pumpAndSettle();
 
-    // 2. Saldo
+    // 2. Saldo (la app abre en Inicio; el saldo está en la pestaña Cuenta)
+    await tester.tap(find.text('Cuenta'));
+    await tester.pumpAndSettle();
     expect(find.text('Hola, Ana Pérez'), findsOneWidget);
     expect(find.text('Segmento: joven'), findsOneWidget);
     expect(find.text('Cuenta de ahorros'), findsOneWidget);
