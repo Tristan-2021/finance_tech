@@ -26,18 +26,17 @@ class _SessionGateState extends State<SessionGate> {
   @override
   void initState() {
     super.initState();
-    _resolve();
+    // Navegar durante initState/build no está permitido: se espera a que
+    // termine el primer frame (sin temporizadores).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resolve());
   }
 
-  Future<void> _resolve() async {
-    // Cede un turno: navegar durante initState/build no está permitido.
-    await Future<void>.delayed(Duration.zero);
+  void _resolve() {
     if (!mounted) return;
     try {
       final user = widget.getCurrentUser();
       widget.onResolved(user != null);
     } catch (_) {
-      if (!mounted) return;
       setState(() => _failed = true);
     }
   }
