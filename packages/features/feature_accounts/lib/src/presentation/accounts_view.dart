@@ -9,6 +9,8 @@ import '../domain/account.dart';
 import 'accounts_cubit.dart';
 import 'accounts_state.dart';
 import 'accounts_strings.dart';
+import 'add_movement_cubit.dart';
+import 'add_movement_form.dart';
 import 'movements_cubit.dart';
 import 'movements_slivers.dart';
 import 'movements_state.dart';
@@ -24,6 +26,9 @@ class AccountsView extends StatefulWidget {
   final String segment;
   final VoidCallback onSignOut;
   final Widget? extra;
+
+  /// Si es `null`, no se ofrece "Registrar movimiento".
+  final AddMovementCubitFactory? addMovementCubitFactory;
   final NetworkStatusNotifier? networkStatus;
   final ConnectivityMonitor? connectivity;
 
@@ -35,6 +40,7 @@ class AccountsView extends StatefulWidget {
     required this.segment,
     required this.onSignOut,
     this.extra,
+    this.addMovementCubitFactory,
     this.networkStatus,
     this.connectivity,
   });
@@ -93,6 +99,8 @@ class _AccountsViewState extends State<AccountsView> {
                             movementsCubitFactory: widget.movementsCubitFactory,
                             connectivity: widget.connectivity,
                             extra: widget.extra,
+                            addMovementCubitFactory:
+                                widget.addMovementCubitFactory,
                           ),
                 },
               ),
@@ -207,6 +215,7 @@ class _AccountBody extends StatefulWidget {
   final MovementsCubitFactory movementsCubitFactory;
   final ConnectivityMonitor? connectivity;
   final Widget? extra;
+  final AddMovementCubitFactory? addMovementCubitFactory;
 
   const _AccountBody({
     super.key,
@@ -215,6 +224,7 @@ class _AccountBody extends StatefulWidget {
     required this.movementsCubitFactory,
     required this.connectivity,
     required this.extra,
+    required this.addMovementCubitFactory,
   });
 
   @override
@@ -264,6 +274,17 @@ class _AccountBodyState extends State<_AccountBody> {
   void _retryStale() {
     widget.cubit.refresh();
     _movements.refresh();
+  }
+
+  /// Abre el formulario; si se registró el movimiento, refresca el saldo y la
+  /// primera página de movimientos (lo que también actualiza la caché).
+  Future<void> _addMovement() async {
+    final cubit = widget.addMovementCubitFactory!(widget.state.selected!.id);
+    final saved = await showAddMovementSheet(context, cubit);
+    await cubit.close();
+    if (!saved || !mounted) return;
+    widget.cubit.refresh();
+    await _movements.refresh();
   }
 
   @override
@@ -325,6 +346,14 @@ class _AccountBodyState extends State<_AccountBody> {
                         const SizedBox(height: AppSpacing.lg),
                       ],
                       _BalanceCard(account: account),
+                      if (widget.addMovementCubitFactory != null) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        AppButton(
+                          label: AccountsStrings.addMovement,
+                          variant: AppButtonVariant.secondary,
+                          onPressed: _addMovement,
+                        ),
+                      ],
                       if (widget.extra case final extra?) ...[
                         const SizedBox(height: AppSpacing.lg),
                         extra,

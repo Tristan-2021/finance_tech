@@ -17,6 +17,26 @@ abstract final class AccountsStrings {
   static const retry = 'Reintentar';
   static String balanceAfter(String amount) => 'Saldo: $amount';
 
+  // Registrar movimiento (función de demostración)
+  static const addMovement = 'Registrar movimiento';
+  static const addMovementSubmit = 'Registrar';
+  static const manualExpenseTitle = 'Gasto manual (demostración)';
+  static const manualIncomeTitle = 'Ingreso manual (demostración)';
+  static const manualExpenseDefault = 'Gasto manual';
+  static const manualIncomeDefault = 'Ingreso manual';
+  static const expenseLabel = 'Gasto';
+  static const incomeLabel = 'Ingreso';
+  static const amountLabel = 'Monto';
+  static const categoryLabel = 'Categoría';
+  static const descriptionLabel = 'Descripción (opcional)';
+  static const descriptionTooLong = 'Máximo 80 caracteres.';
+  static const demoNote =
+      'Función de demostración: en un banco real los movimientos los genera '
+      'el banco y no se pueden editar ni borrar.';
+
+  static String category(String value) =>
+      value.isEmpty ? value : value[0].toUpperCase() + value.substring(1);
+
   // Conectividad
   static String staleNotice(String when) => 'Mostrando datos guardados el $when';
   static const retrying = 'Reintentando…';

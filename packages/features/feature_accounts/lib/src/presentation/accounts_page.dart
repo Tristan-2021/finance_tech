@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 
 import 'accounts_cubit.dart';
 import 'accounts_view.dart';
+import 'add_movement_cubit.dart';
 import 'movements_cubit.dart';
 
 /// Pantalla de cuentas. El nombre, el segmento y el cierre de sesión los pasa
@@ -65,6 +66,7 @@ class _AccountsPageState extends State<AccountsPage> {
       segment: widget.segment,
       onSignOut: widget.onSignOut,
       extra: widget.extra,
+      addMovementCubitFactory: _optional<AddMovementCubitFactory>(),
       networkStatus: _optional<NetworkStatusNotifier>(),
       connectivity: _optional<ConnectivityMonitor>(),
     );
