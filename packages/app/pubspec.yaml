@@ -55,6 +55,8 @@ dependencies:
   firebase_performance: ^0.11.6
 
 dev_dependencies:
+  # El E2E simula con ella los cambios de conectividad del dispositivo.
+  connectivity_plus: ^7.0.0
   flutter_test:
     sdk: flutter
   integration_test:
