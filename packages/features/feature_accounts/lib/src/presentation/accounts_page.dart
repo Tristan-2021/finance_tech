@@ -1,3 +1,4 @@
+import 'package:core_network/core_network.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
@@ -10,7 +11,9 @@ import 'movements_cubit.dart';
 ///
 /// Resuelve su [AccountsCubit] y la fábrica de movimientos desde
 /// `GetIt.instance` (registrados por `registerAccountsDependencies`) y cierra
-/// el Cubit al salir.
+/// el Cubit al salir. Si el shell registró un [NetworkStatusNotifier] y un
+/// [ConnectivityMonitor], los usa para mostrar "Reintentando…" y para refrescar
+/// al volver la red.
 class AccountsPage extends StatefulWidget {
   final String greetingName;
   final String segment;
@@ -28,9 +31,13 @@ class AccountsPage extends StatefulWidget {
 }
 
 class _AccountsPageState extends State<AccountsPage> {
-  late final AccountsCubit _cubit = GetIt.instance<AccountsCubit>();
+  final _getIt = GetIt.instance;
+  late final AccountsCubit _cubit = _getIt<AccountsCubit>();
   late final MovementsCubitFactory _movementsCubitFactory =
-      GetIt.instance<MovementsCubitFactory>();
+      _getIt<MovementsCubitFactory>();
+
+  T? _optional<T extends Object>() =>
+      _getIt.isRegistered<T>() ? _getIt<T>() : null;
 
   @override
   void initState() {
@@ -52,6 +59,8 @@ class _AccountsPageState extends State<AccountsPage> {
       greetingName: widget.greetingName,
       segment: widget.segment,
       onSignOut: widget.onSignOut,
+      networkStatus: _optional<NetworkStatusNotifier>(),
+      connectivity: _optional<ConnectivityMonitor>(),
     );
   }
 }

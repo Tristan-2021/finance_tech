@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,14 +13,18 @@ import 'movements_cubit.dart';
 import 'movements_slivers.dart';
 import 'movements_state.dart';
 
-/// Pantalla de cuentas. Recibe el Cubit y la fábrica de movimientos (no usa
-/// GetIt) para probarse sola.
-class AccountsView extends StatelessWidget {
+/// Pantalla de cuentas. Recibe los Cubits (no usa GetIt) para probarse sola.
+///
+/// [networkStatus] muestra "Reintentando…" mientras `RetryClient` reintenta, y
+/// [connectivity] refresca los datos cuando vuelve la red. Ambos son opcionales.
+class AccountsView extends StatefulWidget {
   final AccountsCubit cubit;
   final MovementsCubitFactory movementsCubitFactory;
   final String greetingName;
   final String segment;
   final VoidCallback onSignOut;
+  final NetworkStatusNotifier? networkStatus;
+  final ConnectivityMonitor? connectivity;
 
   const AccountsView({
     super.key,
@@ -26,7 +33,30 @@ class AccountsView extends StatelessWidget {
     required this.greetingName,
     required this.segment,
     required this.onSignOut,
+    this.networkStatus,
+    this.connectivity,
   });
+
+  @override
+  State<AccountsView> createState() => _AccountsViewState();
+}
+
+class _AccountsViewState extends State<AccountsView> {
+  StreamSubscription<void>? _reconnect;
+
+  @override
+  void initState() {
+    super.initState();
+    _reconnect = widget.connectivity?.onReconnected.listen(
+      (_) => widget.cubit.recover(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _reconnect?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,18 +65,20 @@ class AccountsView extends StatelessWidget {
         child: Column(
           children: [
             _Header(
-              greetingName: greetingName,
-              segment: segment,
-              onSignOut: onSignOut,
+              greetingName: widget.greetingName,
+              segment: widget.segment,
+              onSignOut: widget.onSignOut,
             ),
+            if (widget.networkStatus case final status?)
+              _RetryingBar(status: status),
             Expanded(
               child: BlocBuilder<AccountsCubit, AccountsState>(
-                bloc: cubit,
+                bloc: widget.cubit,
                 builder: (context, state) => switch (state.status) {
                   AccountsStatus.loading => const LoadingView(),
                   AccountsStatus.error => ErrorView(
                     message: state.message!,
-                    onRetry: cubit.load,
+                    onRetry: widget.cubit.load,
                   ),
                   AccountsStatus.loaded =>
                     state.accounts.isEmpty
@@ -55,8 +87,9 @@ class AccountsView extends StatelessWidget {
                             // Cambiar de cuenta crea un Cubit de movimientos nuevo.
                             key: ValueKey(state.selected!.id),
                             state: state,
-                            cubit: cubit,
-                            movementsCubitFactory: movementsCubitFactory,
+                            cubit: widget.cubit,
+                            movementsCubitFactory: widget.movementsCubitFactory,
+                            connectivity: widget.connectivity,
                           ),
                 },
               ),
@@ -126,18 +159,57 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// Indicador discreto mientras hay peticiones reintentándose.
+class _RetryingBar extends StatelessWidget {
+  final NetworkStatusNotifier status;
+
+  const _RetryingBar({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: status,
+      builder: (context, _) {
+        if (!status.isRetrying) return const SizedBox.shrink();
+        return Semantics(
+          liveRegion: true,
+          container: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const LinearProgressIndicator(minHeight: 2),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.xs,
+                ),
+                child: Text(
+                  AccountsStrings.retrying,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// Saldo y movimientos de la cuenta seleccionada, en un solo scroll con
 /// pull-to-refresh y carga de la página siguiente al acercarse al final.
 class _AccountBody extends StatefulWidget {
   final AccountsState state;
   final AccountsCubit cubit;
   final MovementsCubitFactory movementsCubitFactory;
+  final ConnectivityMonitor? connectivity;
 
   const _AccountBody({
     super.key,
     required this.state,
     required this.cubit,
     required this.movementsCubitFactory,
+    required this.connectivity,
   });
 
   @override
@@ -149,16 +221,21 @@ class _AccountBodyState extends State<_AccountBody> {
     widget.state.selected!.id,
   );
   final _scroll = ScrollController();
+  StreamSubscription<void>? _reconnect;
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
     _movements.loadFirst();
+    _reconnect = widget.connectivity?.onReconnected.listen(
+      (_) => _movements.recover(),
+    );
   }
 
   @override
   void dispose() {
+    _reconnect?.cancel();
     _scroll.dispose();
     _movements.close();
     super.dispose();
@@ -168,6 +245,20 @@ class _AccountBodyState extends State<_AccountBody> {
     if (_scroll.hasClients && _scroll.position.extentAfter < 300) {
       _movements.loadMore();
     }
+  }
+
+  /// La fecha más antigua de los datos guardados que se están mostrando.
+  DateTime? _staleSince(MovementsState movements) {
+    final dates = [
+      widget.state.cachedAt,
+      movements.cachedAt,
+    ].whereType<DateTime>().toList()..sort();
+    return dates.isEmpty ? null : dates.first;
+  }
+
+  void _retryStale() {
+    widget.cubit.refresh();
+    _movements.refresh();
   }
 
   @override
@@ -198,39 +289,104 @@ class _AccountBodyState extends State<_AccountBody> {
           }
         });
       },
-      builder: (context, movements) => RefreshIndicator(
-        onRefresh: _movements.refresh,
-        child: CustomScrollView(
-          controller: _scroll,
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                AppSpacing.lg,
-                AppSpacing.lg,
-                0,
-              ),
-              sliver: SliverToBoxAdapter(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (state.accounts.length > 1) ...[
-                      _AccountSelector(state: state, cubit: widget.cubit),
-                      const SizedBox(height: AppSpacing.lg),
+      builder: (context, movements) {
+        final staleSince = _staleSince(movements);
+        return RefreshIndicator(
+          onRefresh: () async {
+            widget.cubit.refresh();
+            await _movements.refresh();
+          },
+          child: CustomScrollView(
+            controller: _scroll,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  0,
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (staleSince != null) ...[
+                        _StaleNotice(cachedAt: staleSince, onRetry: _retryStale),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+                      if (state.accounts.length > 1) ...[
+                        _AccountSelector(state: state, cubit: widget.cubit),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+                      _BalanceCard(account: account),
                     ],
-                    _BalanceCard(account: account),
-                  ],
+                  ),
                 ),
               ),
-            ),
-            ...movementsSlivers(
-              state: movements,
-              cubit: _movements,
-              currency: account.currency,
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
-          ],
+              ...movementsSlivers(
+                state: movements,
+                cubit: _movements,
+                currency: account.currency,
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Aviso de datos servidos desde la caché: ícono, texto con la fecha y acción
+/// (nunca solo color). Requiere `AppTheme`.
+class _StaleNotice extends StatelessWidget {
+  final DateTime cachedAt;
+  final VoidCallback onRetry;
+
+  const _StaleNotice({required this.cachedAt, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final warning = theme.extension<AppSemanticColors>()!.warning;
+
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          border: Border.all(color: warning),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ExcludeSemantics(child: Icon(Icons.history, color: warning)),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      AccountsStrings.staleNotice(formatDateTimeEs(cachedAt)),
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: onRetry,
+                  child: const Text(AccountsStrings.retry),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

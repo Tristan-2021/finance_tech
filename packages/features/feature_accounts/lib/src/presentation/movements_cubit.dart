@@ -3,6 +3,8 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../domain/get_transactions.dart';
+import '../domain/stale_list.dart';
+import '../domain/transaction.dart';
 import 'movements_state.dart';
 
 /// Crea el Cubit de movimientos de una cuenta. Se registra en GetIt para que
@@ -26,6 +28,15 @@ class MovementsCubit extends Cubit<MovementsState> {
   String _message(Failure? failure) =>
       messageForFailure(failure ?? const Failure('', 'unknown'));
 
+  MovementsState _firstPage(List<Transaction> items) {
+    return MovementsState(
+      status: MovementsStatus.loaded,
+      items: items,
+      hasMore: items.length >= pageSize,
+      cachedAt: items is StaleList<Transaction> ? items.cachedAt : null,
+    );
+  }
+
   /// Primera página. También sirve como "Reintentar" tras un error inicial.
   Future<void> loadFirst() async {
     _busy = true;
@@ -44,13 +55,7 @@ class MovementsCubit extends Cubit<MovementsState> {
       );
       return;
     }
-    emit(
-      MovementsState(
-        status: MovementsStatus.loaded,
-        items: items,
-        hasMore: items.length >= pageSize,
-      ),
-    );
+    emit(_firstPage(items));
   }
 
   /// Página siguiente. Tras un fallo, solo se reintenta con [retry] (para que
@@ -90,8 +95,9 @@ class MovementsCubit extends Cubit<MovementsState> {
     );
   }
 
-  /// Pull-to-refresh: vuelve a la primera página. Si falla y ya había datos,
-  /// los conserva y avisa con [MovementsState.refreshError].
+  /// Pull-to-refresh o "Reintentar" del aviso de datos guardados: vuelve a la
+  /// primera página. Si falla y ya había datos, los conserva y avisa con
+  /// [MovementsState.refreshError].
   Future<void> refresh() async {
     if (_busy) return;
     _busy = true;
@@ -109,12 +115,10 @@ class MovementsCubit extends Cubit<MovementsState> {
       );
       return;
     }
-    emit(
-      MovementsState(
-        status: MovementsStatus.loaded,
-        items: items,
-        hasMore: items.length >= pageSize,
-      ),
-    );
+    emit(_firstPage(items));
   }
+
+  /// Al volver la conectividad: reintenta lo que falló o refresca lo guardado.
+  Future<void> recover() =>
+      state.status == MovementsStatus.error ? loadFirst() : refresh();
 }

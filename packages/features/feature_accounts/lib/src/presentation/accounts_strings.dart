@@ -16,4 +16,8 @@ abstract final class AccountsStrings {
   static const loadingMore = 'Cargando más movimientos';
   static const retry = 'Reintentar';
   static String balanceAfter(String amount) => 'Saldo: $amount';
+
+  // Conectividad
+  static String staleNotice(String when) => 'Mostrando datos guardados el $when';
+  static const retrying = 'Reintentando…';
 }
