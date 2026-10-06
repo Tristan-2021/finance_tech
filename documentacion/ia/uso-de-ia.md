@@ -31,7 +31,7 @@ Plataforma financiera digital en Flutter, organizada como monorepo (Pub Workspac
 ## 3. Método de trabajo
 
 1. **La arquitectura vino primero y es del autor.** Se revisó contra el enunciado antes de programar, y esa revisión corrigió inconsistencias.
-2. **Instrucciones por pieza, escritas y conservadas** (`docs/ia/prompts/`, carpeta local que se publicará con el repositorio): contexto, reglas de arquitectura, alcance, pruebas exigidas y criterios de aceptación.
+2. **Instrucciones por pieza, escritas y conservadas** (`docs/ia/prompts/`, carpeta local que se publicará con el repositorio): contexto, reglas de arquitectura, alcance, pruebas exigidas y criterios de aceptación. Funcionaron como especificaciones ejecutables: ver [`../sdd.md`](../sdd.md).
 3. **Agentes en paralelo con contratos.** Con Orca se trabajó en varias ventanas a la vez sobre paquetes distintos, con propiedad exclusiva de carpetas y comunicándose solo por APIs públicas acordadas. Si un agente necesitaba algo ajeno, se detenía y lo pedía, como haría un equipo real.
 4. **El autor ejecutaba y verificaba, no la IA.** Los agentes de Flutter escribían archivos; el autor corría `melos run analyze`, `melos run test` y la aplicación, y devolvía la salida real. Una regla prohibía afirmar que algo pasa sin haberla visto. Solo el backend y la tarea de FlutterFire ejecutaron comandos propios, con una lista cerrada y sin acceso a nada remoto. Una excepción real: al inicio de una sesión, un agente de Flutter ejecutó unas lecturas de comandos (`find`, `grep`, `ls`); el autor lo corrigió de inmediato y la regla quedó guardada en la memoria del agente.
 5. **Trunk Based Development, con un matiz honesto.** Desde el principio, commits pequeños y frecuentes a `main`. Las piezas iniciales (red, cuentas, shell y el primer frente de Firebase y personalización) se subieron directamente a `main`. A partir del frente de notificaciones se formalizó una **rama corta por pieza**, uno o dos commits, `merge --no-ff` el mismo día, ramas borradas y CI en verde antes de abrir la siguiente. Se ve en el historial: `git log --oneline --graph`.
@@ -46,6 +46,8 @@ Plataforma financiera digital en Flutter, organizada como monorepo (Pub Workspac
 | Revisó el diseño contra el enunciado y propuso correcciones | Orquestó los agentes y decidió qué se pedía a cada uno |
 | | Ejecutó análisis, pruebas y aplicación, y verificó en el dispositivo |
 | | Decidió qué entra a `main` y realizó cada commit y merge |
+
+**Nota sobre las especificaciones.** Las instrucciones y los contratos que guiaron a los agentes (`docs/ia/prompts/`) funcionaron como especificaciones, y su **redacción también fue asistida por IA**; la dirección, las decisiones y la validación fueron del autor, que probaba y verificaba cada pieza antes de integrarla. Fue un enfoque spec-first informal, no SDD estricto: ante cualquier discrepancia, el código real mandaba sobre el texto (ver [`../sdd.md`](../sdd.md)).
 
 ## 5. Revisión crítica: errores que se detectaron
 
