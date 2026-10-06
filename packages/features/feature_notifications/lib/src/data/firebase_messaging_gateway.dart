@@ -39,8 +39,12 @@ class FirebaseMessagingGateway implements MessagingGateway {
       settings: const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       ),
-      onDidReceiveNotificationResponse: (response) =>
-          _opened.add(PushMessage(data: {'type': response.payload ?? ''})),
+      onDidReceiveNotificationResponse: (response) => _opened.add(
+        PushMessage(
+          data: {'type': response.payload ?? ''},
+          origin: PushOrigin.foreground,
+        ),
+      ),
     );
     // El canal debe existir antes de que llegue un mensaje.
     await _local

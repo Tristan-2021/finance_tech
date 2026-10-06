@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:core_telemetry/core_telemetry.dart';
+
 import 'domain/device_token_repository.dart';
 import 'domain/messaging_gateway.dart';
 import 'domain/push_message.dart';
@@ -12,9 +14,14 @@ import 'domain/push_message.dart';
 ///
 /// Todo es de mejor esfuerzo: ningún fallo de red, de permiso o de plugin
 /// impide usar la app ni cerrar sesión. Nunca se registra el token.
+///
+/// Telemetría: `push_permission` (`result`: `granted` o `denied`) y
+/// `push_opened` (`source`: `foreground`, `background` o `terminated`). Nunca el
+/// texto del mensaje ni el token.
 class NotificationsController {
   final MessagingGateway _gateway;
   final DeviceTokenRepository _tokens;
+  final Telemetry _telemetry;
 
   /// Tiempo máximo de cada paso de [stop].
   final Duration stopTimeout;
@@ -34,6 +41,7 @@ class NotificationsController {
     this._gateway,
     this._tokens, {
     this.stopTimeout = const Duration(seconds: 3),
+    this._telemetry = const NoopTelemetry(),
   });
 
   Future<void> initialize() async {
@@ -46,12 +54,14 @@ class NotificationsController {
     }
     try {
       _gateway.onForegroundMessage.listen(_showForeground);
-      _gateway.onOpened.listen((_) => _handleOpen());
+      _gateway.onOpened.listen((message) => _handleOpen(message.origin));
     } catch (_) {
       // Si Firebase no arrancó, la app funciona sin avisos.
     }
     try {
-      if (await _gateway.getInitialMessage() != null) _handleOpen();
+      if (await _gateway.getInitialMessage() != null) {
+        _handleOpen(PushOrigin.terminated);
+      }
     } catch (_) {}
   }
 
@@ -65,12 +75,15 @@ class NotificationsController {
     if (_askedThisSession) return;
     _askedThisSession = true;
 
-    final bool granted;
+    var granted = false;
     try {
       granted = await _gateway.requestPermission();
     } catch (_) {
-      return;
+      // Un fallo al pedir el permiso se trata como denegado.
     }
+    _telemetry.logEvent('push_permission', {
+      'result': granted ? 'granted' : 'denied',
+    });
     if (!granted) return;
 
     await _refreshSubscription?.cancel();
@@ -112,7 +125,8 @@ class NotificationsController {
     _gateway.showLocal(message).catchError((_) {});
   }
 
-  void _handleOpen() {
+  void _handleOpen(PushOrigin origin) {
+    _telemetry.logEvent('push_opened', {'source': origin.name});
     final open = _onOpenAccounts;
     if (open == null) {
       _pendingOpen = true;

@@ -49,6 +49,17 @@ interpreta montos del mensaje: al abrirla consulta el detalle por la API.
   `compileSdk` ≥ 35, AGP ≥ 8.11.1 y Java 17. El *core library desugaring* solo
   se exige para notificaciones programadas, que esta app no usa.
 
+## Telemetría
+
+`NotificationsController` recibe un `Telemetry` (`core_telemetry`);
+`registerNotificationsDependencies` lo toma de GetIt si está registrado. Nunca
+se envía el texto del mensaje ni el token.
+
+| Evento | Cuándo | Parámetros |
+|---|---|---|
+| `push_permission` | Al pedir el permiso en `start` | `result` (`granted` o `denied`) |
+| `push_opened` | Al tocar una notificación | `source`: `foreground` (notificación local), `background` o `terminated` (abrió la app cerrada) |
+
 ## Recortes
 
 - iOS/macOS no están configurados (solo Android).

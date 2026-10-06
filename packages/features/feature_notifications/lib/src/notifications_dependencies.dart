@@ -1,4 +1,5 @@
 import 'package:core_network/core_network.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 
@@ -30,6 +31,9 @@ void registerNotificationsDependencies(GetIt getIt) {
       () => NotificationsController(
         getIt<MessagingGateway>(),
         getIt<DeviceTokenRepository>(),
+        telemetry: getIt.isRegistered<Telemetry>()
+            ? getIt<Telemetry>()
+            : const NoopTelemetry(),
       ),
     );
 }
