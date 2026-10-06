@@ -32,6 +32,7 @@ directos a `main`, con CI en cada push.
 - [`documentacion/sdd.md`](documentacion/sdd.md): especificación de la app, trazabilidad requisito→verificación y cómo se aplicó el desarrollo guiado por especificaciones.
 - [`documentacion/despliegue.md`](documentacion/despliegue.md): entornos, secretos, CI, publicación y reversión.
 - [`documentacion/ia/uso-de-ia.md`](documentacion/ia/uso-de-ia.md): cómo se usó la IA en el desarrollo y su impacto.
+- [`documentacion/ia/prompt-maestro.md`](documentacion/ia/prompt-maestro.md): síntesis de las instrucciones que guiaron a los agentes (roles, arquitectura, contratos, flujo).
 - [`packages/app/README.md`](packages/app/README.md): configuración, pruebas, cómo colaborar y el guion de demostración.
 - README de cada paquete con su API, decisiones, recortes y eventos de telemetría.
 
