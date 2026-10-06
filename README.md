@@ -2,8 +2,9 @@
 
 Plataforma financiera digital en Flutter, organizada como monorepo con Pub
 Workspaces y Melos. Incluye **registro, login, cuentas, saldo y movimientos**
-contra un backend Supabase local, modo sin conexión, **telemetría con Firebase**
-y un **home personalizado por segmento** controlado con Remote Config.
+contra un backend Supabase local, modo sin conexión, **telemetría con Firebase**,
+un **home personalizado por segmento** controlado con Remote Config, un
+**conversor de remesas** con datos reales y **notificaciones push**.
 
 ```
 packages/
@@ -16,8 +17,10 @@ packages/
     core_ui/            Tema accesible y componentes compartidos
   features/
     feature_onboarding/       Registro en 3 pasos, login y sesión
-    feature_accounts/         Cuentas, saldo y movimientos
+    feature_accounts/         Cuentas, saldo, movimientos y registrar un movimiento
     feature_personalization/  Home por segmento (Remote Config) y resumen de gastos
+    feature_exchange/         Conversor de remesas EUR→USD (tasas del BCE)
+    feature_notifications/    Notificaciones push (FCM): permiso, token y avisos
 docs/                   Contrato del backend y documentos de arquitectura
 ```
 
@@ -30,7 +33,24 @@ directos a `main`, con CI en cada push.
 - [`packages/app/README.md`](packages/app/README.md): configuración, pruebas, cómo colaborar y el guion de demostración.
 - README de cada paquete con su API, decisiones, recortes y eventos de telemetría.
 
-## Ejecutar en local
+## Ejecutar con el backend desplegado
+
+El backend de Supabase ya está desplegado: no hace falta levantar nada en local.
+Con un dispositivo Android conectado:
+
+```bash
+melos bootstrap
+cd packages/app
+flutter run -d <id-del-dispositivo> --dart-define=TELEMETRY_DEBUG=true \
+  --dart-define=SUPABASE_URL=https://pzpolkpedpjtkaplulxc.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6cG9sa3BlZHBqdGthcGx1bHhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNDgyNjYsImV4cCI6MjEwNjgyNDI2Nn0.WLx9Hdwx5IFOgboRBM0_MJV4g9Ypl2_D7zC4kAtcP4E
+```
+
+Es la clave anónima (publicable); el acceso lo limita RLS. Nunca la `service_role`.
+Para las pruebas y el E2E, y para cómo guiar la demostración, ver
+[`packages/app/README.md`](packages/app/README.md).
+
+## Ejecutar en local (backend propio)
 
 ### 1. Requisitos
 Flutter, `melos` (`dart pub global activate melos 8.9.0`), el CLI de Supabase y,
