@@ -20,6 +20,46 @@ lib/
 integration_test/       E2E contra el backend real (no entra al CI)
 ```
 
+## Ejecutar con el backend desplegado (recomendado)
+
+El backend de Supabase ya está desplegado: para ejecutar la app **no hace falta
+levantar nada en local ni usar `adb reverse`**. Con un dispositivo Android
+conectado (`flutter devices` muestra su id):
+
+```bash
+cd packages/app
+flutter run -d <id-del-dispositivo> --dart-define=TELEMETRY_DEBUG=true \
+  --dart-define=SUPABASE_URL=https://pzpolkpedpjtkaplulxc.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6cG9sa3BlZHBqdGthcGx1bHhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNDgyNjYsImV4cCI6MjEwNjgyNDI2Nn0.WLx9Hdwx5IFOgboRBM0_MJV4g9Ypl2_D7zC4kAtcP4E
+```
+
+La clave es la **anónima (publicable)** del proyecto: está pensada para ir en la
+app y el acceso a los datos lo limitan las políticas RLS. **Nunca** uses la
+`service_role` ni la secret key. Sin `TELEMETRY_DEBUG=true` la telemetría queda
+apagada en debug. Puedes entrar con los usuarios demo (`joven@demo.com` y
+`adulto@demo.com`, contraseña `demo1234`) o crear una cuenta desde la app.
+
+Pruebas, desde la raíz del repo:
+
+```bash
+melos bootstrap
+melos exec -- flutter analyze
+melos run test
+```
+
+Las pruebas unitarias y de widgets no necesitan backend ni red. Para el E2E
+contra el backend desplegado, en el dispositivo:
+
+```bash
+cd packages/app
+flutter test integration_test/critical_flow_test.dart -d <id-del-dispositivo> \
+  --dart-define=SUPABASE_URL=https://pzpolkpedpjtkaplulxc.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=<la-clave-de-arriba>
+```
+
+El resto de este documento explica la configuración y, como alternativa, cómo
+correr un backend local.
+
 ## 1. Configuración: `--dart-define`
 
 La URL y la clave **no están en el repo**; se pasan al ejecutar. Sin ellas la
@@ -34,7 +74,7 @@ app no se cae: muestra "Falta configurar la app" con los nombres esperados.
 Nunca uses la `service_role` ni la secret key en la app. La clave sale de
 `supabase status` en el proyecto del backend.
 
-## 2. Levantar el backend (en el repo del backend)
+## 2. Alternativa: backend local (en el repo del backend)
 
 ```bash
 supabase start                      # API en http://127.0.0.1:54421
@@ -47,7 +87,7 @@ Usuarios demo (contraseña `demo1234`): `joven@demo.com` (segmento `joven`) y
 `adulto@demo.com` (segmento `adulto`). `supabase db reset` borra los usuarios:
 vuelve a correr `create_demo_users.sh`.
 
-## 3. Ejecutar en un Android físico
+## 3. Android físico con el backend local
 
 El backend corre en tu Mac; desde el teléfono, `127.0.0.1` es el propio
 teléfono. Se usa `adb reverse`:
@@ -179,8 +219,9 @@ claves hardcodeadas.
 
 ## 7. Guion de demostración (video)
 
-Backend corriendo, `adb reverse` activo y la app lanzada con
-`TELEMETRY_DEBUG=true`. Mantén abiertas la consola de Firebase (Remote Config,
+App lanzada con el comando de "Ejecutar con el backend desplegado" (que ya
+incluye `TELEMETRY_DEBUG=true`; con el backend local haría falta además
+`adb reverse`). Mantén abiertas la consola de Firebase (Remote Config,
 Analytics `DebugView`, Crashlytics) y el panel de depuración (ícono de bicho,
 abajo a la derecha, sobre la barra de pestañas).
 
