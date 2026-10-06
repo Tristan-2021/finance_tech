@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:core_errors/core_errors.dart';
 import 'package:core_storage/core_storage.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 
 import '../domain/account.dart';
 import '../domain/account_repository.dart';
@@ -16,8 +17,14 @@ class CachedAccountRepository implements AccountRepository {
 
   final AccountRepository _remote;
   final CacheStore _cache;
+  final Telemetry _telemetry;
 
-  const CachedAccountRepository(this._remote, this._cache);
+  /// Emite `cache_served` (`source: accounts`) cuando sirve la copia guardada.
+  const CachedAccountRepository(
+    this._remote,
+    this._cache, {
+    this._telemetry = const NoopTelemetry(),
+  });
 
   @override
   Future<({List<Account>? accounts, Failure? failure})> getAccounts() async {
@@ -31,7 +38,10 @@ class CachedAccountRepository implements AccountRepository {
 
     if (canServeFromCache(result.failure)) {
       final cached = await _load();
-      if (cached != null) return (accounts: cached, failure: null);
+      if (cached != null) {
+        _telemetry.logEvent('cache_served', {'source': 'accounts'});
+        return (accounts: cached, failure: null);
+      }
     }
     return result;
   }

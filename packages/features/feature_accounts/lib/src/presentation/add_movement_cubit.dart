@@ -89,7 +89,7 @@ class AddMovementCubit extends Cubit<AddMovementState> {
       );
       return;
     }
-    _telemetry.logEvent('movement_added', {'result': 'success'});
+    _telemetry.logEvent('movement_added', {'result': 'ok'});
     emit(const AddMovementState(status: AddMovementStatus.success));
   }
 }

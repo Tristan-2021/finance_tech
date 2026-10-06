@@ -30,8 +30,13 @@ import 'presentation/movements_cubit.dart';
 ///
 /// Asume que un `SupabaseClient` ya está registrado en [getIt]. Si además hay
 /// un [CacheStore] registrado, los repositorios guardan y sirven copias
-/// (*cache-then-network*); si no, funcionan solo contra el servidor.
+/// (*cache-then-network*); si no, funcionan solo contra el servidor. Si hay un
+/// `Telemetry` registrado, miden las cargas y emiten los eventos de estados
+/// degradados (`cache_served`, `retry_exhausted`).
 void registerAccountsDependencies(GetIt getIt) {
+  Telemetry telemetry() =>
+      getIt.isRegistered<Telemetry>() ? getIt<Telemetry>() : const NoopTelemetry();
+
   getIt
     ..registerLazySingleton<AccountsRemoteDataSource>(
       () => SupabaseAccountsRemoteDataSource(getIt<SupabaseClient>()),
@@ -39,9 +44,14 @@ void registerAccountsDependencies(GetIt getIt) {
     ..registerLazySingleton<AccountRepository>(() {
       final AccountRepository remote = AccountRepositoryImpl(
         getIt<AccountsRemoteDataSource>(),
+        telemetry: telemetry(),
       );
       return getIt.isRegistered<CacheStore>()
-          ? CachedAccountRepository(remote, getIt<CacheStore>())
+          ? CachedAccountRepository(
+              remote,
+              getIt<CacheStore>(),
+              telemetry: telemetry(),
+            )
           : remote;
     })
     ..registerLazySingleton<TransactionsRemoteDataSource>(
@@ -50,9 +60,14 @@ void registerAccountsDependencies(GetIt getIt) {
     ..registerLazySingleton<TransactionRepository>(() {
       final TransactionRepository remote = TransactionRepositoryImpl(
         getIt<TransactionsRemoteDataSource>(),
+        telemetry: telemetry(),
       );
       return getIt.isRegistered<CacheStore>()
-          ? CachedTransactionRepository(remote, getIt<CacheStore>())
+          ? CachedTransactionRepository(
+              remote,
+              getIt<CacheStore>(),
+              telemetry: telemetry(),
+            )
           : remote;
     })
     ..registerLazySingleton<GetAccounts>(
@@ -85,9 +100,7 @@ void registerAccountsDependencies(GetIt getIt) {
           (accountId) => AddMovementCubit(
             getIt<AddMovement>(),
             accountId,
-            telemetry: getIt.isRegistered<Telemetry>()
-                ? getIt<Telemetry>()
-                : null,
+            telemetry: telemetry(),
           ),
     );
 }
