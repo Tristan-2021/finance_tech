@@ -40,6 +40,21 @@ propósito.
 - **Telemetría:** `movement_added` con `result` (y `code` si falla); nunca
   importes.
 
+### Telemetría
+
+Los repositorios y el formulario reciben un `Telemetry` (`core_telemetry`);
+`registerAccountsDependencies` lo toma de GetIt si está registrado y, si no, no
+emiten nada. Solo claves permitidas por el filtro de privacidad: nunca nombres
+de cuenta, descripciones, saldos ni importes.
+
+| Evento / traza | Cuándo | Parámetros |
+|---|---|---|
+| `cache_served` | Se sirven datos guardados por un fallo del servidor | `source` (`accounts` o `movements`) |
+| `retry_exhausted` | La petición falla con código `network` tras los reintentos | `source`, `code` |
+| `movement_added` | Se intenta registrar un movimiento | `result` (`ok` o `error`) y `code` si falla |
+| traza `load_balance` | Carga remota de las cuentas (saldo) | |
+| traza `load_movements` | Carga remota de una página de movimientos | |
+
 ### Prueba contra el backend real
 
 Las pruebas con falsos no detectan si el RPC acepta la cadena para su parámetro

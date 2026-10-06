@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:core_errors/core_errors.dart';
 import 'package:core_storage/core_storage.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 
 import '../domain/stale_list.dart';
 import '../domain/transaction.dart';
@@ -14,8 +15,14 @@ import 'cache_codecs.dart';
 class CachedTransactionRepository implements TransactionRepository {
   final TransactionRepository _remote;
   final CacheStore _cache;
+  final Telemetry _telemetry;
 
-  const CachedTransactionRepository(this._remote, this._cache);
+  /// Emite `cache_served` (`source: movements`) cuando sirve la copia guardada.
+  const CachedTransactionRepository(
+    this._remote,
+    this._cache, {
+    this._telemetry = const NoopTelemetry(),
+  });
 
   static String cacheKey(String accountId) => 'transactions:$accountId';
 
@@ -40,7 +47,10 @@ class CachedTransactionRepository implements TransactionRepository {
 
     if (canServeFromCache(result.failure)) {
       final cached = await _load(accountId, limit);
-      if (cached != null) return (transactions: cached, failure: null);
+      if (cached != null) {
+        _telemetry.logEvent('cache_served', {'source': 'movements'});
+        return (transactions: cached, failure: null);
+      }
     }
     return result;
   }

@@ -116,7 +116,7 @@ void main() {
       ));
       expect(cubit.state.status, AddMovementStatus.success);
       expect(telemetry.events.single.name, 'movement_added');
-      expect(telemetry.events.single.params, {'result': 'success'});
+      expect(telemetry.events.single.params, {'result': 'ok'});
     });
 
     test('sin descripción usa el texto por defecto según el tipo', () async {
