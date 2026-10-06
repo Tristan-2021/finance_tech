@@ -24,6 +24,12 @@ docs/                   Contrato del backend y documentos de arquitectura
 El trabajo se desarrolla con **Trunk Based Development**: commits pequeños
 directos a `main`, con CI en cada push.
 
+## Documentación
+
+- [`documentacion/ia/uso-de-ia.md`](documentacion/ia/uso-de-ia.md): cómo se usó la IA en el desarrollo y su impacto.
+- [`packages/app/README.md`](packages/app/README.md): configuración, pruebas, cómo colaborar y el guion de demostración.
+- README de cada paquete con su API, decisiones, recortes y eventos de telemetría.
+
 ## Ejecutar en local
 
 ### 1. Requisitos
