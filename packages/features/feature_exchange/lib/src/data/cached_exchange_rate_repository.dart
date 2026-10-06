@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:core_storage/core_storage.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 
 import '../domain/exchange_rate.dart';
 import '../domain/exchange_rate_repository.dart';
@@ -12,8 +13,14 @@ import '../domain/exchange_rate_repository.dart';
 class CachedExchangeRateRepository implements ExchangeRateRepository {
   final ExchangeRateRepository _remote;
   final CacheStore _cache;
+  final Telemetry _telemetry;
 
-  const CachedExchangeRateRepository(this._remote, this._cache);
+  /// Emite `cache_served` (`source: exchange`) cuando sirve la copia guardada.
+  const CachedExchangeRateRepository(
+    this._remote,
+    this._cache, {
+    this._telemetry = const NoopTelemetry(),
+  });
 
   static String cacheKey(String from, String to) => 'exchange_rate_${from}_$to';
 
@@ -33,7 +40,10 @@ class CachedExchangeRateRepository implements ExchangeRateRepository {
     final code = result.failure?.code;
     if (code == 'network' || code == 'unknown') {
       final cached = await _load(from, to);
-      if (cached != null) return cached;
+      if (cached != null) {
+        _telemetry.logEvent('cache_served', {'source': 'exchange'});
+        return cached;
+      }
     }
     return result;
   }
