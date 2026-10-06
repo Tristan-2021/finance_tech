@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:core_errors/core_errors.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 import 'package:feature_notifications/feature_notifications.dart';
 import 'package:feature_notifications/src/domain/device_token_repository.dart';
 import 'package:feature_notifications/src/domain/messaging_gateway.dart';
@@ -221,4 +222,87 @@ void main() {
       expect(opens, 0);
     });
   });
+
+  group('telemetría', () {
+    late _FakeTelemetry telemetry;
+    late NotificationsController tracked;
+
+    setUp(() {
+      telemetry = _FakeTelemetry();
+      tracked = NotificationsController(
+        gateway,
+        tokens,
+        stopTimeout: const Duration(milliseconds: 50),
+        telemetry: telemetry,
+      );
+    });
+
+    test('permiso concedido emite push_permission granted', () async {
+      await tracked.initialize();
+      await tracked.start(onOpenAccounts: () {});
+      expect(telemetry.events.single.name, 'push_permission');
+      expect(telemetry.events.single.params, {'result': 'granted'});
+    });
+
+    test('permiso rechazado emite push_permission denied', () async {
+      gateway.permission = false;
+      await tracked.initialize();
+      await tracked.start(onOpenAccounts: () {});
+      expect(telemetry.events.single.params, {'result': 'denied'});
+    });
+
+    test('abrir con la app en segundo plano: push_opened background', () async {
+      await tracked.initialize();
+      gateway.opened.add(const PushMessage(title: 'Dinero recibido'));
+      await pumpEventQueue();
+      expect(telemetry.events.single.name, 'push_opened');
+      expect(telemetry.events.single.params, {'source': 'background'});
+    });
+
+    test('tocar una notificación local: push_opened foreground', () async {
+      await tracked.initialize();
+      gateway.opened.add(const PushMessage(origin: PushOrigin.foreground));
+      await pumpEventQueue();
+      expect(telemetry.events.single.params, {'source': 'foreground'});
+    });
+
+    test('el mensaje que abrió la app cerrada: push_opened terminated', () async {
+      gateway.initial = const PushMessage(title: 'Movimiento registrado');
+      await tracked.initialize();
+      expect(telemetry.events.single.params, {'source': 'terminated'});
+    });
+
+    test('nunca se envían textos del mensaje ni el token', () async {
+      gateway.initial = const PushMessage(title: 'Dinero recibido', body: 'secreto');
+      await tracked.initialize();
+      await tracked.start(onOpenAccounts: () {});
+      gateway.opened.add(const PushMessage(title: 'Dinero recibido'));
+      await pumpEventQueue();
+
+      for (final event in telemetry.events) {
+        expect(TelemetrySanitizer.allowedKeys, containsAll(event.params.keys));
+        final values = event.params.values.join(' ');
+        for (final secret in ['Dinero', 'secreto', 'token-1']) {
+          expect(values, isNot(contains(secret)), reason: event.name);
+        }
+      }
+    });
+  });
+}
+
+class _FakeTelemetry implements Telemetry {
+  final events = <({String name, Map<String, Object?> params})>[];
+
+  @override
+  void logEvent(String name, [Map<String, Object?> params = const {}]) =>
+      events.add((name: name, params: params));
+
+  @override
+  void recordError(Object error, StackTrace stack, {bool fatal = false, String? reason}) {}
+
+  @override
+  void setSegment(String? segment) {}
+
+  @override
+  Future<T> trace<T>(String name, Future<T> Function() action) => action();
 }
