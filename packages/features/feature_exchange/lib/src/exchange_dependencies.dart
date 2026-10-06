@@ -1,5 +1,6 @@
 import 'package:core_network/core_network.dart';
 import 'package:core_storage/core_storage.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 import 'package:get_it/get_it.dart';
 import 'package:http/http.dart' as http;
 
@@ -19,11 +20,15 @@ import 'presentation/exchange_cubit.dart';
 ///
 /// Si hay un `CacheStore` registrado, la tasa se guarda y se sirve la última
 /// guardada cuando no hay red; si hay un `NetworkStatusNotifier`, se le avisa
-/// de los reintentos.
+/// de los reintentos. Si hay un `Telemetry` registrado, mide la carga y emite
+/// `cache_served` y `retry_exhausted`.
 void registerExchangeDependencies(
   GetIt getIt, {
   required http.Client httpClient,
 }) {
+  Telemetry telemetry() =>
+      getIt.isRegistered<Telemetry>() ? getIt<Telemetry>() : const NoopTelemetry();
+
   getIt
     ..registerLazySingleton<ExchangeRateRemoteDataSource>(
       () => FrankfurterDataSource(
@@ -39,9 +44,14 @@ void registerExchangeDependencies(
     ..registerLazySingleton<ExchangeRateRepository>(() {
       final ExchangeRateRepository remote = ExchangeRateRepositoryImpl(
         getIt<ExchangeRateRemoteDataSource>(),
+        telemetry: telemetry(),
       );
       return getIt.isRegistered<CacheStore>()
-          ? CachedExchangeRateRepository(remote, getIt<CacheStore>())
+          ? CachedExchangeRateRepository(
+              remote,
+              getIt<CacheStore>(),
+              telemetry: telemetry(),
+            )
           : remote;
     })
     ..registerLazySingleton<GetRate>(

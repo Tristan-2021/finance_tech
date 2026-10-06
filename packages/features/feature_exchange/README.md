@@ -45,6 +45,19 @@ cambiar de proveedor es escribir otra implementación.
 "Sin conexión: tasa guardada del {fecha}" con **Reintentar**. Sin copia y sin
 red muestra el error con **Reintentar**. Se recupera sola al reintentar.
 
+## Telemetría
+
+Los repositorios reciben un `Telemetry` (`core_telemetry`);
+`registerExchangeDependencies` lo toma de GetIt si está registrado y, si no, no
+emiten nada. Solo claves permitidas por el filtro de privacidad: nunca montos,
+tasas ni monedas.
+
+| Evento / traza | Cuándo | Parámetros |
+|---|---|---|
+| `cache_served` | Se sirve la tasa guardada por un fallo del servicio | `source: exchange` |
+| `retry_exhausted` | La petición falla con código `network` tras los reintentos | `source: exchange`, `code` |
+| traza `load_exchange_rate` | Llamada remota a Frankfurter | |
+
 ## Recortes
 
 - Solo EUR → USD en la interfaz (el paquete acepta otros pares, pero la UI y la
