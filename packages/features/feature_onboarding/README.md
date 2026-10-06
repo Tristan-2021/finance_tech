@@ -48,6 +48,21 @@ shell: al arrancar, `GetCurrentUser()` decide entre el home (hay usuario) y
 `LoginPage` (es `null`); `SignOut()` cierra la sesión y devuelve un `Failure?`.
 La sesión la restaura Supabase al iniciar, así que la lectura no usa la red.
 
+## Telemetría
+
+Los Cubits reciben un `Telemetry` (de `core_telemetry`); `registerOnboardingDependencies`
+lo toma de GetIt si está registrado y, si no, no emiten nada. Solo se envían
+claves permitidas por el filtro de privacidad: nunca correo, nombre, contraseña
+ni el mensaje de un error.
+
+| Evento | Cuándo | Parámetros |
+|---|---|---|
+| `register_step_completed` | Al completar cada paso del registro (el 3 al crear la cuenta) | `step` (1, 2 o 3) |
+| `register_failed` | Si crear la cuenta falla | `step` (3), `code` |
+| `login_failed` | Si el login falla en el servidor | `code` |
+
+`login_success` y `register_completed` los emite el shell.
+
 ## Decisiones anotadas
 
 - `GetCurrentUser` es síncrono: lee la sesión ya restaurada, sin red.

@@ -1,3 +1,4 @@
+import 'package:core_telemetry/core_telemetry.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -12,14 +13,17 @@ class RegisterCubit extends Cubit<RegisterState> {
   final SignUp _signUp;
   final GetCurrentUser _getCurrentUser;
   final DateTime Function() _clock;
+  final Telemetry _telemetry;
 
   /// Solo en memoria y fuera del estado. Se borra al terminar.
   String _password = '';
 
+  /// Telemetría del embudo: solo el paso y, si falla, el código del error.
   RegisterCubit({
     required this._signUp,
     required this._getCurrentUser,
     DateTime Function()? clock,
+    this._telemetry = const NoopTelemetry(),
   }) : _clock = clock ?? DateTime.now,
        super(const RegisterState());
 
@@ -37,6 +41,7 @@ class RegisterCubit extends Cubit<RegisterState> {
       return;
     }
     _password = password;
+    _telemetry.logEvent('register_step_completed', {'step': 1});
     emit(state.copyWith(email: email.trim(), step: 2));
   }
 
@@ -55,6 +60,7 @@ class RegisterCubit extends Cubit<RegisterState> {
       );
       return;
     }
+    _telemetry.logEvent('register_step_completed', {'step': 2});
     emit(
       state.copyWith(
         fullName: fullName.trim(),
@@ -99,6 +105,7 @@ class RegisterCubit extends Cubit<RegisterState> {
     if (isClosed) return;
 
     if (failure != null) {
+      _telemetry.logEvent('register_failed', {'step': 3, 'code': failure.code});
       emit(
         state.copyWith(
           status: RegisterStatus.error,
@@ -108,6 +115,7 @@ class RegisterCubit extends Cubit<RegisterState> {
       return;
     }
 
+    _telemetry.logEvent('register_step_completed', {'step': 3});
     _password = '';
     final user = _getCurrentUser();
     emit(

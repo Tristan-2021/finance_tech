@@ -1,4 +1,5 @@
 import 'package:core_network/core_network.dart';
+import 'package:core_telemetry/core_telemetry.dart';
 import 'package:get_it/get_it.dart';
 
 import 'data/auth_remote_data_source.dart';
@@ -16,8 +17,13 @@ import 'presentation/register/register_cubit.dart';
 /// Registra en [getIt] todo lo que necesita el feature: data source,
 /// repositorio, casos de uso (singletons perezosos) y fábricas de Cubit.
 ///
-/// Asume que un `SupabaseClient` ya está registrado en [getIt].
+/// Asume que un `SupabaseClient` ya está registrado en [getIt]. Si hay un
+/// `Telemetry` registrado, los Cubits emiten el embudo del registro y los fallos
+/// de login; si no, no emiten nada.
 void registerOnboardingDependencies(GetIt getIt) {
+  Telemetry telemetry() =>
+      getIt.isRegistered<Telemetry>() ? getIt<Telemetry>() : const NoopTelemetry();
+
   getIt
     ..registerLazySingleton<AuthRemoteDataSource>(
       () => SupabaseAuthRemoteDataSource(getIt<SupabaseClient>()),
@@ -34,11 +40,14 @@ void registerOnboardingDependencies(GetIt getIt) {
     ..registerLazySingleton<GetUserProfile>(
       () => GetUserProfile(getIt<AuthRepository>()),
     )
-    ..registerFactory<LoginCubit>(() => LoginCubit(getIt<SignIn>()))
+    ..registerFactory<LoginCubit>(
+      () => LoginCubit(getIt<SignIn>(), telemetry: telemetry()),
+    )
     ..registerFactory<RegisterCubit>(
       () => RegisterCubit(
         signUp: getIt<SignUp>(),
         getCurrentUser: getIt<GetCurrentUser>(),
+        telemetry: telemetry(),
       ),
     );
 }
