@@ -1,156 +1,169 @@
 # finance_tech
 
-Plataforma financiera digital en Flutter, organizada como monorepo con Pub
-Workspaces y Melos. Incluye **registro, login, cuentas, saldo y movimientos**
-contra un backend Supabase local, modo sin conexión, **telemetría con Firebase**,
-un **home personalizado por segmento** controlado con Remote Config, un
-**conversor de remesas** con datos reales y **notificaciones push**.
+[![CI](https://github.com/Tristan-2021/finance_tech/actions/workflows/ci.yml/badge.svg)](https://github.com/Tristan-2021/finance_tech/actions/workflows/ci.yml)
+![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)
+![Dart](https://img.shields.io/badge/Dart-%5E3.9-0175C2?logo=dart&logoColor=white)
+![Supabase](https://img.shields.io/badge/Backend-Supabase-3ECF8E?logo=supabase&logoColor=white)
+
+An open-source digital banking app built with **Flutter**, organized as a
+monorepo with **Pub Workspaces** and **Melos**. It's a reference for clean,
+modular, testable mobile architecture in a fintech setting.
+
+## Features
+
+- **Onboarding**: 3-step sign-up, login and session handling.
+- **Accounts**: balance, transaction history and recording a new transaction, against a Supabase backend.
+- **Offline mode**: encrypted local cache so the app stays usable without a connection.
+- **Personalized home**: Firebase Remote Config decides which blocks each customer segment sees, and in what order. Invalid config falls back to the last valid or the bundled layout.
+- **Remittance converter**: EUR → USD using real ECB exchange rates.
+- **Push notifications**: FCM permission, token handling and alerts.
+- **Privacy-first telemetry**: Analytics, Crashlytics and Performance behind an allow-list filter, so no emails, names, balances or amounts are ever sent.
+
+## Architecture
 
 ```
 packages/
-  app/                  Shell: compone los features y decide qué pantalla ver
+  app/                      Shell: composes the features and routes between screens
   core/
-    core_errors/        Failure compartido
-    core_network/       Supabase, reintentos y mapeo de errores
-    core_storage/       Caché local cifrada
-    core_telemetry/     Analytics, Crashlytics y Performance con filtro de privacidad
-    core_ui/            Tema accesible y componentes compartidos
+    core_errors/            Shared Failure type
+    core_network/           Supabase client, retries and error mapping
+    core_storage/           Encrypted local cache
+    core_telemetry/         Analytics, Crashlytics and Performance with privacy filter
+    core_ui/                Accessible theme and shared components
   features/
-    feature_onboarding/       Registro en 3 pasos, login y sesión
-    feature_accounts/         Cuentas, saldo, movimientos y registrar un movimiento
-    feature_personalization/  Home por segmento (Remote Config) y resumen de gastos
-    feature_exchange/         Conversor de remesas EUR→USD (tasas del BCE)
-    feature_notifications/    Notificaciones push (FCM): permiso, token y avisos
-docs/                   Contrato del backend y documentos de arquitectura
+    feature_onboarding/     Sign-up, login and session
+    feature_accounts/       Accounts, balance and transactions
+    feature_personalization/ Segment-based home (Remote Config) and spending summary
+    feature_exchange/       EUR→USD remittance converter (ECB rates)
+    feature_notifications/  Push notifications (FCM)
+documentacion/              Spec, deployment and AI-usage docs
 ```
 
-El trabajo se desarrolla con **Trunk Based Development**: commits pequeños
-directos a `main`, con CI en cada push.
+Features depend on `core_*` packages, never on each other; the `app` package is
+the only place where they are wired together.
 
-## Documentación
+Development follows **Trunk Based Development**: small commits straight to
+`main`, with CI on every push.
 
-- [`documentacion/sdd.md`](documentacion/sdd.md): especificación de la app, trazabilidad requisito→verificación y cómo se aplicó el desarrollo guiado por especificaciones.
-- [`documentacion/despliegue.md`](documentacion/despliegue.md): entornos, secretos, CI, publicación y reversión.
-- [`documentacion/ia/uso-de-ia.md`](documentacion/ia/uso-de-ia.md): cómo se usó la IA en el desarrollo y su impacto.
-- [`documentacion/ia/prompt-maestro.md`](documentacion/ia/prompt-maestro.md): síntesis de las instrucciones que guiaron a los agentes (roles, arquitectura, contratos, flujo).
-- [`packages/app/README.md`](packages/app/README.md): configuración, pruebas, cómo colaborar y el guion de demostración.
-- README de cada paquete con su API, decisiones, recortes y eventos de telemetría.
+## Quick start
 
-## Ejecutar con el backend desplegado
-
-El backend de Supabase ya está desplegado: no hace falta levantar nada en local.
-Con un dispositivo Android conectado:
+Requirements: [Flutter](https://docs.flutter.dev/get-started/install),
+[Melos](https://melos.invertase.dev) (`dart pub global activate melos 8.9.0`)
+and, for a physical Android device, `adb`.
 
 ```bash
+git clone https://github.com/Tristan-2021/finance_tech.git
+cd finance_tech
 melos bootstrap
+```
+
+### Option A: hosted demo backend
+
+No local setup needed. With an Android device connected:
+
+```bash
 cd packages/app
-flutter run -d <id-del-dispositivo> --dart-define=TELEMETRY_DEBUG=true \
+flutter run -d <device-id> --dart-define=TELEMETRY_DEBUG=true \
   --dart-define=SUPABASE_URL=https://pzpolkpedpjtkaplulxc.supabase.co \
-  --dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6cG9sa3BlZHBqdGthcGx1bHhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNDgyNjYsImV4cCI6MjEwNjgyNDI2Nn0.WLx9Hdwx5IFOgboRBM0_MJV4g9Ypl2_D7zC4kAtcP4E
+  --dart-define=SUPABASE_ANON_KEY=<publishable-anon-key>
 ```
 
-Es la clave anónima (publicable); el acceso lo limita RLS. Nunca la `service_role`.
-Para las pruebas y el E2E, y para cómo guiar la demostración, ver
-[`packages/app/README.md`](packages/app/README.md).
+The anon key is publishable and access is restricted by Row Level Security.
+**Never use the `service_role` key in a client.**
 
-## Ejecutar en local (backend propio)
-
-### 1. Requisitos
-Flutter, `melos` (`dart pub global activate melos 8.9.0`), el CLI de Supabase y,
-para el Android físico, `adb`. Desde la raíz del repo:
-
-```bash
-melos bootstrap
-```
-
-### 2. Backend (en el repo del backend)
+### Option B: your own local backend
 
 ```bash
 supabase start
-supabase status          # copia la clave publicable
-./scripts/create_demo_users.sh
+supabase status                    # copy the publishable key
+./scripts/create_demo_users.sh     # in the backend repo
 ```
 
-Usuarios demo (contraseña `demo1234`): `joven@demo.com` y `adulto@demo.com`.
+Demo users (password `demo1234`): `joven@demo.com` and `adulto@demo.com`.
 
-### 3. App en un Android físico
+Android device:
 
 ```bash
-adb devices
-adb reverse tcp:54421 tcp:54421
-flutter devices          # apunta el id del dispositivo
+adb reverse tcp:54421 tcp:54421    # repeat after unplugging or rebooting
 cd packages/app
-flutter run -d <id-del-dispositivo> \
+flutter run -d <device-id> \
   --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
-  --dart-define=SUPABASE_ANON_KEY=<la-clave-publicable>
+  --dart-define=SUPABASE_ANON_KEY=<publishable-key>
 ```
 
-`adb reverse` se pierde al desconectar el cable o reiniciar el teléfono: repite
-ese comando si la app deja de conectar.
-
-### 4. App en macOS (sin teléfono)
+macOS (no phone needed):
 
 ```bash
 cd packages/app
 flutter run -d macos \
   --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
-  --dart-define=SUPABASE_ANON_KEY=<la-clave-publicable>
+  --dart-define=SUPABASE_ANON_KEY=<publishable-key>
 ```
 
-La clave es la **publicable**; nunca uses la `service_role` ni la secret key.
-Sin los `--dart-define`, la app muestra "Falta configurar la app" con los
-nombres esperados. El detalle de cada plataforma (emulador Android, simulador
-iOS, IP de la red local, problemas frecuentes) está en
+Without the `--dart-define` values the app shows a "missing configuration"
+screen listing the expected names. Per-platform details (Android emulator, iOS
+simulator, LAN IP, common problems) are in
 [`packages/app/README.md`](packages/app/README.md).
 
-## Firebase, telemetría y home personalizado
+## Telemetry and personalization
 
-Proyecto de Firebase: `banco-demo-05487` (Android: `com.bancointernacional.banco_app`).
+**Telemetry** (`core_telemetry`) is off in debug builds. To watch events in
+Firebase `DebugView`:
 
-- **Telemetría** (`core_telemetry`): eventos de Analytics, errores en Crashlytics
-  y trazas de Performance. Un filtro de privacidad solo deja pasar una lista
-  cerrada de parámetros (sin correos, nombres, saldos ni importes). La recolección
-  está apagada en debug; para verla en `DebugView`:
+```bash
+adb shell setprop debug.firebase.analytics.app com.bancointernacional.banco_app
+cd packages/app
+flutter run -d <device-id> --dart-define=TELEMETRY_DEBUG=true \
+  --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
+  --dart-define=SUPABASE_ANON_KEY=<publishable-key>
+```
 
-  ```bash
-  adb shell setprop debug.firebase.analytics.app com.bancointernacional.banco_app
-  cd packages/app
-  flutter run -d <id-del-dispositivo> --dart-define=TELEMETRY_DEBUG=true \
-    --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
-    --dart-define=SUPABASE_ANON_KEY=<la-clave-publicable>
-  ```
+Events: `app_opened` and `block_viewed` (with `block_id`, `block_type`, `segment`).
 
-  Eventos: `app_opened` y `block_viewed` (con `block_id`, `block_type`, `segment`).
+**Personalized home** (`feature_personalization`): the `home_layout` Remote
+Config parameter (JSON) defines the blocks per segment and their order. Edit it
+in the Firebase console, publish, and the app applies it without a restart. An
+example JSON and the parser rules are in
+[`packages/features/feature_personalization/README.md`](packages/features/feature_personalization/README.md).
 
-- **Home personalizado** (`feature_personalization`): el parámetro `home_layout`
-  de Remote Config (JSON) define qué bloques ve cada segmento y en qué orden.
-  Si Remote Config falla o publica un JSON inválido, la app usa el último layout
-  válido o el embebido. Para probarlo, edita el JSON en la consola de Firebase,
-  publica y la app lo aplica sin reiniciar. El JSON de ejemplo y las reglas del
-  parser están en
-  [`packages/features/feature_personalization/README.md`](packages/features/feature_personalization/README.md).
+## Testing
 
-## Probar
-
-Desde la raíz del repo, igual que el CI:
+From the repo root, the same commands CI runs:
 
 ```bash
 melos exec -- flutter analyze
 melos exec --diff=HEAD --include-dependents --dir-exists=test -- flutter test --reporter expanded --exclude-tags integration
 ```
 
-La segunda corre solo los paquetes que cambiaron y los que dependen de ellos.
-Para todos los paquetes: `melos run test`.
+The second command only tests changed packages and their dependents. To test
+everything: `melos run test`.
 
-Dos pruebas extra, fuera del CI y ejecutadas a mano:
+Two extra suites run manually, outside CI:
 
 ```bash
-# E2E en dispositivo (casos de uso falsos, sin backend)
+# On-device E2E (fake use cases, no backend)
 cd packages/app
-flutter test integration_test/login_balance_test.dart -d <id-del-dispositivo>
+flutter test integration_test/login_balance_test.dart -d <device-id>
 
-# Integración contra el backend local (necesita los --dart-define)
+# Integration against the local backend
 melos exec --scope=banco_app -- flutter test --tags integration \
   --dart-define=SUPABASE_URL=http://127.0.0.1:54421 \
-  --dart-define=SUPABASE_ANON_KEY=<la-clave-publicable>
+  --dart-define=SUPABASE_ANON_KEY=<publishable-key>
 ```
+
+## Documentation
+
+Most docs are written in Spanish.
+
+- [`documentacion/sdd.md`](documentacion/sdd.md): app spec, requirement → verification traceability, and how spec-driven development was applied.
+- [`documentacion/despliegue.md`](documentacion/despliegue.md): environments, secrets, CI, release and rollback.
+- [`documentacion/ia/uso-de-ia.md`](documentacion/ia/uso-de-ia.md): how AI was used during development and its impact.
+- [`documentacion/ia/prompt-maestro.md`](documentacion/ia/prompt-maestro.md): the master prompt that guided the agents (roles, architecture, contracts, workflow).
+- [`packages/app/README.md`](packages/app/README.md): configuration, tests, how to contribute and the demo script.
+- Every package has its own README with its API, decisions and telemetry events.
+
+## Contributing
+
+Contributions are welcome. Open an issue to discuss larger changes, keep commits
+small, and make sure `flutter analyze` and the tests pass before pushing. See
+[`packages/app/README.md`](packages/app/README.md) for the workflow.
