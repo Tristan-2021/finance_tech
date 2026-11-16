@@ -17,6 +17,7 @@ SOS 동결·안심 모드·한도·보호자 요청)은 보호 대상 가족에�
 from __future__ import annotations
 
 import re
+import secrets
 import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -56,6 +57,7 @@ from .models import (
     LedgerEntry,
     Member,
     Notice,
+    PairingCode,
     RiskAssessment,
     SmsMessage,
 )
@@ -536,6 +538,16 @@ class FamilyService:
                     "reasons": list(verdict.reasons),
                     "explanation": verdict.explanation,
                 },
+            )
+            self._alert(m, f"위험 의심 문자 ({sender_label})", "danger", "⚠️")
+            g = self.guardian()
+            self._integrate(
+                self.gw.push.send(
+                    g.name,
+                    f"위험 문자 경고 · {self._who(m)}",
+                    f"{sender_label} · {verdict.explanation}",
+                    {"type": "sms", "member_id": m.id, "sms_id": msg.id, "level": verdict.level},
+                )
             )
 
         if verdict.level == "danger":
@@ -1895,6 +1907,10 @@ class FamilyService:
             expires_at = now + timedelta(seconds=self.settings.approval_timeout_seconds)
         else:
             expires_at = None
+        req_payload = dict(payload)
+        inc = self.active_incident(m.id) if (is_hold and self.is_caution_mode(m)) else None
+        if inc is not None:
+            req_payload["incident_id"] = inc.id
         req = ApprovalRequest(
             id=uid("req"),
             member_id=m.id,
@@ -1902,7 +1918,7 @@ class FamilyService:
             title=title,
             amount=amount,
             detail=detail,
-            payload=payload,
+            payload=req_payload,
             risk=risk,
             status="pending",
             channel="앱 알림",
@@ -1912,9 +1928,9 @@ class FamilyService:
         )
         self.s.add(req)
         self._alert(m, f"{title} 보류" if is_hold else f"{title} 확인 요청", "pending", REQUEST_EMOJI[type_], amount, req.id)
-        if is_hold and self.is_caution_mode(m):
-            self.record_incident_item(
-                m.id,
+        if inc is not None:
+            self._add_incident_item(
+                inc,
                 "hold",
                 f"{title} {won(amount)} 보류",
                 {"request_id": req.id, "amount": amount},
@@ -2227,12 +2243,28 @@ class FamilyService:
             return False
         self.s.refresh(req)
         self._sync_alert(req)
+        if self.is_caution_mode(m):
+            self.record_incident_item(
+                m.id,
+                "hold",
+                f"{req.title} 보류 만료 · 본인 재확인 대기",
+                {"request_id": req.id},
+            )
         self._integrate(
             self.gw.push.send(
                 m.name,
                 "보류 시간이 지났어요",
                 f"{req.title} 내용을 다시 확인해 주세요",
                 {"type": "reconfirm", "request_id": req.id},
+            )
+        )
+        g = self.guardian()
+        self._integrate(
+            self.gw.push.send(
+                g.name,
+                f"본인 재확인 대기 · {self._who(m)}",
+                f"{req.title} 보류 시간이 지나 본인 재확인을 기다리고 있어요",
+                {"type": "reconfirm", "member_id": m.id, "request_id": req.id},
             )
         )
         self._emit(
@@ -2259,10 +2291,101 @@ class FamilyService:
             return False
         self.s.refresh(req)
         self._protect(m, f"{req.title} 자동 취소", f"{hours}시간 동안 재확인 없음", "취소", "red", "🛡️")
+        if self.is_caution_mode(m):
+            self.record_incident_item(
+                m.id,
+                "hold",
+                f"{req.title} 재확인 기한 초과로 자동 취소",
+                {"request_id": req.id},
+            )
         self._sync_alert(req)
         self._notice(m, req, reason)
         self._emit("expired", f"{req.title} 보류가 시간 초과로 취소됐어요", member_id=m.id, request_id=req.id)
         return True
+
+    # ------------------------------------------------------------------ 보호자 연결 · 동의 (기획서 5.8)
+    def issue_pairing_code(self, member_id: str = "senior") -> dict[str, Any]:
+        g = self.guardian()
+        m = self.protected(member_id)
+        now = clock.now()
+        expires_at = now + timedelta(seconds=self.settings.pairing_code_seconds)
+        code = ""
+        for _ in range(20):
+            candidate = f"{secrets.randbelow(900000) + 100000}"
+            if self.s.get(PairingCode, candidate) is None:
+                code = candidate
+                break
+        if not code:
+            raise DomainError("pairing-code", "연결 코드를 만들지 못했어요. 다시 시도해 주세요.", 500)
+        self.s.add(
+            PairingCode(
+                code=code,
+                guardian_id=g.id,
+                member_id=m.id,
+                created_at=now,
+                expires_at=expires_at,
+            )
+        )
+        self.s.flush()
+        return {
+            "code": code,
+            "qr_value": code,
+            "guardian_id": g.id,
+            "guardian_name": g.name,
+            "member_id": m.id,
+            "member_name": m.name,
+            "expires_at": iso(expires_at),
+            "expires_in_seconds": self.settings.pairing_code_seconds,
+        }
+
+    def connect_pairing(self, member_id: str, code: str, consented: bool) -> dict[str, Any]:
+        m = self.protected(member_id)
+        if not consented:
+            raise DomainError("consent-required", "보호자 연결 안내에 동의해 주세요.")
+        clean_code = (code or "").strip().upper()
+        pc = self.s.get(PairingCode, clean_code)
+        if pc is None or pc.member_id != m.id:
+            raise DomainError("invalid-code", "연결 코드가 올바르지 않아요.")
+        if pc.used_at is not None:
+            raise DomainError("code-used", "이미 사용된 연결 코드예요.", 409)
+        now = clock.now()
+        if now >= pc.expires_at:
+            raise DomainError("code-expired", "연결 코드의 유효 시간이 지났어요. 새 코드를 발급받아 주세요.")
+
+        self.s.flush()
+        claimed = self.s.execute(
+            update(PairingCode)
+            .where(
+                PairingCode.code == clean_code,
+                PairingCode.used_at.is_(None),
+                PairingCode.expires_at > now,
+            )
+            .values(used_at=now)
+        )
+        if not claimed.rowcount:
+            raise DomainError("code-expired", "연결 코드가 만료되었거나 이미 사용되었어요.", 409)
+
+        m.guardian_id = pc.guardian_id
+        m.paired_at = now
+        m.consent_at = now
+        g = self.guardian()
+        self._protect(m, "보호자 연결", f"{g.name}님과 연결 및 동의 완료", "연결", "green", "🔗")
+        self._emit(
+            "pairing",
+            f"{self._who(m)} 기기가 보호자와 연결되었어요",
+            member_id=m.id,
+            guardian_id=g.id,
+            paired_at=iso(now),
+            consent_at=iso(now),
+        )
+        return {
+            "status": "connected",
+            "member_id": m.id,
+            "guardian_id": g.id,
+            "guardian_name": g.name,
+            "paired_at": iso(now),
+            "consent_at": iso(now),
+        }
 
     # ------------------------------------------------------------------ 스냅샷 (앱이 그리는 전체 상태)
     def snapshot(self) -> dict[str, Any]:
@@ -2411,6 +2534,8 @@ class FamilyService:
             "frozen_source": m.frozen_source if frozen else None,
             "caution_mode": caution,
             "caution_until": iso(m.caution_until) if caution else None,
+            "paired_at": iso(m.paired_at),
+            "consent_at": iso(m.consent_at),
             "active_incident": self._incident_dict(inc) if inc else None,
             "sms_messages": [self._sms_dict(x) for x in sms_rows],
             "sms_conversations": self._sms_conversations(sms_rows),
@@ -2538,6 +2663,7 @@ class FamilyService:
             "amount": r.amount,
             "detail": r.detail,
             "risk": r.risk,
+            "incident_id": (r.payload or {}).get("incident_id"),
             "status": r.status,
             "channel": r.channel,
             "created_at": iso(r.created_at),

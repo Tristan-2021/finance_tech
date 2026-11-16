@@ -54,6 +54,8 @@ class Member(Base):
     frozen_until: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     frozen_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     caution_until: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    paired_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    consent_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
     accounts: Mapped[list["Account"]] = relationship(
         back_populates="member", order_by="Account.sort_order", cascade="all, delete-orphan"
@@ -298,3 +300,16 @@ class CallSession(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
     answered_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+
+class PairingCode(Base):
+    """보호자 연결용 일회성 QR/숫자 코드 (기획서 5.8)."""
+
+    __tablename__ = "pairing_codes"
+
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    guardian_id: Mapped[str] = mapped_column(ForeignKey("guardians.id"), index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("members.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

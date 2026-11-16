@@ -126,6 +126,17 @@ class CautionReleaseBody(BaseModel):
     guardian_id: str
 
 
+class PairingCodeIssueBody(BaseModel):
+    guardian_id: str = "guardian"
+    member_id: str = "senior"
+
+
+class PairingConnectBody(BaseModel):
+    member_id: str = "senior"
+    code: str = Field(min_length=1, max_length=32)
+    consented: bool = False
+
+
 class PaymentBody(BaseModel):
     member_id: str
     merchant_id: str

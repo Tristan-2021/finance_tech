@@ -35,4 +35,6 @@ abstract final class FbIcons {
   static const cloudOff = Icons.cloud_off_outlined;
   static const sms = Icons.sms_outlined;
   static const linkOff = Icons.link_off_rounded;
+  static const qr = Icons.qr_code_2_rounded;
+  static const qrScanner = Icons.qr_code_scanner_rounded;
 }

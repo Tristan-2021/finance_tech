@@ -42,6 +42,8 @@ from .schemas import (
     LoanQuoteBody,
     MemberRequest,
     ModeBody,
+    PairingCodeIssueBody,
+    PairingConnectBody,
     PaymentBody,
     SavingsCancelBody,
     SleepGuardBody,
@@ -434,6 +436,17 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
     @api.post("/guardian/sleep-guard")
     def sleep_guard(body: SleepGuardBody, svc: FamilyService = Depends(service)):
         return done(svc, svc.set_sleep_guard(body.member_id, body.enabled))
+
+    # ---------------- 보호자 연결 · 동의 (기획서 5.8)
+    @api.post("/guardian/pairing-code")
+    def issue_pairing_code(body: PairingCodeIssueBody, svc: FamilyService = Depends(service)):
+        check_guardian(svc, body.guardian_id)
+        return done(svc, svc.issue_pairing_code(body.member_id))
+
+    @api.post("/pairing/connect")
+    @api.post("/guardian/pairing/connect", include_in_schema=False)
+    def connect_pairing(body: PairingConnectBody, svc: FamilyService = Depends(service)):
+        return done(svc, svc.connect_pairing(body.member_id, body.code, body.consented))
 
     # ---------------- 기타
     @api.post("/members/{member_id}/notices/{notice_id}/dismiss")

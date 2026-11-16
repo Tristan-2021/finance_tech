@@ -59,7 +59,7 @@ flowchart LR
 | **주의 모드** | 위험 문자나 위험 통화가 감지되면 24시간 유지됩니다. 본인은 끌 수 없고 보호자는 끝낼 수 있습니다. | 구현됨 (`backend/app/service.py` · `feature_guardian`) |
 | **확인 질문과 종합 판정** | 주의 모드 중 적금·예금 해지, 큰 금액 송금, 대출 한도 조회·신청을 시도하면 AI가 앞선 연락에 맞춘 질문을 하고, 규칙·점수 1차와 LLM 최종으로 낮음 / 주의 / 위험을 정합니다. | 구현됨 (`backend/app/domain/banking.py` · `backend/app/integrations.py` · `core_ui` · `feature_transfer`) |
 | **거래 보류** | 위험 판정 거래(송금·적금 해지·대출 신청)를 30분 멈춥니다. 보호자는 해제·연장, 본인은 취소할 수 있고, 보호자 응답이 없으면 본인이 다시 확인해야 진행됩니다. | 구현됨 (`backend/app/service.py` · `feature_transfer` · `feature_guardian`) |
-| **보호자 모드** | 위험 근거 요약, 보류 해제·연장, 앱 안 통화, 주의 모드 해제, 위험 기록, 가족 상태·한도·모드 관리. | 일부 구현. 보류 해제·연장, 주의 모드 해제, 앱 안 가족 통화, 가족 상태·알림·한도·모드 관리와 결제·동결 승인은 구현됨. 근거 요약, 위험 기록, QR 연결은 구현 예정 |
+| **보호자 모드** | 위험 근거 요약(시간순), 보류 해제·연장, 앱 안 통화, 주의 모드 해제, 위험 기록(목록→상세), QR·코드 연결 및 동의, 가족 상태·한도·모드 관리. | 구현됨 (`backend/app/service.py` · `feature_guardian` · `packages/app/lib/views/settings_view.dart`) |
 | **가상 은행** | 계좌 조회, 송금, 결제, 거래 내역, 적금·예금 만기 전 해지, 대출 한도 조회·신청(온라인 설명의무 7.2 반영). | 구현됨 (`backend/app/domain/banking.py` · `packages/app/lib/views/banking_sheets.dart`) |
 | **위험 점수(AI FDS)** | 송금마다 설명 가능한 규칙과 Isolation Forest로 0~99점을 매깁니다. 종합 판정의 1차 단계입니다. | 구현됨 (`backend/app/domain/fds.py`) |
 | **SOS 계좌 동결** | 휴대폰을 3초 동안 세게 흔들거나 SOS 버튼을 2초 누르면 모든 계좌의 출금이 24시간 멈추고 보호자에게 알립니다. | 구현됨 (`backend/app/service.py` `freeze()` · `feature_sos`) |
@@ -158,6 +158,10 @@ flowchart TD
   - `flutter_webrtc`: 같은 Wi-Fi 안의 기기끼리 외부 STUN·TURN 없이 음성 통화를 직접 연결하기 위해 추가했습니다.
   - `record`: 분석 대상 통화(어르신·아이 ↔ 시연 상대)에서 마이크 소리를 4초 단위 WAV 조각으로 녹음해 서버로 올리기 위해 추가했습니다.
 
+- **새로 추가한 패키지 (`feature_guardian`)**:
+  - `qr_flutter`: 보호자 기기에서 연결 코드 값을 QR 코드 이미지로 그려 보여 주기 위해 추가했습니다.
+  - `mobile_scanner`: 어르신 기기에서 카메라로 보호자 QR 코드를 읽기 위해 추가했습니다(카메라를 쓸 수 없는 에뮬레이터를 위해 같은 코드 값을 직접 입력하는 경로도 함께 둡니다).
+
 앱은 서버의 가족 상태(`GET /api/v1/state`)를 그리고, 상태가 바뀌면 WebSocket(`/api/v1/ws`) 이벤트를 받아 다시 불러옵니다. 그래서 **휴대폰 여러 대**(어르신 폰·보호자 폰)로도, 한 화면에서 사용자를 바꿔 가며도 같은 흐름을 시연할 수 있습니다.
 
 외부 연동은 **모의 어댑터**입니다. 실제 API와 같은 형식의 호출 기록을 남기고(설정 › 서버 연동 기록), `backend/app/integrations.py`의 같은 메서드를 가진 클래스로 바꾸면 실제 연동이 됩니다.
@@ -188,7 +192,7 @@ packages/
     feature_sos/            흔들기 감지 · SOS 버튼 · 동결 화면
     feature_transfer/       AI 안심 점검·주의 확인·거래 보류·재확인 대기를 거치는 송금 시트
     feature_payment/        안심 모드를 따르는 결제 시트
-    feature_guardian/       거래 보류 해제·연장 · 주의 모드 해제 · 가족 통화 · 가족 관리
+    feature_guardian/       위험 근거 요약 · 위험 기록 · QR/코드 연결 및 동의 · 보류 해제·연장 · 주의 모드 해제 · 가족 통화 · 가족 관리
 ```
 
 기능 패키지는 서로 의존하지 않고 `core_*`에만 의존합니다. 기능끼리는 `app`에서만 연결합니다. 웹 레이아웃은 마지막 정리 단계에서 삭제할 예정입니다.
@@ -262,6 +266,7 @@ Flutter 웹을 빌드해 같은 서버에서 제공합니다. <http://127.0.0.1:
 | `POST /api/v1/guardian/callback-decision` | 보호자 보류 해제·연장 및 요청 승인·거절. `transaction_id`, `guardian_id`, `decision`(RELEASE / EXTEND / APPROVE / REJECT), `reason` |
 | `POST /api/v1/payments/pay` · `/payments/request-approval` | 안심 모드를 따르는 결제 / 막힌 결제의 보호자 요청 |
 | `POST /api/v1/modes` · `/guardian/limits` · `/guardian/sleep-guard` | 안심 모드 · 하루 한도 · 수면 안심 모드 |
+| `POST /api/v1/guardian/pairing-code` · `/pairing/connect` | 보호자 연결 QR/6자리 코드 발급(유효 시간 제한) · 코드와 어르신 동의 제출(연결·동의 시각 기록) |
 | `GET /api/v1/state` · `WS /api/v1/ws` | 가족 전체 상태(문자·통화·주의 모드·보류·사건 포함) · 실시간 이벤트 및 WebRTC 신호 전달 |
 
 전체 목록과 요청 형식은 실행 중인 서버의 `/docs`(Swagger)에 있습니다.
@@ -279,6 +284,7 @@ Flutter 웹을 빌드해 같은 서버에서 제공합니다. <http://127.0.0.1:
 | `FINGERBELL_APPROVAL_TIMEOUT` | `180` | 결제·모드 완화 요청의 보호자 승인 대기 시간(초, 기본 3분) |
 | `FINGERBELL_CAUTION_MODE_HOURS` | `24` | 주의 모드 유지 시간(시간) |
 | `FINGERBELL_FREEZE_HOURS` | `24` | SOS 동결 유지 시간(시간) |
+| `FINGERBELL_PAIRING_CODE_SECONDS` | `300` | 보호자 연결 QR/코드 유효 시간(초, 기본 5분) |
 | `FINGERBELL_WEB_DIR` | `packages/app/build/web` (있으면) | 함께 제공할 웹 빌드 폴더. `FINGERBELL_NO_WEB=1`이면 끕니다 |
 
 앱의 서버 주소는 `--dart-define=FINGERBELL_API_URL=http://<주소>:8765`로 바꿉니다.

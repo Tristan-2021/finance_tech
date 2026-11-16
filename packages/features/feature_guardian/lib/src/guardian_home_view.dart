@@ -6,9 +6,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'alert_row.dart';
 import 'guardian_actions.dart';
+import 'incident_summary_sheet.dart';
 import 'request_card.dart';
 
-/// 보호자 홈: 기다리는 보류·승인 요청, 주의 모드 상태, 내 계좌, 최근 알림, 가족 상태.
+/// 보호자 홈: 기다리는 보류·승인 요청, 주의 모드 상태와 근거 요약, 내 계좌, 최근 알림, 위험 기록, 가족 상태.
 class GuardianHomeView extends StatelessWidget {
   final FamilySnapshot data;
 
@@ -32,11 +33,15 @@ class GuardianHomeView extends StatelessWidget {
           _GuardianCautionCard(
             key: ValueKey('caution-${m.id}'),
             member: m,
+            incident: data.openIncidentFor(m.id),
             now: family.now,
             onCallMember: onCallMember,
           ),
     ];
-    final requests = [for (final r in pending) RequestCard(key: ValueKey(r.id), request: r, data: data, now: family.now)];
+    final requests = [
+      for (final r in pending)
+        RequestCard(key: ValueKey(r.id), request: r, data: data, now: family.now, onCallMember: onCallMember),
+    ];
     final alerts = FbCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -51,6 +56,7 @@ class GuardianHomeView extends StatelessWidget {
         ],
       ),
     );
+    final historyCard = _IncidentHistoryCard(data: data, now: family.now, onCallMember: onCallMember);
     final familyCard = FbCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -72,8 +78,8 @@ class GuardianHomeView extends StatelessWidget {
         // 웹: 왼쪽은 요청과 내 계좌, 오른쪽은 가족 (내 계좌가 없으면 알림을 왼쪽에)
         FbSplit(
           main: [...cautionCards, ...requests, ...banking, if (banking.isEmpty) alerts],
-          side: [familyCard, if (banking.isNotEmpty) alerts],
-          mobile: [...cautionCards, ...requests, ...banking, familyCard, alerts],
+          side: [familyCard, if (banking.isNotEmpty) alerts, historyCard],
+          mobile: [...cautionCards, ...requests, ...banking, familyCard, alerts, historyCard],
         ),
       ],
     );
@@ -82,14 +88,22 @@ class GuardianHomeView extends StatelessWidget {
 
 class _GuardianCautionCard extends StatelessWidget {
   final Member member;
+  final Incident? incident;
   final DateTime Function() now;
   final ValueChanged<Member>? onCallMember;
 
-  const _GuardianCautionCard({super.key, required this.member, required this.now, this.onCallMember});
+  const _GuardianCautionCard({
+    super.key,
+    required this.member,
+    this.incident,
+    required this.now,
+    this.onCallMember,
+  });
 
   @override
   Widget build(BuildContext context) {
     final c = context.fb;
+    final inc = incident;
     return FbCard(
       color: c.redSoft,
       child: Column(
@@ -119,6 +133,33 @@ class _GuardianCautionCard extends StatelessWidget {
                 ),
             ],
           ),
+          if (inc != null && inc.items.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '위험 근거 요약',
+                    style: TextStyle(fontSize: 13.8, fontWeight: FontWeight.w800, color: c.ink),
+                  ),
+                ),
+                FbTextButton(
+                  '자세히 보기',
+                  color: c.redStrong,
+                  onPressed: () => openIncidentSummarySheet(
+                    context,
+                    incidentId: inc.id,
+                    initialIncident: inc,
+                    member: member,
+                    now: now,
+                    onCallMember: onCallMember,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            IncidentTimeline(incident: inc, now: now(), compact: true),
+          ],
           const SizedBox(height: 12.8),
           if (onCallMember != null) ...[
             FbButton(
@@ -133,6 +174,53 @@ class _GuardianCautionCard extends StatelessWidget {
             variant: FbButtonVariant.white,
             onPressed: () => guardianRun(context, (f) => f.releaseCautionMode(member.id), '${member.relationLabel} 주의 모드를 해제했어요'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IncidentHistoryCard extends StatelessWidget {
+  final FamilySnapshot data;
+  final DateTime Function() now;
+  final ValueChanged<Member>? onCallMember;
+
+  const _IncidentHistoryCard({required this.data, required this.now, this.onCallMember});
+
+  @override
+  Widget build(BuildContext context) {
+    final closed = data.closedIncidents;
+    final current = now();
+    final shell = context.read<ShellCubit>();
+    return FbCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListHead(
+            '위험 기록',
+            action: '전체보기',
+            onAction: () {
+              shell.setAlertFilter('incidents');
+              shell.switchTab(AppTab.alerts);
+            },
+          ),
+          if (closed.isEmpty)
+            const EmptyText('지난 위험 기록이 없어요')
+          else
+            for (final inc in closed.take(3))
+              IncidentHistoryRow(
+                incident: inc,
+                data: data,
+                now: current,
+                onTap: () => openIncidentSummarySheet(
+                  context,
+                  incidentId: inc.id,
+                  initialIncident: inc,
+                  member: data.memberOrNull(inc.memberId),
+                  now: now,
+                  onCallMember: onCallMember,
+                ),
+              ),
         ],
       ),
     );

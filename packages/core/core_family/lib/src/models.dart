@@ -562,6 +562,9 @@ class Incident {
     this.items = const [],
   });
 
+  bool get isOpen => status == 'open';
+  bool get isClosed => status == 'closed';
+
   factory Incident.fromJson(Json j) => Incident(
     id: asString(j['id']),
     memberId: asString(j['member_id']),
@@ -709,6 +712,8 @@ class Member {
   final SosTrigger? frozenSource;
   final bool cautionMode;
   final DateTime? cautionUntil;
+  final DateTime? pairedAt;
+  final DateTime? consentAt;
   final Incident? activeIncident;
   final List<SmsMessage> smsMessages;
   final List<SmsConversation> smsConversations;
@@ -743,6 +748,8 @@ class Member {
     this.frozenSource,
     this.cautionMode = false,
     this.cautionUntil,
+    this.pairedAt,
+    this.consentAt,
     this.activeIncident,
     this.smsMessages = const [],
     this.smsConversations = const [],
@@ -756,6 +763,7 @@ class Member {
 
   /// 보호자 본인 계좌. 보호자 승인·안심 모드·SOS 동결 없이 바로 보냅니다.
   bool get isGuardian => role == 'GUARDIAN';
+  bool get isPaired => pairedAt != null && consentAt != null;
   String get callName => nickname ?? name;
 
   /// "어머니 김순자"
@@ -798,6 +806,8 @@ class Member {
       frozenSource: SosTrigger.parse(j['frozen_source']),
       cautionMode: asBool(j['caution_mode']),
       cautionUntil: asDate(j['caution_until']),
+      pairedAt: asDate(j['paired_at']),
+      consentAt: asDate(j['consent_at']),
       activeIncident: j['active_incident'] is Map<String, dynamic> ? Incident.fromJson(j['active_incident'] as Json) : null,
       smsMessages: smsMessages,
       smsConversations: rawConvs.isNotEmpty ? rawConvs : SmsConversation.groupFromMessages(smsMessages),
@@ -880,6 +890,7 @@ class ApprovalRequest {
   final int amount;
   final String detail;
   final RiskAssessment? risk;
+  final String? incidentId;
   final String status; // pending / reconfirm / approved / rejected / cancelled / expired / failed
   final String channel;
   final DateTime createdAt;
@@ -899,6 +910,7 @@ class ApprovalRequest {
     this.amount = 0,
     this.detail = '',
     this.risk,
+    this.incidentId,
     this.channel = '앱 알림',
     this.expiresAt,
     this.reconfirmUntil,
@@ -921,6 +933,7 @@ class ApprovalRequest {
     amount: asInt(j['amount']),
     detail: asString(j['detail']),
     risk: j['risk'] is Map<String, dynamic> ? RiskAssessment.fromJson(j['risk'] as Json) : null,
+    incidentId: asStringOrNull(j['incident_id']),
     status: asString(j['status']),
     channel: asString(j['channel'], '앱 알림'),
     createdAt: asDateOr(j['created_at'], DateTime.now()),
@@ -1118,4 +1131,18 @@ class FamilySnapshot {
       requests.where((r) => r.isActive && (memberId == null || r.memberId == memberId)).toList(growable: false);
 
   bool hasPending(String memberId, String type) => pending(memberId).any((r) => r.type == type);
+
+  Incident? incidentOrNull(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final m in members) {
+      if (m.activeIncident?.id == id) return m.activeIncident;
+    }
+    return incidents.where((i) => i.id == id).firstOrNull;
+  }
+
+  Incident? openIncidentFor(String memberId) =>
+      memberOrNull(memberId)?.activeIncident ??
+      incidents.where((i) => i.memberId == memberId && i.isOpen).firstOrNull;
+
+  List<Incident> get closedIncidents => incidents.where((i) => i.isClosed).toList(growable: false);
 }

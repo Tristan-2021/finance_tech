@@ -37,6 +37,8 @@ class Settings:
     caution_mode_hours: int = 24
     # SOS 동결 유지 시간 (기획서 5.9: 기본 24시간)
     freeze_hours: int = 24
+    # 보호자 연결 QR/코드 유효 시간 (기획서 5.8: 기본 5분 = 300초)
+    pairing_code_seconds: int = 300
     # 백그라운드 점검(타이머 만료) 주기
     tick_seconds: float = 1.0
     # OpenRouter LLM · 음성인식(STT) 설정 (기획서 5.5, 6절). 키가 없으면 모의 게이트웨이로 동작합니다.
@@ -61,6 +63,7 @@ class Settings:
             approval_timeout_seconds=_int("FINGERBELL_APPROVAL_TIMEOUT", cls.approval_timeout_seconds),
             caution_mode_hours=_int("FINGERBELL_CAUTION_MODE_HOURS", cls.caution_mode_hours),
             freeze_hours=_int("FINGERBELL_FREEZE_HOURS", cls.freeze_hours),
+            pairing_code_seconds=_int("FINGERBELL_PAIRING_CODE_SECONDS", cls.pairing_code_seconds),
             openrouter_api_key=(os.getenv("OPENROUTER_API_KEY") or "").strip(),
             llm_model=model,
             stt_model=stt_model,

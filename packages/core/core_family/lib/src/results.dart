@@ -461,3 +461,65 @@ class IntegrationLogEntry {
     message: asString(j['message']),
   );
 }
+
+/// 보호자 연결 QR/코드 발급 결과 (기획서 5.8).
+class PairingCodeResult {
+  final String code;
+  final String qrValue;
+  final String guardianId;
+  final String guardianName;
+  final String memberId;
+  final String memberName;
+  final DateTime expiresAt;
+  final int expiresInSeconds;
+
+  const PairingCodeResult({
+    required this.code,
+    required this.qrValue,
+    required this.guardianId,
+    required this.guardianName,
+    required this.memberId,
+    required this.memberName,
+    required this.expiresAt,
+    this.expiresInSeconds = 300,
+  });
+
+  factory PairingCodeResult.fromJson(Json j) => PairingCodeResult(
+    code: asString(j['code']),
+    qrValue: asString(j['qr_value'], asString(j['code'])),
+    guardianId: asString(j['guardian_id'], 'guardian'),
+    guardianName: asString(j['guardian_name']),
+    memberId: asString(j['member_id'], 'senior'),
+    memberName: asString(j['member_name']),
+    expiresAt: asDateOr(j['expires_at'], DateTime.now().add(const Duration(minutes: 5))),
+    expiresInSeconds: asInt(j['expires_in_seconds'], 300),
+  );
+}
+
+/// 보호자 연결 및 동의 완료 결과 (기획서 5.8).
+class PairingConnectResult {
+  final String status;
+  final String memberId;
+  final String guardianId;
+  final String guardianName;
+  final DateTime? pairedAt;
+  final DateTime? consentAt;
+
+  const PairingConnectResult({
+    required this.status,
+    required this.memberId,
+    required this.guardianId,
+    required this.guardianName,
+    this.pairedAt,
+    this.consentAt,
+  });
+
+  factory PairingConnectResult.fromJson(Json j) => PairingConnectResult(
+    status: asString(j['status'], 'connected'),
+    memberId: asString(j['member_id'], 'senior'),
+    guardianId: asString(j['guardian_id'], 'guardian'),
+    guardianName: asString(j['guardian_name']),
+    pairedAt: asDate(j['paired_at']),
+    consentAt: asDate(j['consent_at']),
+  );
+}

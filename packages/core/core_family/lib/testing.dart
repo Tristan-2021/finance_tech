@@ -95,6 +95,8 @@ Map<String, dynamic> demoSnapshotJson({
   bool seniorCautionMode = false,
   List<Map<String, dynamic>> requests = const [],
   List<Map<String, dynamic>>? seniorSmsMessages,
+  Map<String, dynamic>? seniorActiveIncident,
+  List<Map<String, dynamic>> incidents = const [],
   Map<String, dynamic>? activeCall,
   String childMode = 'school',
 }) {
@@ -216,6 +218,9 @@ Map<String, dynamic> demoSnapshotJson({
         'frozen_source': seniorFrozen ? 'LONG_PRESS' : null,
         'caution_mode': seniorCautionMode,
         'caution_until': seniorCautionMode ? t.add(const Duration(hours: 24)).toIso8601String() : null,
+        'paired_at': ago(const Duration(days: 30)),
+        'consent_at': ago(const Duration(days: 30)),
+        'active_incident': seniorActiveIncident,
         'sms_messages': seniorSmsMessages ?? defaultSms,
         'contacts': [
           {'id': 'c-sarang', 'name': '김사랑', 'relation': '딸', 'bank': '핑거벨', 'number': '333-••••-1024'},
@@ -255,6 +260,8 @@ Map<String, dynamic> demoSnapshotJson({
         'require_approval_to_loosen': true,
         'sleep_guard': true,
         'is_frozen': false,
+        'paired_at': ago(const Duration(days: 30)),
+        'consent_at': ago(const Duration(days: 30)),
         'contacts': [
           {'id': 'c-mom', 'name': '김사랑', 'relation': '엄마', 'bank': '핑거벨', 'number': '333-••••-1024'},
         ],
@@ -270,6 +277,10 @@ Map<String, dynamic> demoSnapshotJson({
       },
     ],
     'requests': requests,
+    'incidents': [
+      ?seniorActiveIncident,
+      ...incidents,
+    ],
     'active_call': activeCall,
     'calls': activeCall != null ? [activeCall] : <Map<String, dynamic>>[],
     'alerts': [
@@ -308,6 +319,7 @@ Map<String, dynamic> pendingTransferJson({
   String id = 'req-1',
   String memberId = 'senior',
   String status = 'pending',
+  String? incidentId,
   DateTime? now,
 }) {
   final t = (now ?? DateTime.now()).toUtc();
@@ -318,6 +330,7 @@ Map<String, dynamic> pendingTransferJson({
     'title': '이정민님께 송금',
     'amount': 500000,
     'detail': '국민 123-••••-7788 · 처음 보내는 계좌',
+    'incident_id': ?incidentId,
     'status': status,
     'channel': '앱 알림',
     'created_at': t.toIso8601String(),
@@ -336,6 +349,73 @@ Map<String, dynamic> pendingTransferJson({
   };
 }
 
+Map<String, dynamic> incidentJson({
+  String id = 'inc-1',
+  String memberId = 'senior',
+  String status = 'open',
+  String? endedBy,
+  DateTime? now,
+  List<Map<String, dynamic>>? items,
+}) {
+  final t = (now ?? DateTime.now()).toUtc();
+  final started = t.subtract(const Duration(minutes: 20));
+  return {
+    'id': id,
+    'member_id': memberId,
+    'status': status,
+    'started_at': started.toIso8601String(),
+    'expires_at': started.add(const Duration(hours: 24)).toIso8601String(),
+    'ended_at': status == 'closed' ? t.toIso8601String() : null,
+    'ended_by': status == 'closed' ? (endedBy ?? 'guardian') : null,
+    'items': items ??
+        [
+          {
+            'id': 'ev-1',
+            'kind': 'sms',
+            'summary': '위험 문자 수신 (금융감독원 민원실(사칭)) · 기관 사칭 의심',
+            'at': started.toIso8601String(),
+          },
+          {
+            'id': 'ev-2',
+            'kind': 'call',
+            'summary': '위험 통화 감지 (금융감독원 민원실(사칭)) · 적금 해지 요구',
+            'at': started.add(const Duration(minutes: 3)).toIso8601String(),
+          },
+          {
+            'id': 'ev-3',
+            'kind': 'action',
+            'summary': '노후 생활비 통장 만기 전 해지 시도 (18,676,000원)',
+            'at': started.add(const Duration(minutes: 6)).toIso8601String(),
+          },
+          {
+            'id': 'ev-4',
+            'kind': 'answer',
+            'summary': '확인 질문 응답: 금융감독원·검찰·은행 직원이 해지하라고 했어요',
+            'at': started.add(const Duration(minutes: 7)).toIso8601String(),
+          },
+          {
+            'id': 'ev-5',
+            'kind': 'judgment',
+            'summary': '만기 전 해지 시도 판정 danger · 사기 의심 연락 뒤 시도예요',
+            'at': started.add(const Duration(minutes: 7, seconds: 5)).toIso8601String(),
+          },
+          {
+            'id': 'ev-6',
+            'kind': 'hold',
+            'summary': '노후 생활비 통장 만기 전 해지 18,676,000원 보류',
+            'at': started.add(const Duration(minutes: 7, seconds: 10)).toIso8601String(),
+          },
+          if (status == 'closed')
+            {
+              'id': 'ev-7',
+              'kind': 'guardian',
+              'summary': '주의 모드 해제 (보호자 해제)',
+              'at': t.toIso8601String(),
+            },
+        ],
+  };
+}
+
 /// 메모리에서 동작하는 가짜 저장소. 호출 기록은 [calls]에 남습니다.
 class FakeFamilyRepository implements FamilyRepository {
   Map<String, dynamic> snapshotJson;
@@ -347,6 +427,9 @@ class FakeFamilyRepository implements FamilyRepository {
   bool failNetwork = false;
   String? failDecisionReason;
   SmsRiskLevel? forceSmsLevel;
+  String? forcePairingCode;
+  final Map<String, ({String guardianId, String memberId, DateTime expiresAt, bool used})> _pairingCodes = {};
+  int _pairingSeq = 0;
 
   FakeFamilyRepository([Map<String, dynamic>? snapshot]) : snapshotJson = snapshot ?? demoSnapshotJson();
 
@@ -395,7 +478,36 @@ class FakeFamilyRepository implements FamilyRepository {
   Future<void> unfreeze(String memberId, String guardianId) => _call('unfreeze:$memberId', null);
 
   @override
-  Future<void> releaseCautionMode(String memberId, String guardianId) => _call('releaseCautionMode:$memberId', null);
+  Future<void> releaseCautionMode(String memberId, String guardianId) {
+    final now = DateTime.now().toUtc();
+    final members = snapshotJson['members'];
+    if (members is List) {
+      for (final m in members) {
+        if (m is Map<String, dynamic> && m['id'] == memberId) {
+          m['caution_mode'] = false;
+          m['caution_until'] = null;
+          final active = m['active_incident'];
+          if (active is Map<String, dynamic>) {
+            active['status'] = 'closed';
+            active['ended_at'] = now.toIso8601String();
+            active['ended_by'] = 'guardian';
+          }
+          m['active_incident'] = null;
+        }
+      }
+    }
+    final incs = snapshotJson['incidents'];
+    if (incs is List) {
+      for (final inc in incs) {
+        if (inc is Map<String, dynamic> && inc['member_id'] == memberId && inc['status'] == 'open') {
+          inc['status'] = 'closed';
+          inc['ended_at'] = now.toIso8601String();
+          inc['ended_by'] = 'guardian';
+        }
+      }
+    }
+    return _call('releaseCautionMode:$memberId', null);
+  }
 
   @override
   Future<SmsReceiveResult> receiveSms(
@@ -692,6 +804,20 @@ class FakeFamilyRepository implements FamilyRepository {
     );
   }
 
+  String? _activeIncidentId(String memberId) {
+    final members = snapshotJson['members'];
+    if (members is! List) return null;
+    for (final m in members) {
+      if (m is Map<String, dynamic> && m['id'] == memberId) {
+        final inc = m['active_incident'];
+        if (inc is Map<String, dynamic>) {
+          return inc['id'] as String?;
+        }
+      }
+    }
+    return null;
+  }
+
   bool _isCautionMode(String memberId) {
     final members = snapshotJson['members'];
     if (members is! List) return false;
@@ -838,7 +964,11 @@ class FakeFamilyRepository implements FamilyRepository {
       final risk = _cautionRisk(level, ans);
       final fdsHigh = draft.newAccount != null && draft.amount >= 100000;
       if (level == 'danger' || fdsHigh || draft.amount >= 300000) {
-        final reqJson = pendingTransferJson(id: 'req-tr-${calls.length + 1}', memberId: memberId);
+        final reqJson = pendingTransferJson(
+          id: 'req-tr-${calls.length + 1}',
+          memberId: memberId,
+          incidentId: _activeIncidentId(memberId),
+        );
         reqJson['amount'] = draft.amount;
         final existingReqs = (snapshotJson['requests'] as List?)?.cast<Map<String, dynamic>>() ?? <Map<String, dynamic>>[];
         snapshotJson['requests'] = [reqJson, ...existingReqs];
@@ -921,6 +1051,7 @@ class FakeFamilyRepository implements FamilyRepository {
       final risk = _cautionRisk(level, ans);
       if (level == 'danger') {
         final now = DateTime.now().toUtc();
+        final incId = _activeIncidentId(memberId);
         final reqJson = <String, dynamic>{
           'id': 'req-sav-${calls.length + 1}',
           'member_id': memberId,
@@ -928,6 +1059,7 @@ class FakeFamilyRepository implements FamilyRepository {
           'title': '${acct.name} 만기 전 해지',
           'amount': calc.payoutAmount,
           'detail': '원금 18,400,000원 · 줄어드는 이자 883,200원',
+          'incident_id': ?incId,
           'status': 'pending',
           'channel': '앱 알림',
           'created_at': now.toIso8601String(),
@@ -1067,6 +1199,7 @@ class FakeFamilyRepository implements FamilyRepository {
       final risk = _cautionRisk(level, ans);
       if (level == 'danger') {
         final now = DateTime.now().toUtc();
+        final incId = _activeIncidentId(memberId);
         final reqJson = <String, dynamic>{
           'id': 'req-loan-${calls.length + 1}',
           'member_id': memberId,
@@ -1074,6 +1207,7 @@ class FakeFamilyRepository implements FamilyRepository {
           'title': '${LoanProduct.defaultProduct.name} 신청',
           'amount': amount,
           'detail': '월 ${quote.monthlyPayment}원 · 24개월',
+          'incident_id': ?incId,
           'status': 'pending',
           'channel': '앱 알림',
           'created_at': now.toIso8601String(),
@@ -1211,6 +1345,72 @@ class FakeFamilyRepository implements FamilyRepository {
 
   @override
   Future<void> dismissNotice(String memberId, String noticeId) => _call('dismiss:$noticeId', null);
+
+  @override
+  Future<PairingCodeResult> issuePairingCode(String guardianId, String memberId) {
+    _pairingSeq += 1;
+    final code = forcePairingCode ?? (482909 + _pairingSeq).toString();
+    final now = DateTime.now().toUtc();
+    final expiresAt = now.add(const Duration(minutes: 5));
+    _pairingCodes[code] = (guardianId: guardianId, memberId: memberId, expiresAt: expiresAt, used: false);
+    final snap = FamilySnapshot.fromJson(snapshotJson);
+    final m = snap.memberOrNull(memberId);
+    return _call(
+      'issuePairingCode:$guardianId:$memberId:$code',
+      PairingCodeResult(
+        code: code,
+        qrValue: code,
+        guardianId: snap.guardian.id,
+        guardianName: snap.guardian.name,
+        memberId: memberId,
+        memberName: m?.name ?? memberId,
+        expiresAt: expiresAt.toLocal(),
+        expiresInSeconds: 300,
+      ),
+    );
+  }
+
+  @override
+  Future<PairingConnectResult> connectPairing(String memberId, String code, {required bool consented}) {
+    final clean = code.trim().toUpperCase();
+    calls.add('connectPairing:$memberId:$clean:$consented');
+    if (failNetwork) throw const ApiException(Failure('서버에 연결할 수 없어요.', 'network'));
+    if (!consented) {
+      throw const ApiException(Failure('보호자 연결 안내에 동의해 주세요.', 'consent-required'), 400);
+    }
+    final entry = _pairingCodes[clean];
+    if (entry == null || entry.memberId != memberId) {
+      throw const ApiException(Failure('연결 코드가 올바르지 않아요.', 'invalid-code'), 400);
+    }
+    if (entry.used) {
+      throw const ApiException(Failure('이미 사용된 연결 코드예요.', 'code-used'), 409);
+    }
+    final now = DateTime.now().toUtc();
+    if (!now.isBefore(entry.expiresAt)) {
+      throw const ApiException(Failure('연결 코드의 유효 시간이 지났어요. 새 코드를 발급받아 주세요.', 'code-expired'), 400);
+    }
+    _pairingCodes[clean] = (guardianId: entry.guardianId, memberId: entry.memberId, expiresAt: entry.expiresAt, used: true);
+    final members = snapshotJson['members'];
+    if (members is List) {
+      for (final m in members) {
+        if (m is Map<String, dynamic> && m['id'] == memberId) {
+          m['paired_at'] = now.toIso8601String();
+          m['consent_at'] = now.toIso8601String();
+        }
+      }
+    }
+    final snap = FamilySnapshot.fromJson(snapshotJson);
+    return Future.value(
+      PairingConnectResult(
+        status: 'connected',
+        memberId: memberId,
+        guardianId: snap.guardian.id,
+        guardianName: snap.guardian.name,
+        pairedAt: now.toLocal(),
+        consentAt: now.toLocal(),
+      ),
+    );
+  }
 
   @override
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30}) => _call('logs', const <IntegrationLogEntry>[]);

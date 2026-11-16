@@ -29,7 +29,7 @@ Widget viewFor(BuildContext context, ShellState shell, FamilySnapshot data, {req
         onCallMember: callMember,
       ),
       AppTab.history when me != null => MemberHistory(member: me),
-      AppTab.history || AppTab.alerts => GuardianAlertsView(data: data),
+      AppTab.history || AppTab.alerts => GuardianAlertsView(data: data, onCallMember: callMember),
       _ => GuardianManageView(data: data, onCallMember: callMember),
     };
   }

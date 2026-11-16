@@ -205,6 +205,10 @@ void main() {
     shell.switchTab(AppTab.settings);
     await settle(tester);
 
+    await tester.ensureVisible(find.text('사칭 문자 받기'));
+
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('사칭 문자 받기'));
     await settle(tester);
     expect(find.text('02-0000-1332'), findsOneWidget);
@@ -213,6 +217,10 @@ void main() {
     await settle(tester);
     expect(repo.calls, contains('startCall:senior:counterpart:02-0000-1332'));
     expect(find.text('발신 중...'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('시연 상대 화면 열기'));
+
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('시연 상대 화면 열기'));
     await settle(tester);
@@ -262,6 +270,10 @@ void main() {
     shell.switchTab(AppTab.settings);
     await settle(tester);
 
+    await tester.ensureVisible(find.text('사칭 문자 받기'));
+
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('사칭 문자 받기'));
     await settle(tester);
 
@@ -289,6 +301,10 @@ void main() {
     shell.switchTab(AppTab.settings);
     await settle(tester);
 
+    await tester.ensureVisible(find.text('정상 문자 받기'));
+
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('정상 문자 받기'));
     await settle(tester);
 
@@ -311,6 +327,10 @@ void main() {
     repo.forceSmsLevel = SmsRiskLevel.low;
     shell.switchTab(AppTab.settings);
     await settle(tester);
+
+    await tester.ensureVisible(find.text('사칭 문자 받기'));
+
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('사칭 문자 받기'));
     await settle(tester);
@@ -398,6 +418,8 @@ void main() {
 
     shell.switchTab(AppTab.settings);
     await settle(tester);
+    await tester.ensureVisible(find.text('사칭 문자 받기'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('사칭 문자 받기'));
     await settle(tester);
     await tester.tap(find.text('02-0000-1332'));

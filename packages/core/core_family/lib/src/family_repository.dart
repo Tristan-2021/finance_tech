@@ -74,6 +74,9 @@ abstract interface class FamilyRepository {
   Future<DecisionResult> reconfirmHold(String requestId, String memberId, {required bool confirm});
   Future<void> dismissNotice(String memberId, String noticeId);
 
+  Future<PairingCodeResult> issuePairingCode(String guardianId, String memberId);
+  Future<PairingConnectResult> connectPairing(String memberId, String code, {required bool consented});
+
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30});
   Future<void> resetDemo();
 
@@ -308,6 +311,18 @@ class ApiFamilyRepository implements FamilyRepository {
   @override
   Future<void> dismissNotice(String memberId, String noticeId) =>
       api.post('/members/$memberId/notices/$noticeId/dismiss');
+
+  @override
+  Future<PairingCodeResult> issuePairingCode(String guardianId, String memberId) async =>
+      PairingCodeResult.fromJson(
+        await api.post('/guardian/pairing-code', {'guardian_id': guardianId, 'member_id': memberId}),
+      );
+
+  @override
+  Future<PairingConnectResult> connectPairing(String memberId, String code, {required bool consented}) async =>
+      PairingConnectResult.fromJson(
+        await api.post('/pairing/connect', {'member_id': memberId, 'code': code, 'consented': consented}),
+      );
 
   @override
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30}) async {

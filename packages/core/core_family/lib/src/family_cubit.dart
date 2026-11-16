@@ -280,6 +280,13 @@ class FamilyCubit extends Cubit<FamilyState> {
 
   Future<void> dismissNotice(String memberId, String noticeId) => _act(() => _repo.dismissNotice(memberId, noticeId));
 
+  // ---------------------------------------------------------------- 보호자 연결 · 동의 (기획서 5.8)
+  Future<PairingCodeResult> issuePairingCode(String memberId) =>
+      _repo.issuePairingCode(state.data.guardian.id, memberId);
+
+  Future<PairingConnectResult> connectPairing(String memberId, String code, {required bool consented}) =>
+      _act(() => _repo.connectPairing(memberId, code, consented: consented));
+
   // ---------------------------------------------------------------- 기타
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30}) => _repo.integrationLogs(limit: limit);
 

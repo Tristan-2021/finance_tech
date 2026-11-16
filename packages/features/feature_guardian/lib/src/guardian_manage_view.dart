@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'guardian_actions.dart';
+import 'pairing_sheet.dart';
 
 /// 가족 관리: 동결 해제·원격 동결, 안심 모드, 하루 한도, 수면 안심 모드, 가족에게 전화하기.
 class GuardianManageView extends StatelessWidget {
@@ -181,6 +182,16 @@ class _ManageCardState extends State<ManageCard> {
               ),
             ),
           ],
+          const SizedBox(height: 8),
+          FbButton.gray(
+            '연결 QR 보기',
+            icon: FbIcons.qr,
+            onPressed: () => openPairingSheet(
+              context,
+              initialMemberId: m.id,
+              initialStep: 1,
+            ),
+          ),
         ],
       ),
     );

@@ -146,6 +146,8 @@ def seed(session: Session) -> None:
         allowed_modes=["normal", "hospital"],
         require_approval_to_loosen=False,
         sleep_guard=True,
+        paired_at=now - timedelta(days=30),
+        consent_at=now - timedelta(days=30),
     )
     senior.accounts = [
         Account(
@@ -205,6 +207,8 @@ def seed(session: Session) -> None:
         allowed_modes=["normal", "school", "hospital"],
         require_approval_to_loosen=True,
         sleep_guard=True,
+        paired_at=now - timedelta(days=30),
+        consent_at=now - timedelta(days=30),
     )
     child.accounts = [
         Account(id="acc-child-1", name="민준이 용돈 통장", bank="핑거벨", number="3333-31-••••-0917", digits=SON,

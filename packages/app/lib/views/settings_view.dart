@@ -2,6 +2,7 @@ import 'package:core_api/core_api.dart';
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:feature_guardian/feature_guardian.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -55,6 +56,9 @@ class _SettingsViewState extends State<SettingsView> {
     final c = context.fb;
     final shell = context.read<ShellCubit>();
     final prefs = context.select((ShellCubit s) => s.state.prefs);
+    final activeMemberId = context.select((ShellCubit s) => s.state.memberId) ?? 'senior';
+    final snap = context.select((FamilyCubit f) => f.state.snapshot);
+    final pairedMember = snap?.memberOrNull(activeMemberId);
     final live = context.select((FamilyCubit f) => f.state.live);
     final isWeb = FbLayout.isWebOf(context);
     final now = context.read<FamilyCubit>().now();
@@ -86,6 +90,23 @@ class _SettingsViewState extends State<SettingsView> {
                 motionSupported ? '휴대폰을 3초 동안 세게 흔들면 바로 동결돼요 (2.5g 이상)' : '이 기기는 흔들기 감지를 지원하지 않아요 · 휴대폰에서 써 보세요',
               ),
               row(PrefKey.hideBalance, '잔액 숨기기', '다른 사람에게 금액이 보이지 않아요'),
+            ],
+          ),
+        ),
+        FbCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const CardTitle('보호자 연결'),
+              FbListRow(
+                leading: const TxLogo(icon: FbIcons.qr, blue: true),
+                title: const Text('보호자 연결 다시 해 보기'),
+                subtitle: (pairedMember?.isPaired ?? false)
+                    ? '연결됨 · 동의 ${formatWhen(pairedMember!.consentAt!, now)} · QR 또는 코드로 다시 연결해요'
+                    : 'QR 코드 또는 연결 코드로 보호자와 연결하고 동의해요',
+                chevron: true,
+                onTap: () => openPairingSheet(context, initialMemberId: activeMemberId),
+              ),
             ],
           ),
         ),

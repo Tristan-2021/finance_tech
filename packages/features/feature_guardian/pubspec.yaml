@@ -16,6 +16,8 @@ dependencies:
   core_shell: ^0.0.1
   core_ui: ^0.0.1
   flutter_bloc: ^9.1.1
+  mobile_scanner: ^6.0.0
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

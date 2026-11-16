@@ -137,6 +137,7 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
         if (e.fromThisDevice || e.message.isEmpty) return;
         const forGuardian = {
           'request',
+          'reconfirm',
           'caution_mode',
           'cancelled',
           'freeze',
@@ -148,6 +149,7 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
           'loan_limit_warning',
           'payment',
           'mode',
+          'pairing',
         };
         const forMember = {
           'sms',

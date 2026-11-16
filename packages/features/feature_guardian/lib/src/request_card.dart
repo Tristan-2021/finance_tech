@@ -3,14 +3,22 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
 import 'guardian_actions.dart';
+import 'incident_summary_sheet.dart';
 
 /// 거래 보류 및 보호자 확인 카드: 보류는 [해제]/[연장], 일반 요청은 [승인]/[거절]을 받습니다.
 class RequestCard extends StatefulWidget {
   final ApprovalRequest request;
   final FamilySnapshot data;
   final DateTime Function() now;
+  final ValueChanged<Member>? onCallMember;
 
-  const RequestCard({super.key, required this.request, required this.data, required this.now});
+  const RequestCard({
+    super.key,
+    required this.request,
+    required this.data,
+    required this.now,
+    this.onCallMember,
+  });
 
   @override
   State<RequestCard> createState() => _RequestCardState();
@@ -38,6 +46,7 @@ class _RequestCardState extends State<RequestCard> {
     final m = widget.data.memberOrNull(r.memberId);
     final risk = r.risk;
     final isHold = r.isHold;
+    final incident = isHold ? widget.data.incidentOrNull(r.incidentId) : null;
     final kindLabel = isHold ? '거래 보류' : '요청';
     return FbCard(
       child: Column(
@@ -78,6 +87,21 @@ class _RequestCardState extends State<RequestCard> {
               ],
             ],
           ),
+          if (incident != null) ...[
+            const SizedBox(height: 12),
+            FbButton.gray(
+              '위험 근거 요약 보기',
+              icon: FbIcons.list,
+              onPressed: () => openIncidentSummarySheet(
+                context,
+                incidentId: incident.id,
+                initialIncident: incident,
+                member: m,
+                now: widget.now,
+                onCallMember: widget.onCallMember,
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           if (isHold)
             FbButtonRow(
