@@ -6,7 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'member_widgets.dart';
 
-/// 어르신 홈: 큰 버튼 [송금] [결제] [조회]와 [SOS] (기획서 3.4).
+/// 어르신 홈: 큰 버튼 [송금] [결제] [조회]와 [SOS], 주의 모드·보류 표시 (기획서 5.1, 5.7).
 class SeniorHome extends StatelessWidget {
   final Member member;
   final FamilySnapshot data;
@@ -15,6 +15,12 @@ class SeniorHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final now = context.read<FamilyCubit>().now;
+    final caution = member.cautionMode ? CautionModeCard(member: member, now: now) : null;
+    final holds = [
+      for (final r in data.pending(member.id))
+        if (r.isHold) MemberHoldCard(key: ValueKey('hold-${r.id}'), request: r, member: member, now: now),
+    ];
     final account = AccountCard(member: member);
     final sos = SosSlot(member: member, data: data);
     final recent = RecentCard(member: member);
@@ -23,16 +29,16 @@ class SeniorHome extends StatelessWidget {
       children: [
         Greeting('안녕하세요, ${member.name}님'),
         FbSplit(
-          main: [account, recent],
+          main: [?caution, ...holds, account, recent],
           side: [sos, GuardianCard(member: member, data: data)],
-          mobile: [account, sos, recent],
+          mobile: [?caution, ...holds, account, sos, recent],
         ),
       ],
     );
   }
 }
 
-/// 아이 홈: 쓸 수 있는 돈, 오늘 쓴 돈, 지금 안심 모드.
+/// 아이 홈: 쓸 수 있는 돈, 오늘 쓴 돈, 지금 안심 모드, 주의 모드·보류 표시.
 class ChildHome extends StatelessWidget {
   final Member member;
   final FamilySnapshot data;
@@ -43,6 +49,12 @@ class ChildHome extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.fb;
     final m = member;
+    final now = context.read<FamilyCubit>().now;
+    final caution = m.cautionMode ? CautionModeCard(member: m, now: now) : null;
+    final holds = [
+      for (final r in data.pending(m.id))
+        if (r.isHold) MemberHoldCard(key: ValueKey('hold-${r.id}'), request: r, member: m, now: now),
+    ];
     final mode = data.mode(m.mode);
     final spent = Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -78,7 +90,11 @@ class ChildHome extends StatelessWidget {
       wide: true,
       children: [
         Greeting('안녕, ${m.callName}!'),
-        FbSplit(main: [wallet, recent], side: [sos, modeRow], mobile: [wallet, modeRow, sos, recent]),
+        FbSplit(
+          main: [?caution, ...holds, wallet, recent],
+          side: [sos, modeRow],
+          mobile: [?caution, ...holds, wallet, modeRow, sos, recent],
+        ),
       ],
     );
   }

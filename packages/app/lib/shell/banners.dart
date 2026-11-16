@@ -40,9 +40,9 @@ Widget? bannerFor(BuildContext context, ShellState shell, FamilyState family) {
   if (m.notices.isNotEmpty) {
     final n = m.notices.first;
     final (title, sub) = switch (n.status) {
-      'approved' => ('보호자가 승인했어요', '${n.title} 완료'),
+      'approved' => ('보호자가 확인했어요', '${n.title} 완료'),
       'rejected' => ('보호자가 거절했어요', '${n.title}은 진행하지 않았어요'),
-      'expired' => ('보호자 응답이 없어 취소했어요', n.reason),
+      'expired' => ('재확인 시간이 지나 취소했어요', n.reason),
       'failed' => ('처리하지 못했어요', n.reason),
       _ => ('알림', n.title),
     };

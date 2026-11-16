@@ -1,7 +1,7 @@
 """AI 이상거래탐지(FDS).
 
 두 단계로 위험도를 계산합니다.
-1. 설명 가능한 규칙 (기획서 3.2): 신규 계좌, 평균의 300% 초과, 심야, 10분 내 분할 송금, 하루 한도 초과
+1. 설명 가능한 규칙 (기획서 5.5): 신규 계좌, 평균의 300% 초과, 심야, 10분 내 분할 송금, 하루 한도 초과
 2. Isolation Forest: 사용자의 최근 6개월 출금 패턴(금액·시간대·신규 여부·연속 시도)을 학습해
    평소와 동떨어진 거래를 찾아냅니다 (비지도 학습).
 
@@ -101,12 +101,14 @@ class RiskResult:
     needs_approval: bool
     anomaly: AnomalyResult | None = None
     sleep_window: bool = False
+    explanation: str = ""
 
     def to_dict(self) -> dict:
         return {
             "score": self.score,
             "level": self.level,
             "signals": [asdict(s) for s in self.signals],
+            "explanation": self.explanation or (" · ".join(s.label for s in self.signals) if self.signals else "평소 거래와 다른 점이 없어요"),
             "needs_approval": self.needs_approval,
             "sleep_window": self.sleep_window,
             "model": (
@@ -211,5 +213,6 @@ class FdsEngine:
 
         score = min(99, BASE_SCORE + sum(s.weight for s in signals))
         level = "high" if score >= HIGH_SCORE else "caution" if score >= CAUTION_SCORE else "safe"
-        needs_approval = level != "safe" or ctx.amount >= ctx.approval_threshold or ctx.sleep_window
-        return RiskResult(score, level, signals, needs_approval, anomaly, ctx.sleep_window)
+        needs_approval = level == "high" or ctx.amount >= ctx.approval_threshold or ctx.sleep_window
+        explanation = " · ".join(s.label for s in signals) if signals else "평소 거래와 다른 점이 없어요"
+        return RiskResult(score, level, signals, needs_approval, anomaly, ctx.sleep_window, explanation)

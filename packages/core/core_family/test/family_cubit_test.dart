@@ -4,10 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('parses the demo snapshot', () {
-    final s = FamilySnapshot.fromJson(demoSnapshotJson(requests: [pendingTransferJson()]));
+    final s = FamilySnapshot.fromJson(demoSnapshotJson(seniorCautionMode: true, requests: [pendingTransferJson()]));
     final senior = s.member('senior');
     expect(senior.label, '어머니 김순자');
     expect(senior.accounts, hasLength(2));
+    expect(senior.cautionMode, isTrue);
+    expect(senior.cautionUntil, isNotNull);
+    expect(s.config.holdSeconds, 1800);
     expect(s.member('child').callName, '민준');
     expect(s.pending('senior').single.risk!.level, RiskLevel.high);
     expect(s.mode('school').restricted, isTrue);

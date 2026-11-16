@@ -1,4 +1,4 @@
-"""외부 연동 어댑터 (금융결제원 오픈뱅킹, FCM 푸시, SMS, ARS 음성 전화).
+"""외부 연동 어댑터 (금융결제원 오픈뱅킹, FCM 푸시, SMS).
 
 지금은 모의(Mock) 구현만 있습니다. 실제 API처럼 호출 내용을 만들고 IntegrationRecord로
 돌려주면, 서비스가 연동 기록(integration_logs)에 남깁니다. 실제 연동으로 바꿀 때는
@@ -13,7 +13,7 @@ from typing import Any, Protocol
 
 @dataclass(frozen=True)
 class IntegrationRecord:
-    channel: str  # OPEN_BANKING / FCM / SMS / ARS
+    channel: str  # OPEN_BANKING / FCM / SMS
     action: str
     target: str
     message: str
@@ -32,10 +32,6 @@ class PushGateway(Protocol):
 
 class SmsGateway(Protocol):
     def send(self, to: str, text: str) -> IntegrationRecord: ...
-
-
-class ArsGateway(Protocol):
-    def call(self, to: str, script: str, request_id: str) -> IntegrationRecord: ...
 
 
 class MockOpenBanking:
@@ -79,20 +75,8 @@ class MockSms:
         return IntegrationRecord("SMS", "POST /sms/send", to, text, {"mode": "mock"})
 
 
-class MockArs:
-    def call(self, to, script, request_id):
-        return IntegrationRecord(
-            "ARS",
-            "POST /calls (TwiML Gather 1|2)",
-            to,
-            script,
-            {"request_id": request_id, "digits": {"1": "APPROVE", "2": "REJECT"}, "mode": "mock"},
-        )
-
-
 @dataclass
 class Gateways:
     open_banking: OpenBankingGateway = field(default_factory=MockOpenBanking)
     push: PushGateway = field(default_factory=MockPush)
     sms: SmsGateway = field(default_factory=MockSms)
-    ars: ArsGateway = field(default_factory=MockArs)

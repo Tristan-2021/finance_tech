@@ -145,7 +145,7 @@ class _PaySheetState extends State<PaySheet> {
     final merchant = r.merchant;
     final pending = r.isPending;
     final (icon, tone, ringing, title, body) = pending
-        ? (FbIcons.phone, ResultTone.soft, true, '보호자 확인을 기다려요', '${data.guardian.name}님께 앱 알림을 보냈어요. 답이 없으면 ARS 전화를 걸어요.')
+        ? (FbIcons.phone, ResultTone.soft, true, '보호자 확인을 기다려요', '${data.guardian.name}님께 앱 알림을 보냈어요.')
         : r.ok
         ? (FbIcons.check, ResultTone.blue, false, '${won(merchant.amount)} 결제했어요', '${merchant.name} · 남은 돈 ${won(m.balance)}')
         : (FbIcons.lock, ResultTone.red, false, payTitles[r.code] ?? '결제할 수 없어요', r.message);

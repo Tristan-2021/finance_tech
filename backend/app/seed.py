@@ -26,6 +26,7 @@ SEED_RISK = {
     "level": "high",
     "needs_approval": True,
     "sleep_window": False,
+    "explanation": "처음 보내는 계좌예요 · 평소보다 훨씬 큰 금액이에요",
     "model": None,
     "signals": [
         {"id": "new", "label": "처음 보내는 계좌예요", "weight": 35},
@@ -255,14 +256,14 @@ def seed(session: Session) -> None:
             detail="국민 123-••••-7788 · 처음 보내는 계좌",
             payload={"recipient": {"name": "이정민", "relation": "새 계좌", "bank": "국민", "digits": "12345678907788", "is_new": True}},
             risk=SEED_RISK,
-            status="rejected",
-            channel="ARS 전화 · 앱 알림",
+            status="cancelled",
+            channel="앱 알림",
             created_at=ago(120),
-            expires_at=ago(120) + timedelta(minutes=3),
+            expires_at=ago(120) + timedelta(minutes=30),
             decided_at=ago(119.9),
-            decided_by="ars",
+            decided_by="self",
+            decision_reason="본인 취소",
             push_sent_at=ago(120),
-            ars_called_at=ago(119.95),
         )
     )
     for aid, who, title, amount, status, emoji, h, rid in [

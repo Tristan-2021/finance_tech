@@ -60,11 +60,90 @@ void main() {
       snapshot: demoSnapshotJson(requests: [pendingTransferJson()]),
     );
     expect(find.textContaining('보호자 확인 대기 중', findRichText: true), findsOneWidget); // 어르신 화면 배너
+    expect(find.text('거래 보류 중'), findsOneWidget);
+    expect(find.text('취소'), findsOneWidget);
     await tester.tap(find.text('보호자').first);
     await settle(tester);
     expect(shell.state.persona, Persona.guardian);
     expect(find.text('확인할 요청이 1건 있어요'), findsOneWidget);
     expect(find.text('AI 위험도 79점 · 위험'), findsOneWidget);
+    expect(find.text('해제'), findsOneWidget);
+    expect(find.text('연장'), findsOneWidget);
+  });
+
+  testWidgets('senior home hold card cancels the hold when cancel is tapped', (tester) async {
+    final (repo, shell) = await pumpApp(
+      tester,
+      size: const Size(400, 860),
+      snapshot: demoSnapshotJson(requests: [pendingTransferJson()]),
+    );
+    final messages = <String>[];
+    final sub = shell.feedback.listen((f) => messages.add(f.message));
+    addTearDown(sub.cancel);
+
+    expect(find.text('거래 보류 중'), findsOneWidget);
+    await tester.tap(find.text('취소'));
+    await settle(tester);
+    expect(repo.calls, contains('cancel:req-1:senior'));
+    expect(find.text('거래 보류 중'), findsNothing);
+    expect(messages, contains('보류 중인 거래를 취소했어요'));
+  });
+
+  testWidgets('senior home shows caution mode and reconfirm hold buttons (proceed, stop, failure)', (tester) async {
+    final (repo, shell) = await pumpApp(
+      tester,
+      size: const Size(400, 860),
+      snapshot: demoSnapshotJson(
+        seniorCautionMode: true,
+        requests: [pendingTransferJson(status: 'reconfirm')],
+      ),
+    );
+    final messages = <String>[];
+    final sub = shell.feedback.listen((f) => messages.add(f.message));
+    addTearDown(sub.cancel);
+
+    expect(find.text('주의 모드 작동 중'), findsOneWidget);
+    expect(find.text('본인 재확인 대기'), findsOneWidget);
+    expect(find.text('그래도 진행'), findsOneWidget);
+    expect(find.text('그만두기'), findsOneWidget);
+
+    await tester.tap(find.text('그래도 진행'));
+    await settle(tester);
+    expect(repo.calls, contains('reconfirm:req-1:senior:true'));
+    expect(find.text('본인 재확인 대기'), findsNothing);
+    expect(find.text('1,850,000원'), findsOneWidget);
+    expect(messages.last, '재확인 후 거래를 진행했어요');
+  });
+
+  testWidgets('senior home reconfirm stop cancels and failure reports reason', (tester) async {
+    final (repo, shell) = await pumpApp(
+      tester,
+      size: const Size(400, 860),
+      snapshot: demoSnapshotJson(
+        requests: [pendingTransferJson(status: 'reconfirm')],
+      ),
+    );
+    final messages = <String>[];
+    final sub = shell.feedback.listen((f) => messages.add(f.message));
+    addTearDown(sub.cancel);
+
+    await tester.tap(find.text('그만두기'));
+    await settle(tester);
+    expect(repo.calls, contains('reconfirm:req-1:senior:false'));
+    expect(find.text('본인 재확인 대기'), findsNothing);
+    expect(find.text('2,350,000원'), findsOneWidget);
+    expect(messages.last, '거래를 그만두었어요');
+
+    repo.snapshotJson = demoSnapshotJson(requests: [pendingTransferJson(id: 'req-2', status: 'reconfirm')]);
+    repo.failDecisionReason = '계좌가 동결되어 보내지 못했어요.';
+    repo.emitEvent(const FamilyEvent(type: 'reconfirm', memberId: 'senior'));
+    await settle(tester);
+    expect(find.text('본인 재확인 대기'), findsOneWidget);
+
+    await tester.tap(find.text('그래도 진행'));
+    await settle(tester);
+    expect(repo.calls, contains('reconfirm:req-2:senior:true'));
+    expect(messages.last, '처리하지 못했어요 · 계좌가 동결되어 보내지 못했어요.');
   });
 
   testWidgets('guardian banks from their own account like everyone else', (tester) async {

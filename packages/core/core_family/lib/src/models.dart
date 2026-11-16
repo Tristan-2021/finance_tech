@@ -15,7 +15,7 @@ enum Persona {
 
 enum RiskLevel {
   safe('안전', '안전한 거래로 보여요', '평소 거래 패턴과 비슷해요'),
-  caution('주의', '한 번 더 확인이 필요해요', '평소와 다른 점이 있어 보호자 확인을 거쳐요'),
+  caution('주의', '한 번 더 확인이 필요해요', '평소와 다른 점이 있어 보내기 전에 한 번 더 확인해요'),
   high('위험', '사기 위험이 높은 거래예요', '보이스피싱에서 자주 보이는 패턴이에요');
 
   final String label;
@@ -233,6 +233,57 @@ class LimitRange {
   factory LimitRange.fromJson(Json j) => LimitRange(min: asInt(j['min']), max: asInt(j['max'], 1), step: asInt(j['step'], 1));
 }
 
+/// 사건의 시간순 항목 (기획서 5.1).
+class IncidentItem {
+  final String id;
+  final String kind;
+  final String summary;
+  final DateTime at;
+
+  const IncidentItem({required this.id, required this.kind, required this.summary, required this.at});
+
+  factory IncidentItem.fromJson(Json j) => IncidentItem(
+    id: asString(j['id']),
+    kind: asString(j['kind']),
+    summary: asString(j['summary']),
+    at: asDateOr(j['at'], DateTime.fromMillisecondsSinceEpoch(0)),
+  );
+}
+
+/// 주의 모드 한 번 동안 쌓인 사건 기록 (기획서 5.1).
+class Incident {
+  final String id;
+  final String memberId;
+  final String status;
+  final DateTime startedAt;
+  final DateTime expiresAt;
+  final DateTime? endedAt;
+  final String? endedBy;
+  final List<IncidentItem> items;
+
+  const Incident({
+    required this.id,
+    required this.memberId,
+    required this.status,
+    required this.startedAt,
+    required this.expiresAt,
+    this.endedAt,
+    this.endedBy,
+    this.items = const [],
+  });
+
+  factory Incident.fromJson(Json j) => Incident(
+    id: asString(j['id']),
+    memberId: asString(j['member_id']),
+    status: asString(j['status'], 'open'),
+    startedAt: asDateOr(j['started_at'], DateTime.fromMillisecondsSinceEpoch(0)),
+    expiresAt: asDateOr(j['expires_at'], DateTime.fromMillisecondsSinceEpoch(0)),
+    endedAt: asDate(j['ended_at']),
+    endedBy: asStringOrNull(j['ended_by']),
+    items: asList(j['items'], IncidentItem.fromJson),
+  );
+}
+
 /// 계좌를 가진 사용자: 보호 대상 가족(어르신·아이) 또는 보호자 본인([Guardian.banking]).
 class Member {
   final String id;
@@ -258,6 +309,9 @@ class Member {
   final bool isFrozen;
   final DateTime? frozenUntil;
   final SosTrigger? frozenSource;
+  final bool cautionMode;
+  final DateTime? cautionUntil;
+  final Incident? activeIncident;
   final List<Contact> contacts;
   final List<LedgerEntry> ledger;
   final List<Notice> notices;
@@ -287,6 +341,9 @@ class Member {
     this.isFrozen = false,
     this.frozenUntil,
     this.frozenSource,
+    this.cautionMode = false,
+    this.cautionUntil,
+    this.activeIncident,
     this.contacts = const [],
     this.ledger = const [],
     this.notices = const [],
@@ -333,6 +390,9 @@ class Member {
       isFrozen: asBool(j['is_frozen']),
       frozenUntil: asDate(j['frozen_until']),
       frozenSource: SosTrigger.parse(j['frozen_source']),
+      cautionMode: asBool(j['caution_mode']),
+      cautionUntil: asDate(j['caution_until']),
+      activeIncident: j['active_incident'] is Map<String, dynamic> ? Incident.fromJson(j['active_incident'] as Json) : null,
       contacts: asList(j['contacts'], Contact.fromJson),
       ledger: asList(j['ledger'], LedgerEntry.fromJson),
       notices: asList(j['notices'], Notice.fromJson),
@@ -369,6 +429,7 @@ class RiskAssessment {
   final int score;
   final RiskLevel level;
   final List<RiskSignal> signals;
+  final String explanation;
   final bool needsApproval;
   final bool sleepWindow;
   final AnomalyInfo? model;
@@ -377,6 +438,7 @@ class RiskAssessment {
     required this.score,
     required this.level,
     this.signals = const [],
+    this.explanation = '',
     this.needsApproval = false,
     this.sleepWindow = false,
     this.model,
@@ -384,17 +446,24 @@ class RiskAssessment {
 
   bool get isSafe => level == RiskLevel.safe;
 
+  String get easyExplanation {
+    if (explanation.isNotEmpty) return explanation;
+    if (signals.isNotEmpty) return signals.map((s) => s.label).join(' · ');
+    return level.desc;
+  }
+
   factory RiskAssessment.fromJson(Json j) => RiskAssessment(
     score: asInt(j['score']),
     level: RiskLevel.parse(j['level']),
     signals: asList(j['signals'], RiskSignal.fromJson),
+    explanation: asString(j['explanation']),
     needsApproval: asBool(j['needs_approval']),
     sleepWindow: asBool(j['sleep_window']),
     model: j['model'] is Map<String, dynamic> ? AnomalyInfo.fromJson(j['model'] as Json) : null,
   );
 }
 
-/// 보호자 콜백 승인 요청.
+/// 거래 보류 및 보호자 확인 요청.
 class ApprovalRequest {
   final String id;
   final String memberId;
@@ -403,15 +472,14 @@ class ApprovalRequest {
   final int amount;
   final String detail;
   final RiskAssessment? risk;
-  final String status; // pending / approved / rejected / cancelled / expired / failed
+  final String status; // pending / reconfirm / approved / rejected / cancelled / expired / failed
   final String channel;
   final DateTime createdAt;
   final DateTime? expiresAt;
+  final DateTime? reconfirmUntil;
   final DateTime? decidedAt;
   final String? decidedBy;
   final String? failReason;
-  final DateTime? pushAckAt;
-  final DateTime? arsCalledAt;
 
   const ApprovalRequest({
     required this.id,
@@ -425,14 +493,17 @@ class ApprovalRequest {
     this.risk,
     this.channel = '앱 알림',
     this.expiresAt,
+    this.reconfirmUntil,
     this.decidedAt,
     this.decidedBy,
     this.failReason,
-    this.pushAckAt,
-    this.arsCalledAt,
   });
 
+  bool get isHold => type == 'transfer';
   bool get isPending => status == 'pending';
+  bool get isReconfirm => status == 'reconfirm';
+  bool get isActive => status == 'pending' || status == 'reconfirm';
+  String get easyExplanation => risk?.easyExplanation ?? detail;
 
   factory ApprovalRequest.fromJson(Json j) => ApprovalRequest(
     id: asString(j['id']),
@@ -446,11 +517,10 @@ class ApprovalRequest {
     channel: asString(j['channel'], '앱 알림'),
     createdAt: asDateOr(j['created_at'], DateTime.now()),
     expiresAt: asDate(j['expires_at']),
+    reconfirmUntil: asDate(j['reconfirm_until']),
     decidedAt: asDate(j['decided_at']),
     decidedBy: asStringOrNull(j['decided_by']),
     failReason: asStringOrNull(j['fail_reason']),
-    pushAckAt: asDate(j['push_ack_at']),
-    arsCalledAt: asDate(j['ars_called_at']),
   );
 }
 
@@ -525,15 +595,25 @@ class ModeInfo {
 }
 
 class ApprovalConfig {
+  final int holdSeconds;
+  final int reconfirmSeconds;
   final int approvalTimeoutSeconds;
-  final int arsAfterSeconds;
+  final int cautionModeHours;
   final int freezeHours;
 
-  const ApprovalConfig({this.approvalTimeoutSeconds = 180, this.arsAfterSeconds = 20, this.freezeHours = 24});
+  const ApprovalConfig({
+    this.holdSeconds = 1800,
+    this.reconfirmSeconds = 86400,
+    this.approvalTimeoutSeconds = 180,
+    this.cautionModeHours = 24,
+    this.freezeHours = 24,
+  });
 
   factory ApprovalConfig.fromJson(Json j) => ApprovalConfig(
+    holdSeconds: asInt(j['hold_seconds'], 1800),
+    reconfirmSeconds: asInt(j['reconfirm_seconds'], 86400),
     approvalTimeoutSeconds: asInt(j['approval_timeout_seconds'], 180),
-    arsAfterSeconds: asInt(j['ars_after_seconds'], 20),
+    cautionModeHours: asInt(j['caution_mode_hours'], 24),
     freezeHours: asInt(j['freeze_hours'], 24),
   );
 }
@@ -545,6 +625,7 @@ class FamilySnapshot {
   final Guardian guardian;
   final List<Member> members;
   final List<ApprovalRequest> requests;
+  final List<Incident> incidents;
   final List<FamilyAlert> alerts;
   final List<ModeInfo> modes;
   final List<String> banks;
@@ -557,6 +638,7 @@ class FamilySnapshot {
     required this.members,
     this.config = const ApprovalConfig(),
     this.requests = const [],
+    this.incidents = const [],
     this.alerts = const [],
     this.modes = const [],
     this.banks = const [],
@@ -573,6 +655,7 @@ class FamilySnapshot {
       guardian: Guardian.fromJson(asJson(j['guardian'])),
       members: asList(j['members'], Member.fromJson),
       requests: asList(j['requests'], ApprovalRequest.fromJson),
+      incidents: asList(j['incidents'], Incident.fromJson),
       alerts: asList(j['alerts'], FamilyAlert.fromJson),
       modes: asList(catalog['modes'], ModeInfo.fromJson),
       banks: asStrings(catalog['banks']),
@@ -600,7 +683,7 @@ class FamilySnapshot {
   ApprovalRequest? request(String id) => requests.where((r) => r.id == id).firstOrNull;
 
   List<ApprovalRequest> pending([String? memberId]) =>
-      requests.where((r) => r.isPending && (memberId == null || r.memberId == memberId)).toList(growable: false);
+      requests.where((r) => r.isActive && (memberId == null || r.memberId == memberId)).toList(growable: false);
 
   bool hasPending(String memberId, String type) => pending(memberId).any((r) => r.type == type);
 }

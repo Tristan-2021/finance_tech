@@ -76,7 +76,64 @@ void main() {
     repo.snapshotJson = demoSnapshotJson(requests: [pendingTransferJson()]);
     await tester.tap(find.text('보호자에게 확인 요청'));
     await settle(tester);
-    expect(find.text('보호자 확인을 기다리고 있어요'), findsOneWidget);
+    expect(find.text('거래를 30분 동안 보류했어요'), findsOneWidget);
+    expect(find.text('취소'), findsOneWidget);
+
+    await tester.tap(find.text('취소'));
+    await settle(tester);
+    expect(repo.calls, contains('cancel:req-1:senior'));
+    expect(find.text('송금이 취소됐어요'), findsOneWidget);
+  });
+
+  testWidgets('reconfirm waiting in transfer sheet executes, stops, or reports failure', (tester) async {
+    final (repo, shell) = await pumpSheet(tester);
+    final messages = <String>[];
+    final sub = shell.feedback.listen((f) => messages.add(f.message));
+    addTearDown(sub.cancel);
+
+    await tester.tap(find.text('새 계좌로 보내기'));
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, '계좌번호'), '12345678907788');
+    await tester.enterText(find.widgetWithText(TextField, '받는 분 이름'), '이정민');
+    await tester.tap(find.text('다음'));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField), '500000');
+    await tester.tap(find.text('다음'));
+    await settle(tester);
+
+    repo.snapshotJson = demoSnapshotJson(requests: [pendingTransferJson(status: 'reconfirm')]);
+    await tester.tap(find.text('보호자에게 확인 요청'));
+    await settle(tester);
+    expect(find.text('본인 재확인 대기'), findsOneWidget);
+
+    repo.failDecisionReason = '잔액이 부족해 보내지 못했어요.';
+    await tester.tap(find.text('그래도 진행'));
+    await settle(tester);
+    expect(repo.calls, contains('reconfirm:req-1:senior:true'));
+    expect(find.text('처리하지 못했어요'), findsOneWidget);
+    expect(find.textContaining('잔액이 부족해 보내지 못했어요.'), findsOneWidget);
+    expect(messages.last, '처리하지 못했어요 · 잔액이 부족해 보내지 못했어요.');
+  });
+
+  testWidgets('caution level shows warning and easy explanation and proceeds on confirmation', (tester) async {
+    final (repo, _) = await pumpSheet(tester);
+    await tester.tap(find.text('새 계좌로 보내기'));
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, '계좌번호'), '12345678907788');
+    await tester.enterText(find.widgetWithText(TextField, '받는 분 이름'), '이정민');
+    await tester.tap(find.text('다음'));
+    await settle(tester);
+
+    await tester.enterText(find.byType(TextField), '50000');
+    await tester.tap(find.text('다음'));
+    await settle(tester);
+    expect(find.text('한 번 더 확인이 필요해요'), findsOneWidget);
+    expect(find.text('처음 보내는 계좌예요'), findsOneWidget);
+
+    await tester.tap(find.text('확인했어요, 보내기'));
+    await settle(tester);
+    expect(repo.calls, contains('transfer:senior:50000:confirmed'));
+    expect(find.text('이정민님께 50,000원을 보냈어요'), findsOneWidget);
   });
 
   testWidgets('guardian sends from their own account without waiting for approval', (tester) async {
@@ -99,7 +156,7 @@ void main() {
     expect(find.text('보호자에게 확인 요청'), findsNothing);
     await tester.tap(find.text('확인했어요, 보내기'));
     await settle(tester);
-    expect(repo.calls, contains('transfer:guardian:500000'));
+    expect(repo.calls, contains('transfer:guardian:500000:confirmed'));
     expect(find.text('이정민님께 500,000원을 보냈어요'), findsOneWidget);
   });
 

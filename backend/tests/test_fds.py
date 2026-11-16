@@ -85,15 +85,54 @@ def test_safe_transfer_completes_immediately(client):
 
 
 def test_new_account_is_remembered_after_completed_transfer(client):
-    body = {"member_id": "child", "new_account": {"bank": "신한", "number": "1102223334444", "name": "최하늘"}, "amount": 2000}
+    body = {"member_id": "child", "new_account": {"bank": "신한", "number": "1102223334444", "name": "최하늘"}, "amount": 10000}
     first = client.post("/api/v1/transaction/transfer", json=body).json()
     assert first["status"] == "pending"
     client.post(
         "/api/v1/guardian/callback-decision",
-        json={"transaction_id": first["request"]["id"], "guardian_id": "guardian", "decision": "APPROVE"},
+        json={"transaction_id": first["request"]["id"], "guardian_id": "guardian", "decision": "RELEASE"},
     )
     contacts = member(state(client), "child")["contacts"]
     assert any(c["name"] == "최하늘" and c["relation"] == "최근 보냄" for c in contacts)
+
+
+def test_caution_level_shows_warning_and_proceeds_on_user_confirmation(client):
+    # 처음 보내는 계좌(+35)이지만 금액(50,000원)이 평소 수준이고 보호자 확인 금액(300,000원) 미만 → 주의(caution)
+    draft = {"member_id": "senior", "new_account": PHISHING, "amount": 50000}
+    assessed = client.post("/api/v1/transaction/assess", json=draft).json()["risk"]
+    assert assessed["level"] == "caution"
+    assert 30 <= assessed["score"] < 60
+    assert assessed["needs_approval"] is False
+    assert "처음 보내는 계좌예요" in assessed["explanation"]
+
+    before = member(state(client), "senior")["balance"]
+    unconfirmed = client.post("/api/v1/transaction/transfer", json=draft).json()
+    assert unconfirmed["status"] == "caution"
+    assert "처음 보내는 계좌예요" in unconfirmed["risk"]["explanation"]
+    assert member(state(client), "senior")["balance"] == before
+
+    confirmed = client.post("/api/v1/transaction/transfer", json={**draft, "confirmed": True}).json()
+    assert confirmed["status"] == "done"
+    assert member(state(client), "senior")["balance"] == before - 50000
+
+
+def test_server_recalculates_level_and_ignores_client_supplied_risk(client):
+    # 클라이언트가 낮은 점수·단계를 보내고 confirmed=True를 붙여도 위험 거래는 서버가 다시 계산해 보류합니다.
+    r = client.post(
+        "/api/v1/transaction/transfer",
+        json={
+            "member_id": "senior",
+            "new_account": PHISHING,
+            "amount": 500000,
+            "confirmed": True,
+            "risk_score": 0,
+            "risk_level": "safe",
+            "risk_reasons": [],
+        },
+    ).json()
+    assert r["status"] == "pending"
+    assert r["risk"]["level"] == "high"
+    assert r["risk"]["score"] >= 60
 
 
 def test_isolation_forest_separates_usual_and_unusual():

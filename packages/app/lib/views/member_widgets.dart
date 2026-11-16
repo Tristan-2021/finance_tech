@@ -1,3 +1,4 @@
+import 'package:core_api/core_api.dart';
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
@@ -6,6 +7,158 @@ import 'package:feature_sos/feature_sos.dart';
 import 'package:feature_transfer/feature_transfer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+
+/// 본인 홈에 보이는 주의 모드 카드 (기획서 5.1: 상태와 남은 시간 표시, 본인은 끌 수 없음).
+class CautionModeCard extends StatelessWidget {
+  final Member member;
+  final DateTime Function() now;
+
+  const CautionModeCard({super.key, required this.member, required this.now});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.fb;
+    return FbCard(
+      color: c.redSoft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(FbIcons.alert, size: 19, color: c.redStrong),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '주의 모드 작동 중',
+                  style: TextStyle(fontSize: 16.4, fontWeight: FontWeight.w800, color: c.redStrong),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '사기 의심 징후가 감지되어 24시간 동안 금융 행동을 보호해요.',
+            style: TextStyle(fontSize: 13.6, height: 1.5, color: c.ink2),
+          ),
+          if (member.cautionUntil != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text('남은 시간 ', style: TextStyle(fontSize: 13.6, color: c.ink2)),
+                CountdownText(
+                  until: member.cautionUntil!,
+                  now: now,
+                  style: TextStyle(fontSize: 13.6, fontWeight: FontWeight.w800, color: c.ink2),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 본인 홈에 보이는 거래 보류 / 본인 재확인 대기 카드 (기획서 5.7).
+class MemberHoldCard extends StatefulWidget {
+  final ApprovalRequest request;
+  final Member member;
+  final DateTime Function() now;
+
+  const MemberHoldCard({super.key, required this.request, required this.member, required this.now});
+
+  @override
+  State<MemberHoldCard> createState() => _MemberHoldCardState();
+}
+
+class _MemberHoldCardState extends State<MemberHoldCard> {
+  String? _busy; // 'cancel' / 'proceed' / 'stop'
+
+  Future<void> _cancel() async {
+    setState(() => _busy = 'cancel');
+    final shell = context.read<ShellCubit>();
+    try {
+      await context.read<FamilyCubit>().cancelRequest(widget.request.id, widget.member.id);
+      shell.say('보류 중인 거래를 취소했어요');
+    } on ApiException catch (e) {
+      shell.say(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
+  Future<void> _reconfirm(bool confirm) async {
+    setState(() => _busy = confirm ? 'proceed' : 'stop');
+    final shell = context.read<ShellCubit>();
+    try {
+      final r = await context.read<FamilyCubit>().reconfirmHold(widget.request.id, widget.member.id, confirm: confirm);
+      if (r.status == 'failed') {
+        final reason = r.message.isNotEmpty ? r.message : (r.request?.failReason ?? '돈은 나가지 않았어요.');
+        shell.say('처리하지 못했어요 · $reason', vibrate: const [80, 40, 80]);
+      } else {
+        shell.say(confirm ? '재확인 후 거래를 진행했어요' : '거래를 그만두었어요');
+      }
+    } on ApiException catch (e) {
+      shell.say(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.fb;
+    final r = widget.request;
+    final reconfirm = r.isReconfirm && !widget.member.isChild;
+    return FbCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(reconfirm ? FbIcons.alert : FbIcons.clock, size: 18, color: c.redStrong),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  reconfirm ? '본인 재확인 대기' : '거래 보류 중',
+                  style: TextStyle(fontSize: 15.2, fontWeight: FontWeight.w800, color: c.redStrong),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text('${r.title} · ${won(r.amount)}', style: FbText.rowTitle(c)),
+          const SizedBox(height: 4),
+          Text(r.easyExplanation, style: TextStyle(fontSize: 13.6, height: 1.55, color: c.ink2)),
+          if (!reconfirm && r.expiresAt != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text('남은 시간 ', style: FbText.small(c)),
+                CountdownText(
+                  until: r.expiresAt!,
+                  now: widget.now,
+                  format: formatMinSec,
+                  style: FbText.small(c).copyWith(fontWeight: FontWeight.w800, color: c.ink2),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 14),
+          if (reconfirm)
+            FbButtonRow(
+              children: [
+                FbButton.gray('그만두기', busy: _busy == 'stop', onPressed: _busy == null ? () => _reconfirm(false) : null),
+                FbButton.gray('그래도 진행', busy: _busy == 'proceed', onPressed: _busy == null ? () => _reconfirm(true) : null),
+              ],
+            )
+          else
+            FbButton.gray('취소', busy: _busy == 'cancel', onPressed: _busy == null ? _cancel : null),
+        ],
+      ),
+    );
+  }
+}
 
 /// 내 계좌: 잔액과 [송금] [결제] [조회]. 어르신·아이·보호자 모두 같은 은행 기능을 씁니다.
 /// 아이는 결제를 앞에 두고, [extra](오늘 쓴 돈 등)를 잔액 아래에 붙입니다.

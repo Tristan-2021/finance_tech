@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:feature_guardian/feature_guardian.dart';
 import 'package:feature_sos/feature_sos.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -16,7 +15,7 @@ import 'startup_views.dart';
 import 'toast.dart';
 
 /// 앱 셸: 서버 연결 → 웹/모바일 레이아웃 → 그 위의 SOS 화면·토스트.
-/// 실시간 이벤트에 반응하고(다른 기기 알림, ARS 전화), 피드백 요청을 진동·음성으로 내보냅니다.
+/// 실시간 이벤트에 반응하고(다른 기기 알림), 피드백 요청을 진동·음성으로 내보냅니다.
 class AppShell extends StatefulWidget {
   static final navigatorKey = GlobalKey<NavigatorState>();
 
@@ -65,14 +64,6 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
     final shell = context.read<ShellCubit>();
     final persona = shell.state.persona;
     switch (e.type) {
-      case 'ars_call':
-        if (persona == Persona.guardian && e.requestId != null) {
-          final nav = AppShell.navigatorKey.currentContext;
-          if (nav != null) openArsCallSheet(nav, requestId: e.requestId!, script: e.script);
-          shell.say(e.script ?? 'ARS 확인 전화가 왔어요', toast: false, vibrate: const [300, 150, 300, 150, 300]);
-        } else {
-          shell.say('${e.message} (보호자 화면에서 받을 수 있어요)');
-        }
       case 'reset':
         if (!e.fromThisDevice) {
           shell.reset();
@@ -80,8 +71,8 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
         }
       default:
         if (e.fromThisDevice || e.message.isEmpty) return;
-        const forGuardian = {'request', 'freeze', 'blocked', 'expired', 'transfer', 'payment', 'mode'};
-        const forMember = {'decision', 'freeze', 'unfreeze', 'mode', 'limit', 'deposit'};
+        const forGuardian = {'request', 'caution_mode', 'cancelled', 'freeze', 'blocked', 'expired', 'transfer', 'payment', 'mode'};
+        const forMember = {'decision', 'extend', 'reconfirm', 'caution_mode', 'freeze', 'unfreeze', 'mode', 'limit', 'deposit'};
         final family = context.read<FamilyCubit>().state;
         final mine = family.isReady ? family.data.accountOf(persona)?.id : persona.memberId;
         if (persona == Persona.guardian && forGuardian.contains(e.type)) {

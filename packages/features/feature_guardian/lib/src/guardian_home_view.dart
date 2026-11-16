@@ -5,10 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'alert_row.dart';
+import 'guardian_actions.dart';
 import 'request_card.dart';
 
-/// 보호자 홈: 기다리는 승인 요청, 내 계좌, 최근 알림, 가족 상태.
-class GuardianHomeView extends StatefulWidget {
+/// 보호자 홈: 기다리는 보류·승인 요청, 주의 모드 상태, 내 계좌, 최근 알림, 가족 상태.
+class GuardianHomeView extends StatelessWidget {
   final FamilySnapshot data;
 
   /// 보호자 본인 계좌 카드들 (잔액·송금·결제·최근 거래). 송금·결제 기능은 앱이 연결합니다.
@@ -17,32 +18,15 @@ class GuardianHomeView extends StatefulWidget {
   const GuardianHomeView({super.key, required this.data, this.banking = const []});
 
   @override
-  State<GuardianHomeView> createState() => _GuardianHomeViewState();
-}
-
-class _GuardianHomeViewState extends State<GuardianHomeView> {
-  final _acked = <String>{};
-
-  /// 화면에 띄운 요청은 "푸시를 확인했다"고 서버에 알려, ARS 전화가 가지 않게 합니다.
-  void _acknowledge(List<ApprovalRequest> pending) {
-    final ids = [
-      for (final r in pending)
-        if (r.pushAckAt == null && r.arsCalledAt == null && _acked.add(r.id)) r.id,
-    ];
-    if (ids.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<FamilyCubit>().acknowledge(ids).catchError((_) {});
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final data = widget.data;
     final family = context.read<FamilyCubit>();
     final pending = data.pending();
-    _acknowledge(pending);
     final now = family.now();
 
+    final cautionCards = [
+      for (final m in data.members)
+        if (m.cautionMode) _GuardianCautionCard(key: ValueKey('caution-${m.id}'), member: m, now: family.now),
+    ];
     final requests = [for (final r in pending) RequestCard(key: ValueKey(r.id), request: r, data: data, now: family.now)];
     final alerts = FbCard(
       child: Column(
@@ -78,11 +62,61 @@ class _GuardianHomeViewState extends State<GuardianHomeView> {
         ),
         // 웹: 왼쪽은 요청과 내 계좌, 오른쪽은 가족 (내 계좌가 없으면 알림을 왼쪽에)
         FbSplit(
-          main: [...requests, ...widget.banking, if (widget.banking.isEmpty) alerts],
-          side: [familyCard, if (widget.banking.isNotEmpty) alerts],
-          mobile: [...requests, ...widget.banking, familyCard, alerts],
+          main: [...cautionCards, ...requests, ...banking, if (banking.isEmpty) alerts],
+          side: [familyCard, if (banking.isNotEmpty) alerts],
+          mobile: [...cautionCards, ...requests, ...banking, familyCard, alerts],
         ),
       ],
+    );
+  }
+}
+
+class _GuardianCautionCard extends StatelessWidget {
+  final Member member;
+  final DateTime Function() now;
+
+  const _GuardianCautionCard({super.key, required this.member, required this.now});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.fb;
+    return FbCard(
+      color: c.redSoft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(FbIcons.alert, size: 19, color: c.redStrong),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${member.label} · 주의 모드 작동 중',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: c.redStrong),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Text('주의 모드 남은 시간 ', style: TextStyle(fontSize: 13.6, color: c.ink2)),
+              if (member.cautionUntil != null)
+                CountdownText(
+                  until: member.cautionUntil!,
+                  now: now,
+                  style: TextStyle(fontSize: 13.6, fontWeight: FontWeight.w800, color: c.ink2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12.8),
+          FbButton(
+            '주의 모드 해제',
+            variant: FbButtonVariant.white,
+            onPressed: () => guardianRun(context, (f) => f.releaseCautionMode(member.id), '${member.relationLabel} 주의 모드를 해제했어요'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -99,13 +133,19 @@ class _FamilyRow extends StatelessWidget {
     final hidden = context.select((ShellCubit s) => s.state.prefs.hideBalance);
     final m = member;
     final detail = m.isChild ? '오늘 ${won(m.spentToday)} 사용' : '잔액 ${wonOrHidden(m.balance, hidden: hidden)}';
+    final statusLabel = m.isFrozen
+        ? '동결 중'
+        : m.cautionMode
+        ? '주의 모드'
+        : '정상';
+    final danger = m.isFrozen || m.cautionMode;
     return FbListRow(
       leading: TxLogo.initial(m.name),
       title: Text(m.label),
       subtitle: '${data.mode(m.mode).label} · $detail',
       trailing: Text(
-        m.isFrozen ? '동결 중' : '정상',
-        style: FbText.note(c).copyWith(color: m.isFrozen ? c.redStrong : c.muted),
+        statusLabel,
+        style: FbText.note(c).copyWith(color: danger ? c.redStrong : c.muted),
       ),
       chevron: true,
       onTap: () => context.read<ShellCubit>().switchTab(AppTab.safety),

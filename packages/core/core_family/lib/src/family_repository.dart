@@ -16,6 +16,7 @@ abstract interface class FamilyRepository {
   Future<FreezeResult> freeze(String memberId, SosTrigger trigger, {double? intensity});
   Future<void> requestUnfreeze(String memberId);
   Future<void> unfreeze(String memberId, String guardianId);
+  Future<void> releaseCautionMode(String memberId, String guardianId);
 
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft);
   Future<TransferResult> submitTransfer(String memberId, TransferDraft draft);
@@ -28,8 +29,9 @@ abstract interface class FamilyRepository {
   Future<void> setSleepGuard(String memberId, bool enabled);
 
   Future<DecisionResult> decide(String requestId, String guardianId, {required bool approve});
-  Future<void> acknowledge(String guardianId, List<String> requestIds);
-  Future<DecisionResult> answerArs(String requestId, String digit);
+  Future<DecisionResult> extendHold(String requestId, String guardianId);
+  Future<DecisionResult> cancelRequest(String requestId, String memberId);
+  Future<DecisionResult> reconfirmHold(String requestId, String memberId, {required bool confirm});
   Future<void> dismissNotice(String memberId, String noticeId);
 
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30});
@@ -75,6 +77,10 @@ class ApiFamilyRepository implements FamilyRepository {
       api.post('/security/unfreeze', {'member_id': memberId, 'guardian_id': guardianId});
 
   @override
+  Future<void> releaseCautionMode(String memberId, String guardianId) =>
+      api.post('/security/caution-mode/release', {'member_id': memberId, 'guardian_id': guardianId});
+
+  @override
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) async =>
       TransferPreview.fromJson(await api.post('/transaction/assess', draft.toJson(memberId)));
 
@@ -116,12 +122,23 @@ class ApiFamilyRepository implements FamilyRepository {
       );
 
   @override
-  Future<void> acknowledge(String guardianId, List<String> requestIds) =>
-      api.post('/guardian/ack', {'guardian_id': guardianId, 'request_ids': requestIds});
+  Future<DecisionResult> extendHold(String requestId, String guardianId) async => DecisionResult.fromJson(
+    await api.post('/guardian/callback-decision', {
+      'transaction_id': requestId,
+      'guardian_id': guardianId,
+      'decision': 'EXTEND',
+    }),
+  );
 
   @override
-  Future<DecisionResult> answerArs(String requestId, String digit) async =>
-      DecisionResult.fromJson(await api.post('/ars/callback', {'request_id': requestId, 'digit': digit}));
+  Future<DecisionResult> cancelRequest(String requestId, String memberId) async =>
+      DecisionResult.fromJson(await api.post('/transaction/cancel', {'request_id': requestId, 'member_id': memberId}));
+
+  @override
+  Future<DecisionResult> reconfirmHold(String requestId, String memberId, {required bool confirm}) async =>
+      DecisionResult.fromJson(
+        await api.post('/transaction/reconfirm', {'request_id': requestId, 'member_id': memberId, 'confirm': confirm}),
+      );
 
   @override
   Future<void> dismissNotice(String memberId, String noticeId) =>

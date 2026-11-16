@@ -4,13 +4,13 @@
 
 | 파일 | 역할 |
 | :--- | :--- |
-| `app/main.py` | FastAPI 앱 팩토리, 라우트, WebSocket, 1초마다 도는 타이머(동결 만료 · ARS 발신 · 3분 타임아웃) |
-| `app/service.py` | 업무 로직: SOS 동결/해제, 송금 보류·승인, 결제 제어, 모드·한도, 상태 스냅샷 |
+| `app/main.py` | FastAPI 앱 팩토리, 라우트, WebSocket, 1초마다 도는 타이머(동결·주의 모드 만료, 30분 보류 → 본인 재확인 전환, 24시간 재확인 만료, 결제·모드 요청 3분 타임아웃) |
+| `app/service.py` | 업무 로직: 사건·주의 모드, 송금 판정(낮음/주의/위험)·보류(해제·연장·취소·재확인), SOS 동결/해제, 결제 제어, 모드·한도, 상태 스냅샷 |
 | `app/domain/fds.py` | AI FDS: 규칙 점수 + 사용자별 Isolation Forest (scikit-learn) |
 | `app/domain/catalog.py` | 안심 모드, 업종 MCC, 시연 가맹점 |
-| `app/integrations.py` | 오픈뱅킹 · FCM · SMS · ARS 어댑터 (지금은 모의) |
+| `app/integrations.py` | 오픈뱅킹 · FCM · SMS 어댑터 (지금은 모의) |
 | `app/seed.py` | 시연 가족(김사랑 보호자, 김순자 어르신, 이민준 아이)과 FDS 학습용 과거 거래 |
-| `tests/` | pytest 46개 |
+| `tests/` | pytest 테스트 |
 
 ## 실행
 
@@ -29,8 +29,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-테스트는 임시 SQLite와 고정된 시각(`app.clock.freeze_at`)을 써서, 3분 타임아웃·24시간 만료·심야 판정을 실제로 기다리지 않고 확인합니다.
+테스트는 임시 SQLite와 고정된 시각(`app.clock.freeze_at`)을 써서, 30분 보류·24시간 만료·심야 판정을 실제로 기다리지 않고 확인합니다.
 
 ## 실제 연동으로 바꾸기
 
-`app/integrations.py`의 `OpenBankingGateway`, `PushGateway`, `SmsGateway`, `ArsGateway`와 같은 메서드를 가진 클래스를 만들고 `create_app(gateways=Gateways(...))`로 넘기면 됩니다. ARS 업체의 키 입력 웹훅은 `POST /api/v1/ars/callback`(`request_id`, `digit`)으로 받습니다.
+`app/integrations.py`의 `OpenBankingGateway`, `PushGateway`, `SmsGateway`와 같은 메서드를 가진 클래스를 만들고 `create_app(gateways=Gateways(...))`로 넘기면 됩니다.

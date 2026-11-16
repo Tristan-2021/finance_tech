@@ -24,10 +24,12 @@ from .events import EventHub
 from .integrations import Gateways
 from .models import Guardian
 from .schemas import (
-    AckBody,
     ApprovalRequestBody,
-    ArsCallback,
     CallbackDecision,
+    CautionReleaseBody,
+    HoldCancelBody,
+    HoldExtendBody,
+    HoldReconfirmBody,
     LimitBody,
     MemberRequest,
     ModeBody,
@@ -88,7 +90,7 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
 
     app = FastAPI(
         title="FingerBell API",
-        description="핑거벨 안심 뱅킹 백엔드: SOS 계좌 동결 · AI FDS · 보호자 콜백 승인 · 상황별 안심 모드",
+        description="핑거벨 안심 뱅킹 백엔드: 사건·주의 모드 · AI FDS · 거래 30분 보류 · SOS 계좌 동결 · 상황별 안심 모드",
         version="1.0.0",
         lifespan=lifespan,
     )
@@ -96,6 +98,7 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
     app.state.engine = engine
     app.state.sessions = sessions
     app.state.fds = fds
+    app.state.gateways = gateways
     app.state.hub = hub
     app.state.run_tick = run_tick
 
@@ -155,7 +158,14 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
         check_guardian(svc, body.guardian_id)
         return done(svc, svc.unfreeze(body.member_id))
 
-    # ---------------- 핵심 기능 2: AI FDS + 보호자 콜백 승인
+    # ---------------- 사건과 주의 모드 (기획서 5.1)
+    @api.post("/security/caution-mode/release")
+    @api.post("/guardian/caution-mode/release", include_in_schema=False)
+    def caution_release(body: CautionReleaseBody, svc: FamilyService = Depends(service)):
+        check_guardian(svc, body.guardian_id)
+        return done(svc, svc.release_caution_mode(body.member_id))
+
+    # ---------------- 핵심 기능 2: AI FDS + 거래 30분 보류 (기획서 5.5, 5.7)
     @api.post("/transaction/assess")
     def assess(body: TransferDraft, svc: FamilyService = Depends(service)):
         return svc.assess_transfer(body.member_id, body.to_draft())
@@ -177,27 +187,39 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
             {
                 "transaction_id": result["request"]["id"],
                 "status": "PENDING_APPROVAL",
-                "timeout_seconds": settings.approval_timeout_seconds,
+                "hold_seconds": settings.hold_seconds,
+                "timeout_seconds": settings.hold_seconds,
                 "risk_score": risk["score"],
+                "risk_level": risk["level"],
                 "risk_reasons": [s["label"] for s in risk["signals"]],
+                "explanation": risk["explanation"],
             },
         )
+
+    @api.post("/transaction/cancel")
+    def cancel_hold(body: HoldCancelBody, svc: FamilyService = Depends(service)):
+        result = svc.cancel_request(body.request_id, body.member_id)
+        return done(svc, {**result, "status": result["status"].upper()})
+
+    @api.post("/transaction/reconfirm")
+    def reconfirm_hold(body: HoldReconfirmBody, svc: FamilyService = Depends(service)):
+        result = svc.reconfirm_hold(body.request_id, body.confirm, body.member_id)
+        return done(svc, {**result, "status": result["status"].upper()})
+
+    @api.post("/transaction/extend")
+    def extend_hold(body: HoldExtendBody, svc: FamilyService = Depends(service)):
+        check_guardian(svc, body.guardian_id)
+        result = svc.extend_hold(body.request_id, body.reason)
+        return done(svc, {**result, "status": result["status"].upper()})
 
     @api.post("/guardian/callback-decision")
     def callback_decision(body: CallbackDecision, svc: FamilyService = Depends(service)):
         check_guardian(svc, body.guardian_id)
-        result = svc.decide(body.transaction_id, body.decision == "APPROVE", "guardian", body.reason)
+        if body.decision == "EXTEND":
+            result = svc.extend_hold(body.transaction_id, body.reason)
+        else:
+            result = svc.decide(body.transaction_id, body.decision in ("APPROVE", "RELEASE"), "guardian", body.reason)
         return done(svc, {"transaction_id": body.transaction_id, **result, "status": result["status"].upper()})
-
-    @api.post("/guardian/ack")
-    def ack(body: AckBody, svc: FamilyService = Depends(service)):
-        check_guardian(svc, body.guardian_id)
-        return done(svc, svc.acknowledge(body.request_ids))
-
-    @api.post("/ars/callback")
-    def ars_callback(body: ArsCallback, svc: FamilyService = Depends(service)):
-        result = svc.ars_answer(body.request_id, body.digit)
-        return done(svc, {**result, "status": result["status"].upper()})
 
     # ---------------- 핵심 기능 3: 상황별 안심 모드 · 한도
     @api.post("/payments/pay")

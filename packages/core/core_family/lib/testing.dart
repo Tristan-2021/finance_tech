@@ -11,6 +11,7 @@ import 'core_family.dart';
 Map<String, dynamic> demoSnapshotJson({
   DateTime? now,
   bool seniorFrozen = false,
+  bool seniorCautionMode = false,
   List<Map<String, dynamic>> requests = const [],
   String childMode = 'school',
 }) {
@@ -22,7 +23,13 @@ Map<String, dynamic> demoSnapshotJson({
 
   return {
     'server_time': t.toIso8601String(),
-    'config': {'approval_timeout_seconds': 180, 'ars_after_seconds': 20, 'freeze_hours': 24},
+    'config': {
+      'hold_seconds': 1800,
+      'reconfirm_seconds': 86400,
+      'approval_timeout_seconds': 180,
+      'caution_mode_hours': 24,
+      'freeze_hours': 24,
+    },
     'guardian': {
       'id': 'guardian',
       'name': '김사랑',
@@ -86,6 +93,8 @@ Map<String, dynamic> demoSnapshotJson({
         'is_frozen': seniorFrozen,
         'frozen_until': seniorFrozen ? t.add(const Duration(hours: 24)).toIso8601String() : null,
         'frozen_source': seniorFrozen ? 'LONG_PRESS' : null,
+        'caution_mode': seniorCautionMode,
+        'caution_until': seniorCautionMode ? t.add(const Duration(hours: 24)).toIso8601String() : null,
         'contacts': [
           {'id': 'c-sarang', 'name': '김사랑', 'relation': '딸', 'bank': '핑거벨', 'number': '333-••••-1024'},
           {'id': 'c-younghee', 'name': '박영희', 'relation': '이웃', 'bank': '농협', 'number': '302-••••-4471'},
@@ -155,23 +164,30 @@ Map<String, dynamic> demoSnapshotJson({
   };
 }
 
-Map<String, dynamic> pendingTransferJson({String id = 'req-1', DateTime? now}) {
+Map<String, dynamic> pendingTransferJson({
+  String id = 'req-1',
+  String memberId = 'senior',
+  String status = 'pending',
+  DateTime? now,
+}) {
   final t = (now ?? DateTime.now()).toUtc();
   return {
     'id': id,
-    'member_id': 'senior',
+    'member_id': memberId,
     'type': 'transfer',
     'title': '이정민님께 송금',
     'amount': 500000,
     'detail': '국민 123-••••-7788 · 처음 보내는 계좌',
-    'status': 'pending',
+    'status': status,
     'channel': '앱 알림',
     'created_at': t.toIso8601String(),
-    'expires_at': t.add(const Duration(minutes: 3)).toIso8601String(),
+    'expires_at': t.add(const Duration(minutes: 30)).toIso8601String(),
+    'reconfirm_until': status == 'reconfirm' ? t.add(const Duration(hours: 24)).toIso8601String() : null,
     'risk': {
       'score': 79,
       'level': 'high',
       'needs_approval': true,
+      'explanation': '처음 보내는 계좌예요 · 평소보다 훨씬 큰 금액이에요',
       'signals': [
         {'id': 'new', 'label': '처음 보내는 계좌예요', 'weight': 35},
         {'id': 'large', 'label': '평소보다 훨씬 큰 금액이에요', 'weight': 30},
@@ -187,6 +203,7 @@ class FakeFamilyRepository implements FamilyRepository {
   final _events = StreamController<FamilyEvent>.broadcast();
   final _connection = StreamController<bool>.broadcast();
   bool failNetwork = false;
+  String? failDecisionReason;
 
   FakeFamilyRepository([Map<String, dynamic>? snapshot]) : snapshotJson = snapshot ?? demoSnapshotJson();
 
@@ -222,6 +239,20 @@ class FakeFamilyRepository implements FamilyRepository {
   @override
   Future<void> unfreeze(String memberId, String guardianId) => _call('unfreeze:$memberId', null);
 
+  @override
+  Future<void> releaseCautionMode(String memberId, String guardianId) => _call('releaseCautionMode:$memberId', null);
+
+  RiskAssessment _newAccountRisk(String memberId, int amount) {
+    final caution = amount < 100000;
+    return RiskAssessment(
+      score: caution ? 40 : 79,
+      level: caution ? RiskLevel.caution : RiskLevel.high,
+      needsApproval: !caution && memberId != 'guardian',
+      explanation: '처음 보내는 계좌예요',
+      signals: const [RiskSignal(id: 'new', label: '처음 보내는 계좌예요', weight: 35)],
+    );
+  }
+
   /// 보호자 본인 송금은 서버처럼 위험해도 승인 없이 보냅니다.
   @override
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) => _call(
@@ -230,21 +261,25 @@ class FakeFamilyRepository implements FamilyRepository {
       recipient: _recipient(draft),
       amount: draft.amount,
       risk: draft.newAccount != null
-          ? RiskAssessment(
-              score: 79,
-              level: RiskLevel.high,
-              needsApproval: memberId != 'guardian',
-              signals: const [RiskSignal(id: 'new', label: '처음 보내는 계좌예요', weight: 35)],
-            )
+          ? _newAccountRisk(memberId, draft.amount)
           : const RiskAssessment(score: 5, level: RiskLevel.safe),
     ),
   );
 
   @override
   Future<TransferResult> submitTransfer(String memberId, TransferDraft draft) => _call(
-    'transfer:$memberId:${draft.amount}',
+    'transfer:$memberId:${draft.amount}${draft.confirmed ? ':confirmed' : ''}',
     draft.newAccount != null && memberId != 'guardian'
-        ? TransferResult(status: 'pending', request: ApprovalRequest.fromJson(pendingTransferJson()))
+        ? (draft.amount < 100000
+              ? (draft.confirmed
+                    ? TransferResult(status: 'done', amount: draft.amount, recipient: _recipient(draft))
+                    : TransferResult(
+                        status: 'caution',
+                        amount: draft.amount,
+                        recipient: _recipient(draft),
+                        risk: _newAccountRisk(memberId, draft.amount),
+                      ))
+              : TransferResult(status: 'pending', request: ApprovalRequest.fromJson(pendingTransferJson())))
         : TransferResult(status: 'done', amount: draft.amount, recipient: _recipient(draft)),
   );
 
@@ -279,16 +314,58 @@ class FakeFamilyRepository implements FamilyRepository {
   @override
   Future<void> setSleepGuard(String memberId, bool enabled) => _call('sleep:$memberId:$enabled', null);
 
-  @override
-  Future<DecisionResult> decide(String requestId, String guardianId, {required bool approve}) =>
-      _call('decide:$requestId:${approve ? 'approve' : 'reject'}', DecisionResult(approve ? 'approved' : 'rejected'));
+  void _updateRequestStatus(String requestId, String status, {String? failReason, bool deductBalance = false}) {
+    final reqs = snapshotJson['requests'];
+    if (reqs is! List) return;
+    for (final item in reqs) {
+      if (item is Map<String, dynamic> && item['id'] == requestId) {
+        item['status'] = status;
+        if (failReason != null) item['fail_reason'] = failReason;
+        if (deductBalance) {
+          final memberId = item['member_id'];
+          final amount = (item['amount'] as int?) ?? 0;
+          final members = snapshotJson['members'];
+          if (members is List && amount > 0) {
+            for (final m in members) {
+              if (m is Map<String, dynamic> && m['id'] == memberId) {
+                m['balance'] = ((m['balance'] as int?) ?? 0) - amount;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 
   @override
-  Future<void> acknowledge(String guardianId, List<String> requestIds) => _call('ack:${requestIds.join(',')}', null);
+  Future<DecisionResult> decide(String requestId, String guardianId, {required bool approve}) {
+    if (approve && failDecisionReason != null) {
+      _updateRequestStatus(requestId, 'failed', failReason: failDecisionReason);
+      return _call('decide:$requestId:approve', DecisionResult('failed', message: failDecisionReason!));
+    }
+    _updateRequestStatus(requestId, approve ? 'approved' : 'rejected', deductBalance: approve);
+    return _call('decide:$requestId:${approve ? 'approve' : 'reject'}', DecisionResult(approve ? 'approved' : 'rejected'));
+  }
 
   @override
-  Future<DecisionResult> answerArs(String requestId, String digit) =>
-      _call('ars:$requestId:$digit', DecisionResult(digit == '1' ? 'approved' : 'rejected'));
+  Future<DecisionResult> extendHold(String requestId, String guardianId) =>
+      _call('extend:$requestId', const DecisionResult('extended'));
+
+  @override
+  Future<DecisionResult> cancelRequest(String requestId, String memberId) {
+    _updateRequestStatus(requestId, 'cancelled');
+    return _call('cancel:$requestId:$memberId', const DecisionResult('cancelled'));
+  }
+
+  @override
+  Future<DecisionResult> reconfirmHold(String requestId, String memberId, {required bool confirm}) {
+    if (confirm && failDecisionReason != null) {
+      _updateRequestStatus(requestId, 'failed', failReason: failDecisionReason);
+      return _call('reconfirm:$requestId:$memberId:$confirm', DecisionResult('failed', message: failDecisionReason!));
+    }
+    _updateRequestStatus(requestId, confirm ? 'approved' : 'cancelled', deductBalance: confirm);
+    return _call('reconfirm:$requestId:$memberId:$confirm', DecisionResult(confirm ? 'approved' : 'cancelled'));
+  }
 
   @override
   Future<void> dismissNotice(String memberId, String noticeId) => _call('dismiss:$noticeId', null);

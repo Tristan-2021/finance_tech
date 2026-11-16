@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 const alertLabels = {
   'ok': '정상',
   'pending': '확인 필요',
+  'reconfirm': '재확인 대기',
+  'caution_mode': '주의 모드',
   'blocked': '차단',
   'approved': '승인',
   'rejected': '거절',
@@ -14,7 +16,7 @@ const alertLabels = {
   'expired': '시간 초과',
 };
 
-const dangerStatuses = {'pending', 'blocked', 'rejected', 'frozen', 'expired'};
+const dangerStatuses = {'pending', 'reconfirm', 'caution_mode', 'blocked', 'rejected', 'frozen', 'expired'};
 
 /// 가족 알림 한 줄.
 class AlertRow extends StatelessWidget {

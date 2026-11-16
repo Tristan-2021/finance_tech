@@ -135,7 +135,7 @@ class _SettingsViewState extends State<SettingsView> {
                     subtitle: '${_channelName(l.channel)} · ${l.action} · ${formatWhen(l.at, now)}',
                   ),
               const SizedBox(height: 4),
-              Text('오픈뱅킹·FCM·SMS·ARS는 모의 연동이에요. 실제 요청은 보내지 않아요.', style: FbText.small(c)),
+              Text('오픈뱅킹·FCM·SMS는 모의 연동이에요. 실제 요청은 보내지 않아요.', style: FbText.small(c)),
             ],
           ),
         ),
@@ -163,7 +163,6 @@ class _SettingsViewState extends State<SettingsView> {
     'OPEN_BANKING' => '은',
     'FCM' => '푸',
     'SMS' => '문',
-    'ARS' => '전',
     _ => '?',
   };
 
@@ -171,7 +170,6 @@ class _SettingsViewState extends State<SettingsView> {
     'OPEN_BANKING' => '오픈뱅킹',
     'FCM' => '푸시',
     'SMS' => '문자',
-    'ARS' => 'ARS',
     _ => ch,
   };
 }

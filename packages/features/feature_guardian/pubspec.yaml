@@ -1,6 +1,6 @@
 name: feature_guardian
 resolution: workspace
-description: "보호자 화면: 콜백 승인, 가족 모니터링, 원격 한도·모드·동결 관리, ARS 확인 전화."
+description: "보호자 화면: 거래 보류 해제·연장, 주의 모드 해제, 가족 모니터링, 원격 한도·모드·동결 관리."
 publish_to: none
 version: 0.0.1
 

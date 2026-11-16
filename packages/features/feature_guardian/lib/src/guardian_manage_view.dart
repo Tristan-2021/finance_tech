@@ -55,9 +55,41 @@ class _ManageCardState extends State<ManageCard> {
             padding: const EdgeInsets.only(bottom: 8),
             leading: TxLogo.initial(m.name),
             title: Text(m.label),
-            subtitle: m.isFrozen ? '출금 동결 중' : '정상 이용 중',
-            subtitleStyle: FbText.rowSub(c).copyWith(color: m.isFrozen ? c.redStrong : c.muted),
+            subtitle: m.isFrozen
+                ? '출금 동결 중'
+                : m.cautionMode
+                ? '주의 모드 작동 중'
+                : '정상 이용 중',
+            subtitleStyle: FbText.rowSub(c).copyWith(color: (m.isFrozen || m.cautionMode) ? c.redStrong : c.muted),
           ),
+          if (m.cautionMode)
+            Container(
+              margin: const EdgeInsets.only(top: 6.4),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: c.redSoft, borderRadius: BorderRadius.circular(22)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Text('주의 모드 남은 시간 ', style: TextStyle(fontSize: 13.6, color: c.ink2)),
+                      if (m.cautionUntil != null)
+                        CountdownText(
+                          until: m.cautionUntil!,
+                          now: family.now,
+                          style: TextStyle(fontSize: 13.6, fontWeight: FontWeight.w800, color: c.ink2),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12.8),
+                  FbButton(
+                    '주의 모드 해제',
+                    variant: FbButtonVariant.red,
+                    onPressed: () => guardianRun(context, (f) => f.releaseCautionMode(m.id), '${m.relationLabel} 주의 모드를 해제했어요'),
+                  ),
+                ],
+              ),
+            ),
           if (m.isFrozen)
             Container(
               margin: const EdgeInsets.only(top: 6.4),

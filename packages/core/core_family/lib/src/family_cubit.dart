@@ -69,7 +69,7 @@ class FamilyCubit extends Cubit<FamilyState> {
 
   FamilyCubit(this._repo, {this.pollInterval = const Duration(seconds: 3)}) : super(const FamilyState());
 
-  /// 서버에서 일어난 일 (다른 기기에서 생긴 일 포함). 토스트·ARS 화면 같은 일회성 반응에 씁니다.
+  /// 서버에서 일어난 일 (다른 기기에서 생긴 일 포함). 토스트·알림 같은 일회성 반응에 씁니다.
   Stream<FamilyEvent> get events => _events.stream;
 
   /// 서버 기준 현재 시각.
@@ -160,6 +160,9 @@ class FamilyCubit extends Cubit<FamilyState> {
 
   Future<void> unfreeze(String memberId) => _act(() => _repo.unfreeze(memberId, state.data.guardian.id));
 
+  Future<void> releaseCautionMode(String memberId) =>
+      _act(() => _repo.releaseCautionMode(memberId, state.data.guardian.id));
+
   // ---------------------------------------------------------------- 송금 · 결제
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) => _repo.assessTransfer(memberId, draft);
 
@@ -179,16 +182,18 @@ class FamilyCubit extends Cubit<FamilyState> {
 
   Future<void> setSleepGuard(String memberId, bool enabled) => _act(() => _repo.setSleepGuard(memberId, enabled));
 
-  // ---------------------------------------------------------------- 보호자
+  // ---------------------------------------------------------------- 보류 · 보호자
   Future<DecisionResult> decide(String requestId, {required bool approve}) =>
       _act(() => _repo.decide(requestId, state.data.guardian.id, approve: approve));
 
-  Future<void> acknowledge(List<String> requestIds) async {
-    if (requestIds.isEmpty || !state.isReady) return;
-    await _repo.acknowledge(state.data.guardian.id, requestIds);
-  }
+  Future<DecisionResult> extendHold(String requestId) =>
+      _act(() => _repo.extendHold(requestId, state.data.guardian.id));
 
-  Future<DecisionResult> answerArs(String requestId, String digit) => _act(() => _repo.answerArs(requestId, digit));
+  Future<DecisionResult> cancelRequest(String requestId, String memberId) =>
+      _act(() => _repo.cancelRequest(requestId, memberId));
+
+  Future<DecisionResult> reconfirmHold(String requestId, String memberId, {required bool confirm}) =>
+      _act(() => _repo.reconfirmHold(requestId, memberId, confirm: confirm));
 
   Future<void> dismissNotice(String memberId, String noticeId) => _act(() => _repo.dismissNotice(memberId, noticeId));
 

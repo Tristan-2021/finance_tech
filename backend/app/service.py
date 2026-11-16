@@ -1,12 +1,13 @@
 """핑거벨 핵심 업무 로직.
 
-- 원터치 SOS 계좌 동결 (기획서 3.1)
-- AI FDS 이상거래 탐지 + 보호자 콜백 승인, 3분 타임아웃, ARS 자동 발신 (3.2)
-- 상황별 안심 모드 (MCC 화이트리스트 결제 제어, 수면 안심 모드) (3.3)
+- 사건과 주의 모드 24시간 (기획서 5.1)
+- AI FDS 위험 판정 (낮음 / 주의 / 위험) (기획서 5.5)
+- 거래 30분 보류, 보호자 해제·연장, 본인 취소·재확인 (기획서 5.7)
+- 원터치 SOS 계좌 동결, 아이 모드와 상황별 안심 모드 (기획서 5.9)
 
 송금·결제·내역은 어르신·아이·보호자 본인 모두 같은 기능입니다. 보호자 본인 계좌는
-확인해 줄 사람이 없으므로 AI 점검 결과만 보여 주고 바로 보내며, 보호 기능(SOS 동결·
-안심 모드·한도·보호자 요청)은 보호 대상 가족에게만 씁니다. 핑거벨 안의 계좌로 보낸 돈은
+확인해 줄 사람이 없으므로 AI 점검 결과만 보여 주고 바로 보내며, 보호 기능(주의 모드·보류·
+SOS 동결·안심 모드·한도·보호자 요청)은 보호 대상 가족에게만 씁니다. 핑거벨 안의 계좌로 보낸 돈은
 받는 계좌에 바로 들어갑니다.
 
 요청마다 FamilyService를 하나 만들고, 작업이 끝나면 commit()으로 저장한 뒤
@@ -21,7 +22,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from . import clock
@@ -36,6 +37,8 @@ from .models import (
     ApprovalRequest,
     Contact,
     Guardian,
+    Incident,
+    IncidentItem,
     IntegrationLog,
     LedgerEntry,
     Member,
@@ -49,8 +52,9 @@ MAX_AMOUNT = 100_000_000
 HISTORY_DAYS = 180  # 신규 계좌 판단: 최근 6개월 송금 이력
 AVERAGE_DAYS = 90  # 평균 송금액: 최근 3개월
 SPLIT_WINDOW = timedelta(minutes=10)
-EXPIRING_TYPES = {"transfer", "payment", "mode"}
-ARS_TYPES = {"transfer", "payment"}
+HOLD_TYPES = {"transfer"}
+EXPIRING_TYPES = {"payment", "mode"}
+ACTIVE_REQUEST_STATUSES = ("pending", "reconfirm")
 DONE_ALERT = {"blocked", "rejected", "frozen", "cancelled", "expired"}
 
 
@@ -201,8 +205,19 @@ class FamilyService:
     def is_frozen(self, m: Member) -> bool:
         return m.frozen_until is not None and m.frozen_until > clock.now()
 
+    def is_caution_mode(self, m: Member) -> bool:
+        return m.caution_until is not None and m.caution_until > clock.now()
+
+    def active_incident(self, member_id: str) -> Incident | None:
+        return self.s.scalars(
+            select(Incident)
+            .where(Incident.member_id == member_id, Incident.status == "open")
+            .order_by(Incident.started_at.desc())
+            .limit(1)
+        ).first()
+
     def pending(self, member_id: str | None = None) -> list[ApprovalRequest]:
-        q = select(ApprovalRequest).where(ApprovalRequest.status == "pending")
+        q = select(ApprovalRequest).where(ApprovalRequest.status.in_(ACTIVE_REQUEST_STATUSES))
         if member_id:
             q = q.where(ApprovalRequest.member_id == member_id)
         return list(self.s.scalars(q.order_by(ApprovalRequest.created_at.desc())))
@@ -317,6 +332,115 @@ class FamilyService:
     def _who(self, m: Member) -> str:
         return f"{m.relation_label} {m.name}님"
 
+    # ------------------------------------------------------------------ 사건과 주의 모드 (기획서 5.1)
+    def start_caution_mode(
+        self,
+        member_id: str,
+        kind: str = "sign",
+        summary: str = "",
+        detail: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        m = self.protected(member_id)
+        now = clock.now()
+        until = now + timedelta(hours=self.settings.caution_mode_hours)
+        already = self.is_caution_mode(m)
+        inc = self.active_incident(m.id)
+        if already and inc is not None:
+            m.caution_until = until
+            inc.expires_at = until
+        else:
+            if inc is not None:
+                inc.status = "closed"
+                inc.ended_at = now
+                inc.ended_by = "system"
+            m.caution_until = until
+            inc = Incident(id=uid("inc"), member_id=m.id, status="open", started_at=now, expires_at=until)
+            self.s.add(inc)
+            self.s.flush()
+            self._protect(
+                m,
+                "주의 모드 시작",
+                summary or f"{self.settings.caution_mode_hours}시간 동안 금융 행동을 보호해요",
+                "주의",
+                "amber",
+                "⚠️",
+            )
+            self._alert(m, "주의 모드 시작", "caution_mode", "⚠️")
+
+        item_summary = summary or ("새 위험 징후 감지 · 주의 모드 연장" if already else "위험 징후 감지 · 주의 모드 시작")
+        self._add_incident_item(inc, kind, item_summary, detail)
+        self._emit(
+            "caution_mode",
+            f"{self._who(m)} 주의 모드가 {'연장' if already else '시작'}됐어요",
+            member_id=m.id,
+            active=True,
+            caution_until=iso(until),
+            incident_id=inc.id,
+        )
+        return {
+            "status": "SUCCESS",
+            "caution_mode": True,
+            "extended": already,
+            "caution_until": iso(until),
+            "incident": self._incident_dict(inc),
+        }
+
+    def record_incident_item(
+        self,
+        member_id: str,
+        kind: str,
+        summary: str,
+        detail: dict[str, Any] | None = None,
+    ) -> IncidentItem | None:
+        m = self.protected(member_id)
+        if not self.is_caution_mode(m):
+            return None
+        inc = self.active_incident(m.id)
+        if inc is None:
+            return None
+        return self._add_incident_item(inc, kind, summary, detail)
+
+    def _add_incident_item(
+        self,
+        inc: Incident,
+        kind: str,
+        summary: str,
+        detail: dict[str, Any] | None = None,
+    ) -> IncidentItem:
+        item = IncidentItem(
+            id=uid("ev"),
+            incident_id=inc.id,
+            member_id=inc.member_id,
+            kind=kind,
+            summary=summary[:200],
+            detail=detail or {},
+            at=clock.now(),
+        )
+        self.s.add(item)
+        self.s.flush()
+        return item
+
+    def release_caution_mode(self, member_id: str, reason: str = "보호자 해제") -> dict[str, Any]:
+        m = self.protected(member_id)
+        if not self.is_caution_mode(m):
+            raise DomainError("not-caution", "주의 모드 상태가 아니에요.")
+        self._end_caution_mode(m, reason, by="guardian")
+        return {"status": "SUCCESS", "caution_mode": False}
+
+    def _end_caution_mode(self, m: Member, reason: str, by: str = "guardian", alert: bool = True) -> None:
+        now = clock.now()
+        m.caution_until = None
+        inc = self.active_incident(m.id)
+        if inc is not None:
+            self._add_incident_item(inc, "guardian" if by == "guardian" else "caution_mode", f"주의 모드 해제 ({reason})")
+            inc.status = "closed"
+            inc.ended_at = now
+            inc.ended_by = by
+        self._protect(m, "주의 모드 해제", reason, "해제", "green", "🔓")
+        if alert:
+            self._alert(m, "주의 모드 해제", "ok", "🔓")
+        self._emit("caution_mode", f"{self._who(m)} 주의 모드를 해제했어요 ({reason})", member_id=m.id, active=False)
+
     # ------------------------------------------------------------------ 송금 + AI FDS
     def resolve_recipient(self, m: Member, contact_id: str | None, new_account: dict[str, Any] | None) -> Recipient:
         if contact_id:
@@ -385,6 +509,12 @@ class FamilyService:
         m = self.member(member_id)
         recipient, amount = self._validate_transfer(m, draft)
         risk = self._risk(m, recipient, amount)
+        confirmed = bool(draft.get("confirmed"))
+
+        # 주의(caution) 단계: 경고와 쉬운 설명을 보여 주고 본인이 확인하면 진행합니다 (기획서 5.5)
+        if m.supervised and not risk.needs_approval and not force_approval and risk.level == "caution" and not confirmed:
+            return {"status": "caution", "amount": amount, "recipient": recipient.to_dict(), "risk": risk.to_dict()}
+
         self.s.add(
             RiskAssessment(
                 id=uid("as"),
@@ -400,6 +530,20 @@ class FamilyService:
                 anomaly_score=risk.anomaly.decision if risk.anomaly else None,
             )
         )
+
+        if m.supervised and self.is_caution_mode(m):
+            self.record_incident_item(
+                m.id,
+                "action",
+                f"{recipient.name}님께 {won(amount)} 송금 시도",
+                {"amount": amount, "recipient": recipient.to_dict()},
+            )
+            self.record_incident_item(
+                m.id,
+                "judgment",
+                f"송금 판정 {risk.level} ({risk.score}점) · {risk.explanation}",
+                risk.to_dict(),
+            )
 
         if risk.needs_approval or force_approval:
             req = self._create_request(
@@ -666,7 +810,7 @@ class FamilyService:
         self._emit("sleep", "", member_id=m.id)
         return {"status": "done", "sleep_guard": m.sleep_guard}
 
-    # ------------------------------------------------------------------ 보호자 콜백 승인
+    # ------------------------------------------------------------------ 거래 보류 · 보호자 확인 요청 (기획서 5.7)
     def _create_request(
         self,
         m: Member,
@@ -682,6 +826,13 @@ class FamilyService:
             raise DomainError("role", "보호자 본인 거래는 승인 요청 없이 진행돼요.")
         now = clock.now()
         g = self.guardian()
+        is_hold = type_ in HOLD_TYPES
+        if is_hold:
+            expires_at = now + timedelta(seconds=self.settings.hold_seconds)
+        elif type_ in EXPIRING_TYPES:
+            expires_at = now + timedelta(seconds=self.settings.approval_timeout_seconds)
+        else:
+            expires_at = None
         req = ApprovalRequest(
             id=uid("req"),
             member_id=m.id,
@@ -694,18 +845,26 @@ class FamilyService:
             status="pending",
             channel="앱 알림",
             created_at=now,
-            expires_at=now + timedelta(seconds=self.settings.approval_timeout_seconds) if type_ in EXPIRING_TYPES else None,
+            expires_at=expires_at,
             push_sent_at=now,
         )
         self.s.add(req)
-        self._alert(m, f"{title} 확인 요청", "pending", REQUEST_EMOJI[type_], amount, req.id)
+        self._alert(m, f"{title} 보류" if is_hold else f"{title} 확인 요청", "pending", REQUEST_EMOJI[type_], amount, req.id)
+        if is_hold and self.is_caution_mode(m):
+            self.record_incident_item(
+                m.id,
+                "hold",
+                f"{title} {won(amount)} 보류",
+                {"request_id": req.id, "amount": amount},
+            )
 
         body = f"{self._who(m)} · {title}" + (f" {won(amount)}" if amount else "")
         if risk:
             reasons = ", ".join(s["label"] for s in risk["signals"][:3])
             body += f" · 위험도 {risk['score']}점" + (f" ({reasons})" if reasons else "")
-        self._integrate(self.gw.push.send(g.name, "보호자 확인 요청", body, {"type": "request", "request_id": req.id}))
-        self._emit("request", f"{self._who(m)}이 {title} 확인을 요청했어요", member_id=m.id, request_id=req.id)
+        push_title = "거래 보류 알림" if is_hold else "보호자 확인 요청"
+        self._integrate(self.gw.push.send(g.name, push_title, body, {"type": "request", "request_id": req.id}))
+        self._emit("request", f"{self._who(m)}의 {title}이 보류됐어요" if is_hold else f"{self._who(m)}이 {title} 확인을 요청했어요", member_id=m.id, request_id=req.id)
         return req
 
     def _get_request(self, request_id: str) -> ApprovalRequest:
@@ -714,31 +873,160 @@ class FamilyService:
             raise DomainError("missing", "요청을 찾을 수 없어요.", 404)
         return req
 
-    def decide(self, request_id: str, approve: bool, by: str = "guardian", reason: str | None = None) -> dict[str, Any]:
+    def _try_claim_request(
+        self,
+        request_id: str,
+        to_status: str,
+        from_statuses: tuple[str, ...] = ACTIVE_REQUEST_STATUSES,
+        **values: Any,
+    ) -> bool:
+        self.s.flush()
+        res = self.s.execute(
+            update(ApprovalRequest)
+            .where(ApprovalRequest.id == request_id, ApprovalRequest.status.in_(from_statuses))
+            .values(status=to_status, **values)
+        )
+        return bool(res.rowcount)
+
+    def _claim_request(
+        self,
+        request_id: str,
+        to_status: str,
+        from_statuses: tuple[str, ...] = ACTIVE_REQUEST_STATUSES,
+        **values: Any,
+    ) -> ApprovalRequest:
         req = self._get_request(request_id)
-        if req.status != "pending":
+        if not self._try_claim_request(request_id, to_status, from_statuses, **values):
+            self.s.refresh(req)
             raise DomainError("done", "이미 처리된 요청이에요.", 409, status_now=req.status)
+        self.s.refresh(req)
+        return req
+
+    def decide(self, request_id: str, approve: bool, by: str = "guardian", reason: str | None = None) -> dict[str, Any]:
+        req = self._claim_request(
+            request_id,
+            "approved" if approve else "rejected",
+            decided_at=clock.now(),
+            decided_by=by,
+            decision_reason=reason,
+        )
         m = self.member(req.member_id)
 
         message = ""
         if approve:
             ok, message = self._execute(req, m)
-            req.status = "approved" if ok else "failed"
             if not ok:
+                req.status = "failed"
                 req.fail_reason = message
+            elif req.type in HOLD_TYPES and self.is_caution_mode(m):
+                self.record_incident_item(m.id, "guardian", f"보호자가 {req.title} 보류를 해제했어요", {"request_id": req.id})
         else:
-            req.status = "rejected"
             self._protect(m, f"{req.title} 거절", "보호자가 거절했어요", "거절", "red", "🛡️")
-        req.decided_at = clock.now()
-        req.decided_by = by
-        req.decision_reason = reason
+            if self.is_caution_mode(m):
+                self.record_incident_item(m.id, "guardian", f"보호자가 {req.title}을 거절했어요", {"request_id": req.id})
         self._sync_alert(req)
         self._notice(m, req, req.fail_reason or "")
 
-        verdict = {"approved": "승인했어요", "rejected": "거절했어요", "failed": "처리하지 못했어요"}[req.status]
+        is_hold = req.type in HOLD_TYPES
+        verdict = {
+            "approved": "보류를 해제했어요" if is_hold else "승인했어요",
+            "rejected": "거절했어요",
+            "failed": "처리하지 못했어요",
+        }[req.status]
         self._integrate(self.gw.push.send(m.name, f"보호자가 {verdict}", req.title, {"type": "decision", "request_id": req.id}))
-        via = " (ARS)" if by == "ars" else ""
-        self._emit("decision", f"보호자가 {req.title} 요청을 {verdict}{via}", member_id=m.id, request_id=req.id, status=req.status)
+        self._emit("decision", f"보호자가 {req.title} 요청을 {verdict}", member_id=m.id, request_id=req.id, status=req.status)
+        return {"status": req.status, "message": message, "request": self._request_dict(req)}
+
+    def extend_hold(self, request_id: str, reason: str | None = None) -> dict[str, Any]:
+        req = self._get_request(request_id)
+        if req.type not in HOLD_TYPES:
+            raise DomainError("type", "보류 연장을 할 수 없는 요청이에요.")
+        now = clock.now()
+        base = req.expires_at if (req.status == "pending" and req.expires_at is not None and req.expires_at > now) else now
+        req = self._claim_request(
+            request_id,
+            "pending",
+            expires_at=base + timedelta(seconds=self.settings.hold_seconds),
+            reconfirm_until=None,
+            decision_reason=reason,
+        )
+        m = self.member(req.member_id)
+        self._sync_alert(req)
+
+        minutes = max(1, self.settings.hold_seconds // 60)
+        self._protect(m, f"{req.title} 보류 연장", f"보호자가 {minutes}분 연장했어요", "보류", "amber", "⏳")
+        if self.is_caution_mode(m):
+            self.record_incident_item(
+                m.id,
+                "guardian",
+                f"보호자가 {req.title} 보류를 연장했어요",
+                {"request_id": req.id, "expires_at": iso(req.expires_at)},
+            )
+        self._integrate(self.gw.push.send(m.name, "보호자가 보류를 연장했어요", req.title, {"type": "extend", "request_id": req.id}))
+        self._emit("extend", f"보호자가 {req.title} 보류를 연장했어요", member_id=m.id, request_id=req.id, status="extended")
+        return {"status": "extended", "message": "", "request": self._request_dict(req)}
+
+    def cancel_request(self, request_id: str, member_id: str | None = None) -> dict[str, Any]:
+        req = self._get_request(request_id)
+        if member_id is not None and req.member_id != member_id:
+            raise DomainError("forbidden", "본인 거래만 취소할 수 있어요.", 403)
+        req = self._claim_request(
+            request_id,
+            "cancelled",
+            decided_at=clock.now(),
+            decided_by="self",
+            decision_reason="본인 취소",
+        )
+        m = self.member(req.member_id)
+        self._protect(m, f"{req.title} 취소", "본인이 취소했어요", "취소", "green", "↩️")
+        if self.is_caution_mode(m):
+            self.record_incident_item(m.id, "action", f"본인이 {req.title} 보류를 취소했어요", {"request_id": req.id})
+        self._sync_alert(req)
+        self._emit("cancelled", f"{self._who(m)}이 {req.title}을 취소했어요", member_id=m.id, request_id=req.id, status=req.status)
+        return {"status": req.status, "message": "", "request": self._request_dict(req)}
+
+    def reconfirm_hold(self, request_id: str, confirm: bool, member_id: str | None = None) -> dict[str, Any]:
+        req = self._get_request(request_id)
+        if member_id is not None and req.member_id != member_id:
+            raise DomainError("forbidden", "본인 거래만 확인할 수 있어요.", 403)
+        if req.status not in ACTIVE_REQUEST_STATUSES:
+            raise DomainError("done", "이미 처리된 요청이에요.", 409, status_now=req.status)
+
+        now = clock.now()
+        deadline = req.reconfirm_until or (
+            req.expires_at + timedelta(seconds=self.settings.reconfirm_seconds)
+            if req.status == "pending" and req.expires_at is not None
+            else None
+        )
+        if deadline is not None and now >= deadline:
+            # 오류 응답은 저장되지 않으므로 여기서는 막기만 하고, 만료 처리는 타이머(tick)가 합니다.
+            raise DomainError("done", "재확인 기한이 지나 진행할 수 없어요.", 409, status_now=req.status)
+
+        if not confirm:
+            return self.cancel_request(request_id, member_id)
+        m = self.member(req.member_id)
+        if m.role == "CHILD":
+            raise DomainError("role", "아이의 보류는 본인 재확인으로 진행할 수 없어요. 보호자가 해제해야 실행돼요.")
+        if req.status != "reconfirm":
+            raise DomainError("not-reconfirm", "아직 보류 시간이 끝나지 않았어요.", 409, status_now=req.status)
+
+        req = self._claim_request(
+            request_id,
+            "approved",
+            from_statuses=("reconfirm",),
+            decided_at=now,
+            decided_by="self",
+            decision_reason="본인 재확인",
+        )
+        ok, message = self._execute(req, m)
+        if not ok:
+            req.status = "failed"
+            req.fail_reason = message
+        self._sync_alert(req)
+        self._notice(m, req, req.fail_reason or "")
+        if self.is_caution_mode(m):
+            self.record_incident_item(m.id, "action", f"본인이 재확인 후 {req.title} 진행", {"request_id": req.id})
+        self._emit("decision", f"{self._who(m)}이 재확인 후 {req.title}을 진행했어요", member_id=m.id, request_id=req.id, status=req.status)
         return {"status": req.status, "message": message, "request": self._request_dict(req)}
 
     def _execute(self, req: ApprovalRequest, m: Member) -> tuple[bool, str]:
@@ -768,22 +1056,6 @@ class FamilyService:
             return True, ""
         return False, "알 수 없는 요청이에요."
 
-    def acknowledge(self, request_ids: list[str]) -> dict[str, Any]:
-        """보호자 앱이 요청을 화면에 띄웠다는 확인. 확인한 요청에는 ARS 전화를 걸지 않습니다."""
-        now = clock.now()
-        count = 0
-        for rid in request_ids:
-            req = self.s.get(ApprovalRequest, rid)
-            if req and req.status == "pending" and req.push_ack_at is None:
-                req.push_ack_at = now
-                count += 1
-        return {"acknowledged": count}
-
-    def ars_answer(self, request_id: str, digit: str) -> dict[str, Any]:
-        if digit not in ("1", "2"):
-            raise DomainError("digit", "1번(승인) 또는 2번(거절)만 누를 수 있어요.")
-        return self.decide(request_id, digit == "1", by="ars", reason=f"ARS {digit}번")
-
     def dismiss_notice(self, member_id: str, notice_id: str) -> dict[str, Any]:
         self.member(member_id)
         self.s.execute(delete(Notice).where(Notice.id == notice_id, Notice.member_id == member_id))
@@ -798,44 +1070,102 @@ class FamilyService:
             if m.frozen_until is not None and m.frozen_until <= now:
                 self._unfreeze(m, "24시간 경과")
                 changed = True
+            if m.caution_until is not None and m.caution_until <= now:
+                self._end_caution_mode(m, "24시간 경과", by="system")
+                changed = True
         for req in self.pending():
-            if req.expires_at is not None and now >= req.expires_at:
-                self._expire(req)
-                changed = True
-            elif (
-                req.type in ARS_TYPES
-                and req.push_ack_at is None
-                and req.ars_called_at is None
-                and now - req.created_at >= timedelta(seconds=self.settings.ars_after_seconds)
-            ):
-                self._call_ars(req)
-                changed = True
+            if req.status == "pending" and req.expires_at is not None and now >= req.expires_at:
+                if self._expire(req):
+                    changed = True
+            elif req.reconfirm_until is not None and now >= req.reconfirm_until:
+                if self._expire_reconfirm(req):
+                    changed = True
         return changed
 
-    def _expire(self, req: ApprovalRequest) -> None:
+    def _expire(self, req: ApprovalRequest) -> bool:
+        now = clock.now()
         m = self.member(req.member_id)
-        req.status = "expired"
-        req.decided_at = clock.now()
-        req.decided_by = "system"
-        minutes = max(1, self.settings.approval_timeout_seconds // 60)
-        reason = f"{minutes}분 안에 보호자 응답이 없어 자동으로 취소했어요"
-        self._protect(m, f"{req.title} 자동 취소", f"{minutes}분 안에 응답 없음", "취소", "red", "🛡️")
+        if req.type not in HOLD_TYPES:
+            minutes = max(1, self.settings.approval_timeout_seconds // 60)
+            reason = f"{minutes}분 안에 보호자 응답이 없어 자동으로 취소했어요"
+            if not self._try_claim_request(
+                req.id,
+                "expired",
+                from_statuses=("pending",),
+                decided_at=now,
+                decided_by="system",
+                decision_reason=reason,
+            ):
+                return False
+            self.s.refresh(req)
+            self._protect(m, f"{req.title} 자동 취소", f"{minutes}분 안에 응답 없음", "취소", "red", "🛡️")
+            self._sync_alert(req)
+            self._notice(m, req, reason)
+            self._emit("expired", f"{req.title} 요청이 시간 초과로 취소됐어요", member_id=m.id, request_id=req.id)
+            return True
+
+        base_expires = req.expires_at or now
+        reconfirm_until = base_expires + timedelta(seconds=self.settings.reconfirm_seconds)
+        if now >= reconfirm_until:
+            return self._expire_reconfirm(req)
+        if m.role == "CHILD":
+            # 아이의 보류는 30분이 지나도 본인 재확인으로 진행할 수 없고 보호자가 해제해야 실행됩니다.
+            if not self._try_claim_request(
+                req.id,
+                "pending",
+                from_statuses=("pending",),
+                expires_at=None,
+                reconfirm_until=reconfirm_until,
+            ):
+                return False
+            self.s.refresh(req)
+            return True
+        if not self._try_claim_request(
+            req.id,
+            "reconfirm",
+            from_statuses=("pending",),
+            expires_at=reconfirm_until,
+            reconfirm_until=reconfirm_until,
+        ):
+            return False
+        self.s.refresh(req)
+        self._sync_alert(req)
+        self._integrate(
+            self.gw.push.send(
+                m.name,
+                "보류 시간이 지났어요",
+                f"{req.title} 내용을 다시 확인해 주세요",
+                {"type": "reconfirm", "request_id": req.id},
+            )
+        )
+        self._emit(
+            "reconfirm",
+            f"{req.title} 보류 시간이 지나 본인 재확인을 기다리고 있어요",
+            member_id=m.id,
+            request_id=req.id,
+        )
+        return True
+
+    def _expire_reconfirm(self, req: ApprovalRequest) -> bool:
+        m = self.member(req.member_id)
+        now = clock.now()
+        hours = max(1, self.settings.reconfirm_seconds // 3600)
+        reason = f"{hours}시간 동안 재확인이 없어 자동으로 취소했어요"
+        if not self._try_claim_request(
+            req.id,
+            "expired",
+            from_statuses=ACTIVE_REQUEST_STATUSES,
+            decided_at=now,
+            decided_by="system",
+            decision_reason=reason,
+        ):
+            return False
+        self.s.refresh(req)
+        self._protect(m, f"{req.title} 자동 취소", f"{hours}시간 동안 재확인 없음", "취소", "red", "🛡️")
         self._sync_alert(req)
         self._notice(m, req, reason)
-        self._emit("expired", f"{req.title} 요청이 시간 초과로 취소됐어요", member_id=m.id, request_id=req.id)
-
-    def _call_ars(self, req: ApprovalRequest) -> None:
-        m = self.member(req.member_id)
-        g = self.guardian()
-        what = f"{req.title} {won(req.amount)}" if req.amount else req.title
-        script = (
-            f"핑거벨 안심 확인 전화입니다. {m.name}님의 계좌에서 {what} 요청이 감지되었습니다. "
-            "승인은 1번, 거절은 2번을 눌러주세요."
-        )
-        req.ars_called_at = clock.now()
-        req.channel = "ARS 전화 · 앱 알림"
-        self._integrate(self.gw.ars.call(g.phone, script, req.id))
-        self._emit("ars_call", "보호자에게 ARS 확인 전화를 걸었어요", member_id=m.id, request_id=req.id, script=script)
+        self._emit("expired", f"{req.title} 보류가 시간 초과로 취소됐어요", member_id=m.id, request_id=req.id)
+        return True
 
     # ------------------------------------------------------------------ 스냅샷 (앱이 그리는 전체 상태)
     def snapshot(self) -> dict[str, Any]:
@@ -844,6 +1174,7 @@ class FamilyService:
         own = self.own_banking(g)
         requests = list(self.s.scalars(select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc()).limit(MAX_LIST)))
         alerts = list(self.s.scalars(select(Alert).order_by(Alert.at.desc()).limit(MAX_LIST)))
+        incidents = list(self.s.scalars(select(Incident).order_by(Incident.started_at.desc()).limit(MAX_LIST)))
         assessments = list(
             self.s.scalars(
                 select(RiskAssessment)
@@ -856,8 +1187,10 @@ class FamilyService:
         return {
             "server_time": iso(clock.now()),
             "config": {
+                "hold_seconds": self.settings.hold_seconds,
+                "reconfirm_seconds": self.settings.reconfirm_seconds,
                 "approval_timeout_seconds": self.settings.approval_timeout_seconds,
-                "ars_after_seconds": self.settings.ars_after_seconds,
+                "caution_mode_hours": self.settings.caution_mode_hours,
                 "freeze_hours": self.settings.freeze_hours,
             },
             # banking: 보호자 본인 계좌 (가족과 같은 모양 · 송금·결제·내역에 씀)
@@ -870,6 +1203,7 @@ class FamilyService:
             },
             "members": [self._member_dict(m) for m in members],
             "requests": [self._request_dict(r) for r in requests],
+            "incidents": [self._incident_dict(i) for i in incidents],
             "alerts": [
                 {
                     "id": a.id,
@@ -928,6 +1262,8 @@ class FamilyService:
         )
         notices = list(self.s.scalars(select(Notice).where(Notice.member_id == m.id).order_by(Notice.created_at.desc())))
         frozen = self.is_frozen(m)
+        caution = self.is_caution_mode(m)
+        inc = self.active_incident(m.id) if caution else None
         return {
             "id": m.id,
             "role": m.role,
@@ -952,6 +1288,9 @@ class FamilyService:
             "is_frozen": frozen,
             "frozen_until": iso(m.frozen_until) if frozen else None,
             "frozen_source": m.frozen_source if frozen else None,
+            "caution_mode": caution,
+            "caution_until": iso(m.caution_until) if caution else None,
+            "active_incident": self._incident_dict(inc) if inc else None,
             "contacts": [
                 {"id": c.id, "name": c.name, "relation": c.relation, "bank": c.bank, "number": mask_account(c.account_digits)}
                 for c in m.contacts
@@ -1026,11 +1365,33 @@ class FamilyService:
             "channel": r.channel,
             "created_at": iso(r.created_at),
             "expires_at": iso(r.expires_at),
+            "reconfirm_until": iso(r.reconfirm_until),
             "decided_at": iso(r.decided_at),
             "decided_by": r.decided_by,
+            "decision_reason": r.decision_reason,
             "fail_reason": r.fail_reason,
-            "push_ack_at": iso(r.push_ack_at),
-            "ars_called_at": iso(r.ars_called_at),
+        }
+
+    @staticmethod
+    def _incident_dict(inc: Incident) -> dict[str, Any]:
+        return {
+            "id": inc.id,
+            "member_id": inc.member_id,
+            "status": inc.status,
+            "started_at": iso(inc.started_at),
+            "expires_at": iso(inc.expires_at),
+            "ended_at": iso(inc.ended_at),
+            "ended_by": inc.ended_by,
+            "items": [
+                {
+                    "id": item.id,
+                    "kind": item.kind,
+                    "summary": item.summary,
+                    "detail": item.detail,
+                    "at": iso(item.at),
+                }
+                for item in inc.items
+            ],
         }
 
     def integration_logs(self, limit: int = 30) -> list[dict[str, Any]]:

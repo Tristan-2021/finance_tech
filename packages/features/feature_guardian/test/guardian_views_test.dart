@@ -36,7 +36,7 @@ Future<(FakeFamilyRepository, FamilyCubit)> pump(WidgetTester tester, Widget Fun
 }
 
 void main() {
-  testWidgets('home shows the pending request with the AI risk reasons and acknowledges it', (tester) async {
+  testWidgets('home shows the held transfer with AI risk reasons and release/extend buttons', (tester) async {
     final (repo, _) = await pump(
       tester,
       (d) => GuardianHomeView(data: d),
@@ -46,13 +46,33 @@ void main() {
     expect(find.text('500,000원'), findsOneWidget);
     expect(find.text('AI 위험도 79점 · 위험'), findsOneWidget);
     expect(find.text('처음 보내는 계좌예요'), findsOneWidget);
-    await tester.pump();
-    expect(repo.calls, contains('ack:req-1'));
+    expect(find.text('해제'), findsOneWidget);
+    expect(find.text('연장'), findsOneWidget);
 
-    await tester.tap(find.text('거절'));
+    await tester.tap(find.text('연장'));
     await tester.pump();
     await tester.pump();
-    expect(repo.calls, contains('decide:req-1:reject'));
+    expect(repo.calls, contains('extend:req-1'));
+
+    await tester.tap(find.text('해제'));
+    await tester.pump();
+    await tester.pump();
+    expect(repo.calls, contains('decide:req-1:approve'));
+  });
+
+  testWidgets('home and manage show caution mode status and release button', (tester) async {
+    final (repo, _) = await pump(
+      tester,
+      (d) => GuardianHomeView(data: d),
+      snapshot: demoSnapshotJson(seniorCautionMode: true),
+    );
+    expect(find.text('어머니 김순자 · 주의 모드 작동 중'), findsOneWidget);
+    expect(find.text('주의 모드 해제'), findsOneWidget);
+
+    await tester.tap(find.text('주의 모드 해제'));
+    await tester.pump();
+    await tester.pump();
+    expect(repo.calls, contains('releaseCautionMode:senior'));
   });
 
   testWidgets('home says everyone is safe without requests', (tester) async {

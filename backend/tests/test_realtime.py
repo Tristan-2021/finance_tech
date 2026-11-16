@@ -10,8 +10,13 @@ def test_state_snapshot_has_demo_family(client):
     assert senior["spent_today"] == 12_400
     assert child["spent_today"] == 8_500
     assert senior["avg_transfer"] == 100_000
+    assert senior["caution_mode"] is False
+    assert senior["caution_until"] is None
     assert child["mode"] == "school"
+    assert snap["config"]["hold_seconds"] == 1800
+    assert snap["config"]["reconfirm_seconds"] == 86400
     assert snap["config"]["approval_timeout_seconds"] == 180
+    assert snap["config"]["caution_mode_hours"] == 24
 
 
 def test_websocket_receives_freeze_event(client):

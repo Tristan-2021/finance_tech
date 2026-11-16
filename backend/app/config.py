@@ -25,13 +25,17 @@ def _int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     database_url: str = DEFAULT_DATABASE_URL
-    # 보호자 콜백 승인 대기 시간 (기획서 3.2: 3분)
+    # 거래 보류 유지 시간 (기획서 5.7: 기본 30분 = 1800초)
+    hold_seconds: int = 1800
+    # 보류 후 본인 재확인 대기 시간 (기획서 5.7: 기본 24시간 = 86400초)
+    reconfirm_seconds: int = 86400
+    # 결제·모드 완화 요청의 보호자 승인 대기 시간 (기획서 5.7: 기본 3분 = 180초)
     approval_timeout_seconds: int = 180
-    # 푸시를 확인하지 않으면 ARS 전화를 거는 시점
-    ars_after_seconds: int = 20
-    # SOS 동결 유지 시간 (기획서 3.1: 24시간)
+    # 주의 모드 유지 시간 (기획서 5.1: 기본 24시간)
+    caution_mode_hours: int = 24
+    # SOS 동결 유지 시간 (기획서 5.9: 기본 24시간)
     freeze_hours: int = 24
-    # 백그라운드 점검(타이머 만료, ARS 발신) 주기
+    # 백그라운드 점검(타이머 만료) 주기
     tick_seconds: float = 1.0
     # Flutter 웹 빌드 폴더. 지정하면 같은 서버에서 웹 앱도 제공합니다.
     web_dir: str | None = None
@@ -42,8 +46,10 @@ class Settings:
         origins = os.getenv("FINGERBELL_CORS_ORIGINS", "*")
         return cls(
             database_url=os.getenv("FINGERBELL_DATABASE_URL", cls.database_url),
+            hold_seconds=_int("FINGERBELL_HOLD_SECONDS", cls.hold_seconds),
+            reconfirm_seconds=_int("FINGERBELL_RECONFIRM_SECONDS", cls.reconfirm_seconds),
             approval_timeout_seconds=_int("FINGERBELL_APPROVAL_TIMEOUT", cls.approval_timeout_seconds),
-            ars_after_seconds=_int("FINGERBELL_ARS_AFTER", cls.ars_after_seconds),
+            caution_mode_hours=_int("FINGERBELL_CAUTION_MODE_HOURS", cls.caution_mode_hours),
             freeze_hours=_int("FINGERBELL_FREEZE_HOURS", cls.freeze_hours),
             web_dir=os.getenv("FINGERBELL_WEB_DIR") or _default_web_dir(),
             cors_origins=[o.strip() for o in origins.split(",") if o.strip()],

@@ -16,21 +16,29 @@ class TransferDraft {
   final String? contactId;
   final NewAccount? newAccount;
   final int amount;
+  final bool confirmed;
 
-  const TransferDraft({this.contactId, this.newAccount, this.amount = 0});
+  const TransferDraft({this.contactId, this.newAccount, this.amount = 0, this.confirmed = false});
 
-  TransferDraft copyWith({String? contactId, NewAccount? newAccount, int? amount, bool clearContact = false}) =>
-      TransferDraft(
-        contactId: clearContact ? null : (contactId ?? this.contactId),
-        newAccount: contactId != null ? null : (newAccount ?? this.newAccount),
-        amount: amount ?? this.amount,
-      );
+  TransferDraft copyWith({
+    String? contactId,
+    NewAccount? newAccount,
+    int? amount,
+    bool? confirmed,
+    bool clearContact = false,
+  }) => TransferDraft(
+    contactId: clearContact ? null : (contactId ?? this.contactId),
+    newAccount: contactId != null ? null : (newAccount ?? this.newAccount),
+    amount: amount ?? this.amount,
+    confirmed: confirmed ?? this.confirmed,
+  );
 
   Json toJson(String memberId) => {
     'member_id': memberId,
     'contact_id': contactId,
     'new_account': newAccount?.toJson(),
     'amount': amount,
+    'confirmed': confirmed,
   };
 }
 
@@ -77,7 +85,7 @@ class TransferPreview {
 }
 
 class TransferResult {
-  /// done: 바로 보냄 / pending: 보호자 확인 대기
+  /// done: 바로 보냄 / pending: 30분 보류 / caution: 본인 주의 확인 필요
   final String status;
   final ApprovalRequest? request;
   final Recipient? recipient;
@@ -87,6 +95,7 @@ class TransferResult {
   const TransferResult({required this.status, this.request, this.recipient, this.amount = 0, this.risk});
 
   bool get isPending => status == 'pending';
+  bool get isCaution => status == 'caution';
 
   factory TransferResult.fromJson(Json j) => TransferResult(
     status: asString(j['status']),
@@ -180,7 +189,6 @@ class FamilyEvent {
   final String message;
   final String? memberId;
   final String? requestId;
-  final String? script;
   final bool fromThisDevice;
 
   const FamilyEvent({
@@ -188,7 +196,6 @@ class FamilyEvent {
     this.message = '',
     this.memberId,
     this.requestId,
-    this.script,
     this.fromThisDevice = false,
   });
 
@@ -197,12 +204,11 @@ class FamilyEvent {
     message: asString(j['message']),
     memberId: asStringOrNull(j['member_id']),
     requestId: asStringOrNull(j['request_id']),
-    script: asStringOrNull(j['script']),
     fromThisDevice: j['origin'] == clientId,
   );
 }
 
-/// 외부 연동 기록 (오픈뱅킹 · FCM · SMS · ARS).
+/// 외부 연동 기록 (오픈뱅킹 · FCM · SMS).
 class IntegrationLogEntry {
   final String id;
   final DateTime at;

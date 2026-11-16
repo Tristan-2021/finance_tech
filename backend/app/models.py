@@ -53,6 +53,7 @@ class Member(Base):
 
     frozen_until: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     frozen_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    caution_until: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
     accounts: Mapped[list["Account"]] = relationship(
         back_populates="member", order_by="Account.sort_order", cascade="all, delete-orphan"
@@ -124,8 +125,43 @@ class LedgerEntry(Base):
     at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
 
 
+class Incident(Base):
+    """주의 모드 한 번 동안 쌓인 사건 기록 (기획서 5.1)."""
+
+    __tablename__ = "incidents"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("members.id"), index=True)
+    # open / closed
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    ended_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    items: Mapped[list["IncidentItem"]] = relationship(
+        back_populates="incident", order_by="IncidentItem.at", cascade="all, delete-orphan"
+    )
+
+
+class IncidentItem(Base):
+    """사건의 시간순 항목 (문자·통화 징후·금융 행동·확인 질문 답·판정·보류·보호자 조치)."""
+
+    __tablename__ = "incident_items"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id"), index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("members.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    summary: Mapped[str] = mapped_column(String(200))
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
+
+    incident: Mapped[Incident] = relationship(back_populates="items")
+
+
 class ApprovalRequest(Base):
-    """보호자 콜백 승인 요청 (송금 / 결제 / 모드 변경 / 동결 해제)."""
+    """거래 보류 및 보호자 확인 요청 (송금 보류 / 결제 승인 / 모드 변경 / 동결 해제)."""
 
     __tablename__ = "approval_requests"
 
@@ -137,18 +173,17 @@ class ApprovalRequest(Base):
     detail: Mapped[str] = mapped_column(String(120), default="")
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     risk: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    # pending / approved / rejected / cancelled / expired / failed
+    # pending / reconfirm / approved / rejected / cancelled / expired / failed
     status: Mapped[str] = mapped_column(String(12), index=True)
     channel: Mapped[str] = mapped_column(String(40), default="앱 알림")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
     expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    reconfirm_until: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     decided_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
     decision_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
     fail_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
     push_sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
-    push_ack_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
-    ars_called_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
 class Alert(Base):
@@ -200,7 +235,7 @@ class Notice(Base):
 
 
 class IntegrationLog(Base):
-    """외부 연동(오픈뱅킹·FCM·SMS·ARS) 호출 기록. 모의 어댑터도 같은 형식으로 남깁니다."""
+    """외부 연동(오픈뱅킹·FCM·SMS) 호출 기록. 모의 어댑터도 같은 형식으로 남깁니다."""
 
     __tablename__ = "integration_logs"
 

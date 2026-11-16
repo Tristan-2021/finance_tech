@@ -156,8 +156,18 @@ class _TransferSheetState extends State<TransferSheet> {
   Future<void> _send() async {
     setState(() => _busy = true);
     try {
-      final result = await _family.submitTransfer(widget.memberId, _draft);
+      final confirm = _preview != null && !_preview!.risk.isSafe;
+      final draft = confirm ? _draft.copyWith(confirmed: true) : _draft;
+      final result = await _family.submitTransfer(widget.memberId, draft);
       if (!mounted) return;
+      if (result.isCaution && result.recipient != null && result.risk != null) {
+        setState(() {
+          _busy = false;
+          _preview = TransferPreview(recipient: result.recipient!, amount: result.amount, risk: result.risk!);
+          _step = TransferStep.check;
+        });
+        return;
+      }
       setState(() {
         _busy = false;
         _result = result;
@@ -165,7 +175,7 @@ class _TransferSheetState extends State<TransferSheet> {
         _step = result.isPending ? TransferStep.waiting : TransferStep.done;
       });
       if (result.isPending) {
-        _shell.say('보호자에게 확인을 요청했어요', toast: false, vibrate: const [60]);
+        _shell.say('거래를 보류하고 보호자에게 알렸어요', toast: false, vibrate: const [60]);
       } else {
         _shell.say('${won(result.amount)}을 보냈어요', toast: false);
       }
@@ -173,6 +183,39 @@ class _TransferSheetState extends State<TransferSheet> {
       if (!mounted) return;
       setState(() => _busy = false);
       _shell.say(e.message, vibrate: const [80, 40, 80]);
+    }
+  }
+
+  Future<void> _cancelHold(String requestId) async {
+    setState(() => _busy = true);
+    try {
+      await _family.cancelRequest(requestId, widget.memberId);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _shell.say('보류 중인 송금을 취소했어요');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _shell.say(e.message);
+    }
+  }
+
+  Future<void> _reconfirmHold(String requestId, {required bool confirm}) async {
+    setState(() => _busy = true);
+    try {
+      final r = await _family.reconfirmHold(requestId, widget.memberId, confirm: confirm);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      if (r.status == 'failed') {
+        final reason = r.message.isNotEmpty ? r.message : (r.request?.failReason ?? '돈은 나가지 않았어요.');
+        _shell.say('처리하지 못했어요 · $reason', vibrate: const [80, 40, 80]);
+      } else {
+        _shell.say(confirm ? '재확인 후 송금을 진행했어요' : '송금을 그만두었어요');
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _shell.say(e.message);
     }
   }
 
@@ -196,7 +239,7 @@ class _TransferSheetState extends State<TransferSheet> {
               TransferStep.who => _who(member, data, hidden),
               TransferStep.amount => _amountStep(member),
               TransferStep.check => _checkStep(data),
-              TransferStep.waiting => _waiting(data, state),
+              TransferStep.waiting => _waiting(member, data),
               TransferStep.done => _done(member, hidden),
             },
           ),
@@ -407,9 +450,13 @@ class _TransferSheetState extends State<TransferSheet> {
           decoration: BoxDecoration(color: c.soft, borderRadius: BorderRadius.circular(14)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: risk.signals.isEmpty
-                ? [Text('평소 거래와 다른 점이 없어요', style: TextStyle(fontSize: 13.8, height: 1.75, color: c.ink2))]
-                : [for (final s in risk.signals) BulletText(s.label, style: TextStyle(fontSize: 13.8, height: 1.75, color: c.ink2))],
+            children: [
+              Text(risk.easyExplanation, style: TextStyle(fontSize: 13.8, height: 1.75, color: c.ink2, fontWeight: FontWeight.w600)),
+              if (risk.signals.length > 1) ...[
+                const SizedBox(height: 6),
+                for (final s in risk.signals) BulletText(s.label, style: TextStyle(fontSize: 13.4, height: 1.7, color: c.ink2)),
+              ],
+            ],
           ),
         ),
         if (model != null) ...[
@@ -417,6 +464,13 @@ class _TransferSheetState extends State<TransferSheet> {
           Text(
             'Isolation Forest 모델 · 최근 거래 ${model.trainedOn}건으로 학습${model.anomaly ? ' · 이상 패턴 감지' : ''}',
             style: FbText.small(c),
+          ),
+        ],
+        if (risk.level == RiskLevel.caution && !risk.needsApproval) ...[
+          const SizedBox(height: 12.8),
+          Text(
+            '받는 분과 금액을 다시 확인한 뒤 맞으면 진행해 주세요.',
+            style: TextStyle(fontSize: 13.4, height: 1.6, color: c.redStrong, fontWeight: FontWeight.w600),
           ),
         ],
         if (risk.level == RiskLevel.high) ...[
@@ -434,7 +488,7 @@ class _TransferSheetState extends State<TransferSheet> {
         _SummaryLine('보낼 금액', won(p.amount)),
         if (risk.needsApproval) ...[
           const SizedBox(height: 12),
-          Text('보호자 ${data.guardian.name}님이 확인한 뒤 보내져요. (앱 알림 → ARS 전화)', style: FbText.hint(c)),
+          Text('거래가 30분 동안 보류되고 보호자 ${data.guardian.name}님께 알림이 가요.', style: FbText.hint(c)),
         ],
         const SizedBox(height: 22.4),
         FbButtonRow(
@@ -456,16 +510,16 @@ class _TransferSheetState extends State<TransferSheet> {
     );
   }
 
-  Widget _waiting(FamilySnapshot data, FamilyState state) {
+  Widget _waiting(Member member, FamilySnapshot data) {
     final c = context.fb;
     final req = _requestId == null ? null : data.request(_requestId!);
-    if (req != null && !req.isPending) {
+    if (req != null && !req.isActive) {
       final ok = req.status == 'approved';
       final (title, body) = switch (req.status) {
-        'approved' => ('보호자가 승인했어요', '송금을 마쳤어요.'),
+        'approved' => ('송금을 마쳤어요', '보류가 해제되어 정상적으로 보냈어요.'),
         'rejected' => ('보호자가 거절했어요', '돈은 나가지 않았어요.'),
-        'expired' => ('보호자 응답이 없어 취소했어요', '3분 안에 확인되지 않아 돈은 나가지 않았어요.'),
-        'cancelled' => ('송금 요청이 취소됐어요', 'SOS 동결로 요청을 멈췄어요. 돈은 나가지 않았어요.'),
+        'expired' => ('재확인 시간이 지나 취소했어요', '24시간 동안 재확인이 없어 돈은 나가지 않았어요.'),
+        'cancelled' => ('송금이 취소됐어요', '보류 중인 요청을 취소해 돈은 나가지 않았어요.'),
         _ => ('처리하지 못했어요', req.failReason ?? '돈은 나가지 않았어요.'),
       };
       return Column(
@@ -482,23 +536,40 @@ class _TransferSheetState extends State<TransferSheet> {
         ],
       );
     }
-    final ars = req?.arsCalledAt != null;
+    if (req != null && req.isReconfirm && !member.isChild) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SheetHead(onClose: _close),
+          CenterBlock(
+            icon: const ResultIcon(FbIcons.alert, tone: ResultTone.red),
+            title: '본인 재확인 대기',
+            body: '${req.title} · ${won(req.amount)}\n${req.easyExplanation}\n보호자 응답 없이 보류 시간이 지났어요. 다시 한 번 확인해 주세요.',
+          ),
+          const SizedBox(height: 22.4),
+          FbButtonRow(
+            children: [
+              FbButton.gray('그만두기', busy: _busy, onPressed: () => _reconfirmHold(req.id, confirm: false)),
+              FbButton.gray('그래도 진행', busy: _busy, onPressed: () => _reconfirmHold(req.id, confirm: true)),
+            ],
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SheetHead(onClose: _close),
         CenterBlock(
-          icon: const ResultIcon(FbIcons.phone, tone: ResultTone.soft, ringing: true),
-          title: '보호자 확인을 기다리고 있어요',
-          body: ars
-              ? '${data.guardian.name}님께 ARS 확인 전화를 걸었어요.\n승인되면 바로 보내드릴게요.'
-              : '${data.guardian.name}님께 앱 알림을 보냈어요.\n승인되면 바로 보내드릴게요.',
+          icon: const ResultIcon(FbIcons.clock, tone: ResultTone.soft, ringing: true),
+          title: '거래를 30분 동안 보류했어요',
+          body: '${req?.easyExplanation ?? ''}\n${data.guardian.name}님께 알림을 보냈어요.',
         ),
         if (req?.expiresAt != null)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text('답이 없으면 자동 취소 · ', style: FbText.hint(c)),
+              Text('보류 남은 시간 · ', style: FbText.hint(c)),
               CountdownText(
                 until: req!.expiresAt!,
                 now: context.read<FamilyCubit>().now,
@@ -508,6 +579,10 @@ class _TransferSheetState extends State<TransferSheet> {
             ],
           ),
         const SizedBox(height: 22.4),
+        if (req != null) ...[
+          FbButton.gray('취소', busy: _busy, onPressed: () => _cancelHold(req.id)),
+          const SizedBox(height: 8),
+        ],
         FbButton('보호자 화면에서 확인하기 (시연)', onPressed: () => _shell.goto(Persona.guardian, AppTab.home)),
         const SizedBox(height: 8),
         FbButton.gray('닫기', onPressed: _close),

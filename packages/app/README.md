@@ -9,7 +9,7 @@
 | :--- | :--- |
 | `lib/main.dart` | 서버 주소(`FINGERBELL_API_URL`) → 저장소 → `FamilyCubit` 시작 |
 | `lib/app.dart` | `FamilyCubit`·`ShellCubit` 제공, 테마(고대비), 글자 배율(어르신 17/16, 큰 글씨 1.12배) |
-| `lib/shell/` | 레이아웃, 배너, 토스트, 흔들기 감지 연결, 실시간 이벤트 반응(ARS 화면 등), 시연 시나리오 |
+| `lib/shell/` | 레이아웃, 배너, 토스트, 흔들기 감지 연결, 실시간 이벤트 반응, 시연 시나리오 |
 | `lib/views/` | 어르신·아이 홈/내역/안심, 설정 |
 
 실행 방법은 저장소 루트의 [README](../../README.md)를 보세요.
