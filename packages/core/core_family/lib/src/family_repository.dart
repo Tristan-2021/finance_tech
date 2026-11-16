@@ -78,6 +78,7 @@ abstract interface class FamilyRepository {
   Future<PairingConnectResult> connectPairing(String memberId, String code, {required bool consented});
 
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30});
+  Future<UserFeedbackResult> submitFeedback(String memberId, {required String category, String message = ''});
   Future<void> resetDemo();
 
   Future<void> dispose();
@@ -329,6 +330,16 @@ class ApiFamilyRepository implements FamilyRepository {
     final body = await api.get('/integrations/logs', query: {'limit': '$limit'});
     return asList(body['logs'], IntegrationLogEntry.fromJson);
   }
+
+  @override
+  Future<UserFeedbackResult> submitFeedback(String memberId, {required String category, String message = ''}) async =>
+      UserFeedbackResult.fromJson(
+        await api.post('/feedback', {
+          'member_id': memberId,
+          'category': category,
+          'message': message,
+        }),
+      );
 
   @override
   Future<void> resetDemo() => api.post('/demo/reset');

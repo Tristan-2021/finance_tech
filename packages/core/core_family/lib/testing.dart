@@ -429,6 +429,7 @@ class FakeFamilyRepository implements FamilyRepository {
   SmsRiskLevel? forceSmsLevel;
   String? forcePairingCode;
   final Map<String, ({String guardianId, String memberId, DateTime expiresAt, bool used})> _pairingCodes = {};
+  final List<Map<String, dynamic>> submittedFeedback = [];
   int _pairingSeq = 0;
 
   FakeFamilyRepository([Map<String, dynamic>? snapshot]) : snapshotJson = snapshot ?? demoSnapshotJson();
@@ -1414,6 +1415,24 @@ class FakeFamilyRepository implements FamilyRepository {
 
   @override
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30}) => _call('logs', const <IntegrationLogEntry>[]);
+
+  @override
+  Future<UserFeedbackResult> submitFeedback(String memberId, {required String category, String message = ''}) {
+    final cleanCat = category.trim();
+    if (cleanCat.isEmpty) {
+      throw const ApiException(Failure('불편한 점 종류를 선택해 주세요.', 'category'), 400);
+    }
+    final now = DateTime.now().toUtc();
+    final item = {
+      'id': 'fb-${submittedFeedback.length + 1}',
+      'member_id': memberId,
+      'category': cleanCat,
+      'message': message.trim(),
+      'created_at': now.toIso8601String(),
+    };
+    submittedFeedback.insert(0, item);
+    return _call('submitFeedback:$memberId:$cleanCat', UserFeedbackResult.fromJson(item));
+  }
 
   @override
   Future<void> resetDemo() {

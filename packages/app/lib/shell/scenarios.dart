@@ -32,6 +32,7 @@ void _announceSms(ShellCubit shell, SmsMessage msg) {
       shell.say(
         '위험 의심 문자가 도착했어요 · ${msg.explanation}',
         vibrate: const [80, 40, 80],
+        alertSound: true,
       );
     case SmsRiskLevel.caution:
       shell.say(
@@ -59,6 +60,7 @@ Future<void> runScenario(BuildContext context, Scenario s) async {
         _announceSms(shell, res.message);
         final ctx = nav();
         if (ctx.mounted) {
+          final g = family.state.snapshot?.guardian;
           await openSmsSheet(
             ctx,
             'senior',
@@ -72,6 +74,13 @@ Future<void> runScenario(BuildContext context, Scenario s) async {
                 peerPhone: phone,
               );
             },
+            onCallGuardian: () => openCallSheet(
+              ctx,
+              callerId: 'senior',
+              calleeId: 'guardian',
+              peerName: g != null ? '보호자 ${g.name}' : '보호자',
+              peerPhone: g?.phone,
+            ),
           );
         }
       case Scenario.counterpart:

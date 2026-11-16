@@ -22,7 +22,7 @@ Future<void> triggerSos(BuildContext context, String memberId, SosTrigger trigge
       return;
     }
     shell.showSos(memberId);
-    shell.say('모든 계좌의 출금을 막았어요. 보호자에게 알렸어요.', toast: false, vibrate: sosVibration);
+    shell.say('모든 계좌의 출금을 막았어요. 보호자에게 알렸어요.', toast: false, vibrate: sosVibration, alertSound: true);
   } on ApiException catch (e) {
     shell.say('동결 요청을 보내지 못했어요. ${e.message}', vibrate: const [80, 40, 80]);
   }

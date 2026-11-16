@@ -37,6 +37,34 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PREFS_CHANNEL_NAME,
+        ).setMethodCallHandler { call, result ->
+            val prefs = getSharedPreferences("fingerbell_prefs", Context.MODE_PRIVATE)
+            when (call.method) {
+                "getAll" -> {
+                    val out = HashMap<String, Boolean>()
+                    for ((k, v) in prefs.all) {
+                        if (v is Boolean) out[k] = v
+                    }
+                    result.success(out)
+                }
+                "setBool" -> {
+                    val key = call.argument<String>("key")
+                    val value = call.argument<Boolean>("value")
+                    if (key != null && value != null) {
+                        prefs.edit().putBoolean(key, value).apply()
+                    }
+                    result.success(null)
+                }
+                "clear" -> {
+                    prefs.edit().clear().apply()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -50,5 +78,6 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val CHANNEL_NAME = "kr.fingersnap.fingerbell/alert_tone"
+        private const val PREFS_CHANNEL_NAME = "kr.fingersnap.fingerbell/prefs"
     }
 }

@@ -1,9 +1,11 @@
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
+import 'package:core_ui/core_ui.dart';
 import 'package:feature_call/feature_call.dart';
 import 'package:feature_guardian/feature_guardian.dart';
 import 'package:flutter/widgets.dart';
 
+import 'easy_home.dart';
 import 'member_history.dart';
 import 'member_home.dart';
 import 'member_safety.dart';
@@ -13,6 +15,16 @@ import 'settings_view.dart';
 Widget viewFor(BuildContext context, ShellState shell, FamilySnapshot data, {required String serverAddress}) {
   final memberId = shell.memberId;
   if (shell.tab == AppTab.settings) return SettingsView(serverAddress: serverAddress);
+
+  Widget wrapHome(Widget home) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const EasyModeTopBar(),
+      const SizedBox(height: 10),
+      home,
+    ],
+  );
+
   if (memberId == null) {
     final me = data.guardian.banking;
     void callMember(Member m) => openCallSheet(
@@ -23,10 +35,21 @@ Widget viewFor(BuildContext context, ShellState shell, FamilySnapshot data, {req
       peerPhone: '앱 안 통화',
     );
     return switch (shell.tab) {
-      AppTab.home => GuardianHomeView(
-        data: data,
-        banking: me == null ? const [] : guardianBanking(me),
-        onCallMember: callMember,
+      AppTab.home => wrapHome(
+        shell.prefs.easyMode
+            ? EasyGuardianHome(data: data, onCallMember: callMember)
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  GuardianHomeView(
+                    data: data,
+                    banking: me == null ? const [] : guardianBanking(me),
+                    onCallMember: callMember,
+                  ),
+                  const SizedBox(height: 12),
+                  const FraudHelpButton(),
+                ],
+              ),
       ),
       AppTab.history when me != null => MemberHistory(member: me),
       AppTab.history || AppTab.alerts => GuardianAlertsView(data: data, onCallMember: callMember),
@@ -35,7 +58,11 @@ Widget viewFor(BuildContext context, ShellState shell, FamilySnapshot data, {req
   }
   final member = data.member(memberId);
   return switch (shell.tab) {
-    AppTab.home => member.isChild ? ChildHome(member: member, data: data) : SeniorHome(member: member, data: data),
+    AppTab.home => wrapHome(
+      shell.prefs.easyMode
+          ? EasyMemberHome(member: member, data: data)
+          : (member.isChild ? ChildHome(member: member, data: data) : SeniorHome(member: member, data: data)),
+    ),
     AppTab.history || AppTab.alerts => MemberHistory(member: member),
     _ => MemberSafety(member: member, data: data),
   };

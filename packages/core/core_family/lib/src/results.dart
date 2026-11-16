@@ -523,3 +523,31 @@ class PairingConnectResult {
     consentAt: asDate(j['consent_at']),
   );
 }
+
+/// 설정 › 불편한 점 보내기 결과 (기획서 7.1 Ⅲ-③).
+class UserFeedbackResult {
+  final String id;
+  final String memberId;
+  final String category;
+  final String message;
+  final DateTime? createdAt;
+
+  const UserFeedbackResult({
+    required this.id,
+    required this.memberId,
+    required this.category,
+    this.message = '',
+    this.createdAt,
+  });
+
+  factory UserFeedbackResult.fromJson(Json j) {
+    final fb = j['feedback'] is Map<String, dynamic> ? j['feedback'] as Json : j;
+    return UserFeedbackResult(
+      id: asString(fb['id']),
+      memberId: asString(fb['member_id'], 'senior'),
+      category: asString(fb['category']),
+      message: asString(fb['message']),
+      createdAt: asDate(fb['created_at']),
+    );
+  }
+}

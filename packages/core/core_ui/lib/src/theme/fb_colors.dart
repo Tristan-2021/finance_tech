@@ -54,14 +54,14 @@ class FbColors extends ThemeExtension<FbColors> {
     redSoft: Color(0xFFFFF0F1),
     ink: Color(0xFF191F28),
     ink2: Color(0xFF4E5968),
-    muted: Color(0xFF8B95A1),
-    faint: Color(0xFFB0B8C1),
+    muted: Color(0xFF6B7684),
+    faint: Color(0xFF76808D),
     line: Color(0xFFF2F4F6),
     bg: Color(0xFFF3F5F8),
     card: Color(0xFFFFFFFF),
     soft: Color(0xFFF2F4F6),
     glass: Color(0xEBF3F5F8),
-    navIdle: Color(0xFFB0B8C1),
+    navIdle: Color(0xFF76808D),
     backdrop: Color(0xFFECEFF4),
   );
 

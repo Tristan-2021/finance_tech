@@ -33,6 +33,7 @@ from .schemas import (
     CallTranscriptBody,
     CautionQuestionBody,
     CautionReleaseBody,
+    FeedbackBody,
     HoldCancelBody,
     HoldExtendBody,
     HoldReconfirmBody,
@@ -456,6 +457,10 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
     @api.get("/integrations/logs")
     def logs(limit: int = 30, svc: FamilyService = Depends(service)):
         return {"logs": svc.integration_logs(limit)}
+
+    @api.post("/feedback")
+    def submit_feedback(body: FeedbackBody, svc: FamilyService = Depends(service)):
+        return done(svc, svc.submit_feedback(body.member_id, body.category, body.message))
 
     @api.post("/demo/reset")
     def demo_reset():

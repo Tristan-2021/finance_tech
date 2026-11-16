@@ -7,16 +7,18 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'shell/feedback_service.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerFontLicenses();
   final config = ApiConfig.fromEnvironment();
   final repository = ApiFamilyRepository(FingerBellApi(config));
   final family = FamilyCubit(repository)..start();
+  final shell = ShellCubit(const ShellState(), MethodChannelPrefsStore());
+  await shell.loadPrefs();
   runApp(
     FingerBellApp(
       family: family,
-      shell: ShellCubit(),
+      shell: shell,
       feedback: DeviceFeedback(),
       serverAddress: config.toString(),
     ),

@@ -84,7 +84,8 @@ class _ManageCardState extends State<ManageCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text('주의 모드 남은 시간 ', style: TextStyle(fontSize: 13.6, color: c.ink2)),
                       if (m.cautionUntil != null)
@@ -112,7 +113,8 @@ class _ManageCardState extends State<ManageCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text('동결 해제까지 ', style: TextStyle(fontSize: 13.6, color: c.ink2)),
                       if (m.frozenUntil != null)
@@ -211,7 +213,14 @@ class _FieldLabel extends StatelessWidget {
       child: Row(
         children: [
           Expanded(child: Text(label, style: TextStyle(fontSize: 13.1, fontWeight: FontWeight.w700, color: c.muted))),
-          if (value != null) Text(value!, style: FbText.tabular(TextStyle(fontSize: 15.2, fontWeight: FontWeight.w700, color: c.ink))),
+          if (value != null)
+            Flexible(
+              child: Text(
+                value!,
+                textAlign: TextAlign.end,
+                style: FbText.tabular(TextStyle(fontSize: 15.2, fontWeight: FontWeight.w700, color: c.ink)),
+              ),
+            ),
         ],
       ),
     );

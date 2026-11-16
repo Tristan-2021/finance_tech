@@ -57,8 +57,9 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
     final prefs = context.read<ShellCubit>().state.prefs;
     final out = context.read<FeedbackOutput>();
     if (f.toast) _toast.currentState?.show(f.message);
-    if (prefs.haptics && f.vibrate.isNotEmpty) {
-      out.vibrate(f.vibrate, playSound: prefs.sound);
+    if (prefs.sound && f.alertSound) out.playAlertTone();
+    if (f.vibrate.isNotEmpty && prefs.haptics) {
+      out.vibrate(f.vibrate, playSound: false, playHaptics: true);
     }
     if (prefs.voice && f.speak) out.speak(f.message);
   }
@@ -169,10 +170,12 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
         final mine = family.isReady ? family.data.accountOf(persona)?.id : persona.memberId;
         if (persona == Persona.guardian && (forGuardian.contains(e.type) || (e.type == 'sms' && e.level == 'danger'))) {
           final vib = e.type == 'freeze' ? sosVibration : const [60];
-          shell.say(e.message, vibrate: vib);
+          final danger = e.type == 'freeze' || (e.type == 'sms' && e.level == 'danger');
+          shell.say(e.message, vibrate: vib, alertSound: danger);
         } else if (mine != null && mine == e.memberId && forMember.contains(e.type)) {
-          final vib = (e.type == 'sms' && e.level == 'danger') ? const [80, 40, 80] : const [60];
-          shell.say(e.message, vibrate: vib);
+          final dangerSms = e.type == 'sms' && e.level == 'danger';
+          final vib = dangerSms ? const [80, 40, 80] : const [60];
+          shell.say(e.message, vibrate: vib, alertSound: dangerSms || e.type == 'freeze');
         }
     }
   }

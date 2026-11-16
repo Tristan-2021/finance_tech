@@ -66,11 +66,17 @@ class _TransferSheetState extends State<TransferSheet> {
   ConfirmationQuestion? _question;
   String? _requestId;
   String? _error;
+  String? _numberError;
+  String? _nameError;
   bool _busy = false;
 
   final _number = TextEditingController();
   final _name = TextEditingController();
   final _amount = TextEditingController();
+  final _numberFocus = FocusNode();
+  final _nameFocus = FocusNode();
+  final _amountFocus = FocusNode();
+  final _warningFocus = FocusNode();
   String? _bank;
 
   @override
@@ -87,6 +93,11 @@ class _TransferSheetState extends State<TransferSheet> {
       _name.text = na.name;
     }
     if (_draft.amount > 0) _amount.text = formatNumber(_draft.amount);
+    if (_step == TransferStep.check && _preview != null && !_preview!.risk.isSafe) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _warningFocus.requestFocus();
+      });
+    }
   }
 
   @override
@@ -94,13 +105,25 @@ class _TransferSheetState extends State<TransferSheet> {
     _number.dispose();
     _name.dispose();
     _amount.dispose();
+    _numberFocus.dispose();
+    _nameFocus.dispose();
+    _amountFocus.dispose();
+    _warningFocus.dispose();
     super.dispose();
   }
 
   void _go(TransferStep step) => setState(() {
     _step = step;
     _error = null;
+    _numberError = null;
+    _nameError = null;
   });
+
+  void _focusWarning() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _warningFocus.requestFocus();
+    });
+  }
 
   ShellCubit get _shell => context.read<ShellCubit>();
   FamilyCubit get _family => context.read<FamilyCubit>();
@@ -116,17 +139,27 @@ class _TransferSheetState extends State<TransferSheet> {
     final digits = digitsOnly(_number.text);
     final name = _name.text.trim();
     if (digits.length < 10 || digits.length > 14) {
-      setState(() => _error = '계좌번호는 숫자 10~14자리로 입력해 주세요.');
+      setState(() {
+        _numberError = '계좌번호는 숫자 10~14자리로 입력해 주세요.';
+        _nameError = null;
+      });
+      _numberFocus.requestFocus();
       return;
     }
     if (name.isEmpty) {
-      setState(() => _error = '받는 분 이름을 입력해 주세요.');
+      setState(() {
+        _numberError = null;
+        _nameError = '받는 분 이름을 입력해 주세요.';
+      });
+      _nameFocus.requestFocus();
       return;
     }
     setState(() {
       _draft = TransferDraft(newAccount: NewAccount(bank: _bank ?? banks.first, number: digits, name: name), amount: _draft.amount);
       _step = TransferStep.amount;
       _error = null;
+      _numberError = null;
+      _nameError = null;
     });
   }
 
@@ -134,12 +167,14 @@ class _TransferSheetState extends State<TransferSheet> {
     final now = int.tryParse(digitsOnly(_amount.text)) ?? 0;
     final next = add < 0 ? balance : (now + add).clamp(0, balance);
     _amount.text = formatNumber(next);
+    if (_error != null) setState(() => _error = null);
   }
 
   Future<void> _check() async {
     final amount = int.tryParse(digitsOnly(_amount.text)) ?? 0;
     if (amount <= 0) {
       setState(() => _error = '1원 이상 금액을 입력해 주세요.');
+      _amountFocus.requestFocus();
       return;
     }
     _draft = _draft.copyWith(amount: amount, confirmed: false, clearQuestionAnswer: true);
@@ -155,7 +190,16 @@ class _TransferSheetState extends State<TransferSheet> {
       });
       if (preview.risk.level == RiskLevel.high) {
         final next = preview.risk.needsApproval ? '보호자 확인이 필요해요.' : '보내기 전에 한 번 더 확인해 주세요.';
-        _shell.say('사기 위험이 높은 거래예요. $next', toast: false, vibrate: const [120, 60, 120]);
+        _shell.say(
+          '사기 위험이 높은 거래예요. ${preview.risk.easyExplanation} $next',
+          toast: false,
+          vibrate: const [120, 60, 120],
+          alertSound: true,
+        );
+        _focusWarning();
+      } else if (preview.risk.level == RiskLevel.caution) {
+        _shell.say('한 번 더 확인이 필요해요. ${preview.risk.easyExplanation}', toast: false, vibrate: const [60]);
+        _focusWarning();
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -163,6 +207,7 @@ class _TransferSheetState extends State<TransferSheet> {
           _busy = false;
           _error = e.message;
         });
+        _amountFocus.requestFocus();
       }
     }
   }
@@ -195,6 +240,8 @@ class _TransferSheetState extends State<TransferSheet> {
           _preview = TransferPreview(recipient: result.recipient!, amount: result.amount, risk: result.risk!);
           _step = TransferStep.check;
         });
+        _shell.say('한 번 더 확인이 필요해요. ${result.risk!.easyExplanation}', toast: false, vibrate: const [60]);
+        _focusWarning();
         return;
       }
       setState(() {
@@ -204,7 +251,8 @@ class _TransferSheetState extends State<TransferSheet> {
         _step = result.isPending ? TransferStep.waiting : TransferStep.done;
       });
       if (result.isPending) {
-        _shell.say('거래를 보류하고 보호자에게 알렸어요', toast: false, vibrate: const [60]);
+        _shell.say('거래를 30분 동안 보류하고 보호자에게 알렸어요. ${result.request?.easyExplanation ?? ''}', toast: false, vibrate: const [60]);
+        _focusWarning();
       } else {
         _shell.say('${won(result.amount)}을 보냈어요', toast: false);
       }
@@ -319,18 +367,35 @@ class _TransferSheetState extends State<TransferSheet> {
           const SizedBox(height: 12.8),
           TextField(
             controller: _number,
+            focusNode: _numberFocus,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(14)],
-            decoration: const InputDecoration(hintText: '계좌번호 (숫자만)', labelText: '계좌번호'),
+            decoration: InputDecoration(
+              hintText: '예: 33331200125678 (숫자 10~14자리)',
+              labelText: '계좌번호',
+              errorText: _numberError,
+            ),
+            onChanged: (_) {
+              if (_numberError != null) setState(() => _numberError = null);
+            },
           ),
           const SizedBox(height: 12.8),
           TextField(
             controller: _name,
+            focusNode: _nameFocus,
             maxLength: 20,
-            decoration: const InputDecoration(hintText: '받는 분 이름', labelText: '받는 분 이름', counterText: ''),
+            decoration: InputDecoration(
+              hintText: '예: 김사랑',
+              labelText: '받는 분 이름',
+              counterText: '',
+              errorText: _nameError,
+            ),
+            onChanged: (_) {
+              if (_nameError != null) setState(() => _nameError = null);
+            },
             onSubmitted: (_) => _submitNewAccount(banks),
           ),
-          _ErrorText(_error),
+          const SizedBox(height: 14),
           FbButton('다음', onPressed: () => _submitNewAccount(banks)),
         ],
       ],
@@ -372,13 +437,18 @@ class _TransferSheetState extends State<TransferSheet> {
               Expanded(
                 child: TextField(
                   controller: _amount,
+                  focusNode: _amountFocus,
                   autofocus: true,
                   keyboardType: TextInputType.number,
                   inputFormatters: const [ThousandsFormatter()],
                   style: FbText.balance(c),
+                  onChanged: (_) {
+                    if (_error != null) setState(() => _error = null);
+                  },
                   onSubmitted: (_) => _check(),
                   decoration: InputDecoration(
-                    hintText: '0',
+                    labelText: '보낼 금액 (원)',
+                    hintText: '예: 50,000',
                     hintStyle: FbText.balance(c).copyWith(color: c.faint),
                     filled: false,
                     border: InputBorder.none,
@@ -405,8 +475,10 @@ class _TransferSheetState extends State<TransferSheet> {
                   child: InkWell(
                     borderRadius: BorderRadius.circular(10),
                     onTap: () => _addAmount(v, m.balance),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 9.6),
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 57),
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
                       child: Text(
                         label,
                         textAlign: TextAlign.center,
@@ -445,15 +517,33 @@ class _TransferSheetState extends State<TransferSheet> {
           ],
         ),
         const SizedBox(height: 6.4),
-        Semantics(
-          liveRegion: true,
-          child: Text(
-            risk.level.title,
-            style: TextStyle(
-              fontSize: 21.6,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -.8,
-              color: safe ? c.ink : c.redStrong,
+        Focus(
+          focusNode: _warningFocus,
+          child: Semantics(
+            liveRegion: true,
+            header: true,
+            child: Row(
+              children: [
+                ExcludeSemantics(
+                  child: Icon(
+                    safe ? FbIcons.check : FbIcons.alert,
+                    size: 22,
+                    color: safe ? c.blueStrong : c.redStrong,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    risk.level.title,
+                    style: TextStyle(
+                      fontSize: 21.6,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.8,
+                      color: safe ? c.ink : c.redStrong,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -536,6 +626,13 @@ class _TransferSheetState extends State<TransferSheet> {
             ),
           ],
         ),
+        if (!safe) ...[
+          const SizedBox(height: 10),
+          FraudHelpButton(
+            onCallGuardian: widget.onCallGuardian,
+            guardianName: data.guardian.name,
+          ),
+        ],
       ],
     );
   }
@@ -602,6 +699,8 @@ class _TransferSheetState extends State<TransferSheet> {
             icon: FbIcons.phone,
             onPressed: widget.onCallGuardian ?? () => _shell.say('(시연) 보호자 ${data.guardian.name}님께 전화를 연결해요'),
           ),
+          const SizedBox(height: 8),
+          FraudHelpButton(onCallGuardian: widget.onCallGuardian, guardianName: data.guardian.name),
         ],
       );
     }
@@ -609,14 +708,18 @@ class _TransferSheetState extends State<TransferSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SheetHead(onClose: _close),
-        CenterBlock(
-          icon: const ResultIcon(FbIcons.clock, tone: ResultTone.soft, ringing: true),
-          title: '거래를 30분 동안 보류했어요',
-          body: '${req?.easyExplanation ?? ''}\n${data.guardian.name}님께 알림을 보냈어요.',
+        Focus(
+          focusNode: _warningFocus,
+          child: CenterBlock(
+            icon: const ResultIcon(FbIcons.clock, tone: ResultTone.soft, ringing: true),
+            title: '거래를 30분 동안 보류했어요',
+            body: '${req?.easyExplanation ?? ''}\n${data.guardian.name}님께 알림을 보냈어요.',
+          ),
         ),
         if (req?.expiresAt != null)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('보류 남은 시간 · ', style: FbText.hint(c)),
               CountdownText(
@@ -633,6 +736,8 @@ class _TransferSheetState extends State<TransferSheet> {
           const SizedBox(height: 8),
         ],
         FbButton('보호자 화면에서 확인하기 (시연)', onPressed: () => _shell.goto(Persona.guardian, AppTab.home)),
+        const SizedBox(height: 8),
+        FraudHelpButton(onCallGuardian: widget.onCallGuardian, guardianName: data.guardian.name),
         const SizedBox(height: 8),
         FbButton.gray('닫기', onPressed: _close),
       ],

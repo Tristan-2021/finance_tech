@@ -62,36 +62,45 @@ class FbListRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.fb;
-    final row = Padding(
-      padding: padding,
-      child: Row(
-        children: [
-          leading,
-          const SizedBox(width: 13.6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DefaultTextStyle.merge(
-                  style: FbText.rowTitle(c),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  child: title,
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 3.2),
-                  Text(subtitle!, style: subtitleStyle ?? FbText.rowSub(c)),
+    final row = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: onTap != null ? 57 : 0),
+      child: Padding(
+        padding: padding,
+        child: Row(
+          children: [
+            leading,
+            const SizedBox(width: 13.6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DefaultTextStyle.merge(
+                    style: FbText.rowTitle(c),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    child: title,
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 3.2),
+                    Text(subtitle!, style: subtitleStyle ?? FbText.rowSub(c)),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-          if (chevron) ...[const SizedBox(width: 6), Icon(FbIcons.chevron, size: 19, color: c.faint)],
-        ],
+            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+            if (chevron) ...[
+              const SizedBox(width: 6),
+              ExcludeSemantics(child: Icon(FbIcons.chevron, size: 19, color: c.faint)),
+            ],
+          ],
+        ),
       ),
     );
     if (onTap == null) return row;
-    return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: row);
+    return Semantics(
+      button: true,
+      child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: row),
+    );
   }
 }
 
@@ -107,34 +116,39 @@ class FbRowLink extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.fb;
-    return Material(
-      color: c.card,
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      child: Material(
+        color: c.card,
         borderRadius: BorderRadius.circular(22),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 21.6, vertical: 17.6),
-          decoration: c.cardBorder != null
-              ? BoxDecoration(borderRadius: BorderRadius.circular(22), border: Border.all(color: c.cardBorder!, width: 2))
-              : null,
-          child: Row(
-            children: [
-              if (leading != null) ...[leading!, const SizedBox(width: 13.6)],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: TextStyle(fontSize: 15.7, fontWeight: FontWeight.w700, color: c.ink)),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 3.2),
-                      Text(subtitle!, style: FbText.small(c)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 57),
+            padding: const EdgeInsets.symmetric(horizontal: 21.6, vertical: 17.6),
+            decoration: c.cardBorder != null
+                ? BoxDecoration(borderRadius: BorderRadius.circular(22), border: Border.all(color: c.cardBorder!, width: 2))
+                : null,
+            child: Row(
+              children: [
+                if (leading != null) ...[leading!, const SizedBox(width: 13.6)],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: TextStyle(fontSize: 15.7, fontWeight: FontWeight.w700, color: c.ink)),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 3.2),
+                        Text(subtitle!, style: FbText.small(c)),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              Icon(FbIcons.chevron, color: c.faint),
-            ],
+                ExcludeSemantics(child: Icon(FbIcons.chevron, color: c.faint)),
+              ],
+            ),
           ),
         ),
       ),
@@ -203,18 +217,40 @@ class FbBanner extends StatelessWidget {
                     onPressed: onAction ?? onTap,
                     style: TextButton.styleFrom(
                       foregroundColor: c.blue,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: const Size(44, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      minimumSize: const Size(57, 57),
                       textStyle: const TextStyle(fontFamily: FbTheme.fontFamily, fontSize: 12.8, fontWeight: FontWeight.w700),
                     ),
                     child: Text(actionLabel!),
                   ),
                 if (onClose != null)
-                  IconButton(
-                    onPressed: onClose,
-                    tooltip: '알림 닫기',
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(FbIcons.close, size: 16, color: c.faint),
+                  Tooltip(
+                    message: '알림 닫기',
+                    child: Semantics(
+                      button: true,
+                      label: '알림 닫기',
+                      onTap: onClose,
+                      excludeSemantics: true,
+                      child: InkWell(
+                        onTap: onClose,
+                        borderRadius: BorderRadius.circular(12),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(FbIcons.close, size: 16, color: c.muted),
+                                const SizedBox(width: 3),
+                                Text('닫기', style: TextStyle(fontSize: 12.2, fontWeight: FontWeight.w700, color: c.muted)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),

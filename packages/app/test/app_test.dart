@@ -84,6 +84,8 @@ void main() {
     addTearDown(sub.cancel);
 
     expect(find.text('거래 보류 중'), findsOneWidget);
+    await tester.ensureVisible(find.text('취소'));
+    await tester.pump();
     await tester.tap(find.text('취소'));
     await settle(tester);
     expect(repo.calls, contains('cancel:req-1:senior'));
@@ -109,6 +111,8 @@ void main() {
     expect(find.text('그래도 진행'), findsOneWidget);
     expect(find.text('그만두기'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('그래도 진행'));
+    await tester.pump();
     await tester.tap(find.text('그래도 진행'));
     await settle(tester);
     expect(repo.calls, contains('reconfirm:req-1:senior:true'));
@@ -129,6 +133,8 @@ void main() {
     final sub = shell.feedback.listen((f) => messages.add(f.message));
     addTearDown(sub.cancel);
 
+    await tester.ensureVisible(find.text('그만두기'));
+    await tester.pump();
     await tester.tap(find.text('그만두기'));
     await settle(tester);
     expect(repo.calls, contains('reconfirm:req-1:senior:false'));
@@ -142,6 +148,8 @@ void main() {
     await settle(tester);
     expect(find.text('본인 재확인 대기'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('그래도 진행'));
+    await tester.pump();
     await tester.tap(find.text('그래도 진행'));
     await settle(tester);
     expect(repo.calls, contains('reconfirm:req-2:senior:true'));
@@ -207,7 +215,7 @@ void main() {
 
     await tester.ensureVisible(find.text('사칭 문자 받기'));
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     await tester.tap(find.text('사칭 문자 받기'));
     await settle(tester);
@@ -220,7 +228,7 @@ void main() {
 
     await tester.ensureVisible(find.text('시연 상대 화면 열기'));
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     await tester.tap(find.text('시연 상대 화면 열기'));
     await settle(tester);
@@ -228,7 +236,7 @@ void main() {
     await tester.tap(find.text('전화 받기'));
     await settle(tester);
     await tester.ensureVisible(find.byKey(const ValueKey('script-phishing-0')));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('script-phishing-0')));
     await settle(tester);
 
@@ -250,6 +258,8 @@ void main() {
       snapshot: demoSnapshotJson(requests: [pendingTransferJson(status: 'reconfirm')]),
     );
     expect(find.text('보호자에게 전화'), findsOneWidget);
+    await tester.ensureVisible(find.text('보호자에게 전화'));
+    await tester.pump();
     await tester.tap(find.text('보호자에게 전화'));
     await settle(tester);
     expect(repo.calls, contains('startCall:senior:guardian:010-••••-1024'));
@@ -272,7 +282,7 @@ void main() {
 
     await tester.ensureVisible(find.text('사칭 문자 받기'));
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     await tester.tap(find.text('사칭 문자 받기'));
     await settle(tester);
@@ -303,7 +313,7 @@ void main() {
 
     await tester.ensureVisible(find.text('정상 문자 받기'));
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     await tester.tap(find.text('정상 문자 받기'));
     await settle(tester);
@@ -330,7 +340,7 @@ void main() {
 
     await tester.ensureVisible(find.text('사칭 문자 받기'));
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     await tester.tap(find.text('사칭 문자 받기'));
     await settle(tester);
@@ -419,7 +429,7 @@ void main() {
     shell.switchTab(AppTab.settings);
     await settle(tester);
     await tester.ensureVisible(find.text('사칭 문자 받기'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('사칭 문자 받기'));
     await settle(tester);
     await tester.tap(find.text('02-0000-1332'));
@@ -489,19 +499,29 @@ void main() {
     );
     await settle(tester);
 
-    shell.say('경고음 테스트', toast: false, vibrate: callWarningVibration, speak: false);
+    shell.say('경고음 테스트', toast: false, vibrate: callWarningVibration, speak: false, alertSound: true);
     await settle(tester);
     expect(toneCalls, hasLength(1));
     expect(toneCalls.single.method, 'playAlertTone');
     final duration = (toneCalls.single.arguments as Map)['durationMs'] as int;
     expect(duration, lessThan(3000));
 
+    // 진동이 짧아도(80ms) 위험 경고(alertSound: true)면 경고음을 냅니다.
+    shell.say('짧은 진동 위험 경고', toast: false, vibrate: const [80, 40, 80], speak: false, alertSound: true);
+    await settle(tester);
+    expect(toneCalls, hasLength(2));
+
+    // alertSound가 false이면 진동이 길어도 경고음을 내지 않습니다.
+    shell.say('진동만', toast: false, vibrate: callWarningVibration, speak: false, alertSound: false);
+    await settle(tester);
+    expect(toneCalls, hasLength(2));
+
     // 소리 설정을 끄면 경고음을 내지 않습니다.
     shell.setPref(PrefKey.sound, false);
     await tester.pump();
-    shell.say('무음 테스트', toast: false, vibrate: callWarningVibration, speak: false);
+    shell.say('무음 테스트', toast: false, vibrate: callWarningVibration, speak: false, alertSound: true);
     await settle(tester);
-    expect(toneCalls, hasLength(1));
+    expect(toneCalls, hasLength(2));
   });
 
   testWidgets('phishing transfer scenario reconfirm screen connects call to guardian', (tester) async {
@@ -510,7 +530,7 @@ void main() {
     await settle(tester);
 
     await tester.ensureVisible(find.text('낯선 계좌로 50만원 송금'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('낯선 계좌로 50만원 송금'));
     await settle(tester);
 

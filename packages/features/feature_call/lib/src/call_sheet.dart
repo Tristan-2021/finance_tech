@@ -324,6 +324,36 @@ class _CallSheetState extends State<CallSheet> {
     }
   }
 
+  Future<void> _switchToGuardianCall({
+    required String? callId,
+    required String memberId,
+    required Guardian? guardian,
+  }) async {
+    final nav = Navigator.of(context);
+    final targetId = callId ?? _callId;
+    if (mounted) setState(() => _busy = true);
+    await _recorder.stop();
+    await _rtc.close();
+    if (targetId != null && !_serverEnded && !_family.isClosed) {
+      _serverEnded = true;
+      try {
+        await _family.endCall(targetId);
+      } on ApiException {
+        // 기존 통화 종료 요청이 실패해도 보호자 통화로 전환합니다.
+      }
+    }
+    await nav.maybePop();
+    final navContext = nav.context;
+    if (!navContext.mounted) return;
+    await openCallSheet(
+      navContext,
+      callerId: memberId == 'guardian' ? 'senior' : memberId,
+      calleeId: 'guardian',
+      peerName: guardian != null && guardian.name.isNotEmpty ? '보호자 ${guardian.name}' : '보호자',
+      peerPhone: guardian?.phone,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<FamilyCubit, FamilyState>(
@@ -395,6 +425,14 @@ class _CallSheetState extends State<CallSheet> {
                 hangupFocus: _hangupFocus,
                 busy: _busy,
                 onHangup: () => _endCall(call?.id),
+                onCallGuardian: () {
+                  final member = effectiveCallerId == 'counterpart' ? effectiveCalleeId : effectiveCallerId;
+                  _switchToGuardianCall(
+                    callId: call?.id,
+                    memberId: member,
+                    guardian: state.snapshot?.guardian,
+                  );
+                },
               ),
               const SizedBox(height: 16),
             ],
@@ -551,6 +589,7 @@ class _CallWarningBanner extends StatelessWidget {
   final FocusNode hangupFocus;
   final bool busy;
   final VoidCallback onHangup;
+  final VoidCallback? onCallGuardian;
 
   const _CallWarningBanner({
     required this.explanation,
@@ -558,6 +597,7 @@ class _CallWarningBanner extends StatelessWidget {
     required this.hangupFocus,
     required this.busy,
     required this.onHangup,
+    this.onCallGuardian,
   });
 
   @override
@@ -567,65 +607,70 @@ class _CallWarningBanner extends StatelessWidget {
       liveRegion: true,
       container: true,
       label: '보이스피싱 위험 경고. $explanation',
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: c.redSoft,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: c.redStrong, width: 2),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Semantics(
-                  label: '위험 경고 아이콘',
-                  child: Icon(FbIcons.alert, size: 24, color: c.redStrong),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '보이스피싱 위험 경고',
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      color: c.redStrong,
+      child: FocusTraversalGroup(
+        policy: OrderedTraversalPolicy(),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: c.redSoft,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: c.redStrong, width: 2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Semantics(
+                    label: '위험 경고',
+                    child: Icon(FbIcons.alert, size: 24, color: c.redStrong),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '보이스피싱 위험 경고',
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: c.redStrong,
+                      ),
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                explanation,
+                style: TextStyle(
+                  fontSize: 15.2,
+                  height: 1.5,
+                  fontWeight: FontWeight.w800,
+                  color: c.ink,
                 ),
+              ),
+              if (reasons.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                for (final reason in reasons)
+                  BulletText(
+                    reason,
+                    style: TextStyle(fontSize: 13.4, height: 1.5, color: c.ink2, fontWeight: FontWeight.w600),
+                  ),
               ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              explanation,
-              style: TextStyle(
-                fontSize: 15.2,
-                height: 1.5,
-                fontWeight: FontWeight.w800,
-                color: c.ink,
-              ),
-            ),
-            if (reasons.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              for (final reason in reasons)
-                BulletText(
-                  reason,
-                  style: TextStyle(fontSize: 13.4, height: 1.5, color: c.ink2, fontWeight: FontWeight.w600),
+              const SizedBox(height: 14),
+              Focus(
+                focusNode: hangupFocus,
+                child: FbButton(
+                  '통화 끊기',
+                  variant: FbButtonVariant.red,
+                  icon: FbIcons.phone,
+                  busy: busy,
+                  onPressed: busy ? null : onHangup,
                 ),
-            ],
-            const SizedBox(height: 14),
-            Focus(
-              focusNode: hangupFocus,
-              child: FbButton(
-                '통화 끊기',
-                variant: FbButtonVariant.red,
-                icon: FbIcons.phone,
-                busy: busy,
-                onPressed: busy ? null : onHangup,
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+              FraudHelpButton(onCallGuardian: onCallGuardian),
+            ],
+          ),
         ),
       ),
     );

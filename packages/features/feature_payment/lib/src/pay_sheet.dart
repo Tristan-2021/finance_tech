@@ -126,13 +126,25 @@ class _PaySheetState extends State<PaySheet> {
             builder: (context) {
               final (label, tone) = payLabels[merchant.check.code] ?? ('', '');
               final color = tone == 'accent' ? c.blue : tone == 'danger' ? c.redStrong : c.muted;
+              final icon = tone == 'accent'
+                  ? FbIcons.check
+                  : tone == 'danger'
+                  ? FbIcons.lock
+                  : FbIcons.alert;
               return FbListRow(
                 leading: TxLogo.initial(merchant.name),
                 title: Text(merchant.name),
                 subtitle: '${merchant.categoryLabel} · ${won(merchant.amount)}',
                 trailing: _busyId == merchant.id
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text(label, style: FbText.note(c).copyWith(color: color)),
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ExcludeSemantics(child: Icon(icon, size: 15, color: color)),
+                          const SizedBox(width: 4),
+                          Text(label, style: FbText.note(c).copyWith(color: color)),
+                        ],
+                      ),
                 onTap: _busyId == null ? () => _pay(merchant) : null,
               );
             },

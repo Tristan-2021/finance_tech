@@ -71,8 +71,8 @@ class ListHead extends StatelessWidget {
             onPressed: onAction,
             style: TextButton.styleFrom(
               foregroundColor: c.muted,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              minimumSize: const Size(44, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              minimumSize: const Size(57, 57),
               textStyle: const TextStyle(fontFamily: FbTheme.fontFamily, fontSize: 13.1, fontWeight: FontWeight.w700),
             ),
             child: Text(action!),

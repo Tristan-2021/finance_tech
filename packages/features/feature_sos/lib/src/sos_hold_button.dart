@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 /// 누르는 동안 왼쪽부터 어두운 막이 차오르고 SOS 배지가 두근거립니다.
 class SosHoldButton extends StatefulWidget {
   final VoidCallback onComplete;
+  final VoidCallback? onTap;
   final VoidCallback? onStart;
   final void Function(double progress)? onCancel;
   final Duration holdDuration;
@@ -15,10 +16,11 @@ class SosHoldButton extends StatefulWidget {
   const SosHoldButton({
     super.key,
     required this.onComplete,
+    this.onTap,
     this.onStart,
     this.onCancel,
     this.holdDuration = const Duration(seconds: 2),
-    this.hint = '위급할 때 길게 누르세요 · 흔들어도 돼요',
+    this.hint = '누르거나 길게 누르세요 · 흔들어도 돼요',
   });
 
   @override
@@ -52,7 +54,13 @@ class _SosHoldButtonState extends State<SosHoldButton> with TickerProviderStateM
     if (!_holding) return;
     final progress = _hold.value;
     _stop();
-    if (progress < 1) widget.onCancel?.call(progress);
+    if (progress < 1) {
+      if (widget.onTap != null && progress < 0.15) {
+        widget.onTap!();
+      } else {
+        widget.onCancel?.call(progress);
+      }
+    }
   }
 
   void _stop() {
@@ -74,7 +82,8 @@ class _SosHoldButtonState extends State<SosHoldButton> with TickerProviderStateM
     final seconds = widget.holdDuration.inMilliseconds / 1000;
     return Semantics(
       button: true,
-      label: 'SOS 계좌 동결. ${seconds.toStringAsFixed(seconds % 1 == 0 ? 0 : 1)}초간 길게 누르세요',
+      label: 'SOS 계좌 동결. 누르거나 ${seconds.toStringAsFixed(seconds % 1 == 0 ? 0 : 1)}초간 길게 누르세요',
+      onTap: widget.onTap,
       onLongPress: widget.onComplete,
       excludeSemantics: true,
       child: Focus(
@@ -94,6 +103,7 @@ class _SosHoldButtonState extends State<SosHoldButton> with TickerProviderStateM
           child: ClipRRect(
             borderRadius: BorderRadius.circular(22),
             child: Container(
+              constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
               color: c.red,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18.4),
               child: Stack(

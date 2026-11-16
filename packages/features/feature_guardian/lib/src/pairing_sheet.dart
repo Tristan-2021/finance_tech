@@ -349,8 +349,9 @@ class _PairingSheetState extends State<PairingSheet> {
                   style: FbText.tabular(TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: c.ink, letterSpacing: 4)),
                 ),
                 const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text('유효 시간 ', style: FbText.small(c)),
                     CountdownText(

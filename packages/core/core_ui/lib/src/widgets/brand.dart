@@ -15,6 +15,7 @@ class Brand extends StatelessWidget {
     final c = context.fb;
     return Semantics(
       label: '핑거벨',
+      image: true,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

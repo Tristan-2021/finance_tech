@@ -36,9 +36,22 @@ class AlertRow extends StatelessWidget {
       leading: TxLogo.initial(m?.name ?? '?'),
       title: Text(alert.title),
       subtitle: parts.where((p) => p.isNotEmpty).join(' · '),
-      trailing: Text(
-        alertLabels[alert.status] ?? '',
-        style: FbText.note(c).copyWith(color: dangerStatuses.contains(alert.status) ? c.redStrong : c.muted),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ExcludeSemantics(
+            child: Icon(
+              dangerStatuses.contains(alert.status) ? FbIcons.alert : FbIcons.check,
+              size: 14,
+              color: dangerStatuses.contains(alert.status) ? c.redStrong : c.muted,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            alertLabels[alert.status] ?? '',
+            style: FbText.note(c).copyWith(color: dangerStatuses.contains(alert.status) ? c.redStrong : c.muted),
+          ),
+        ],
       ),
     );
   }

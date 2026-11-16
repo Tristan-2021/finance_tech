@@ -46,7 +46,8 @@ class CautionModeCard extends StatelessWidget {
           ),
           if (member.cautionUntil != null) ...[
             const SizedBox(height: 6),
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text('남은 시간 ', style: TextStyle(fontSize: 13.6, color: c.ink2)),
                 CountdownText(
@@ -136,7 +137,8 @@ class _MemberHoldCardState extends State<MemberHoldCard> {
           Text(r.easyExplanation, style: TextStyle(fontSize: 13.6, height: 1.55, color: c.ink2)),
           if (!reconfirm && r.expiresAt != null) ...[
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text('남은 시간 ', style: FbText.small(c)),
                 CountdownText(
@@ -169,8 +171,31 @@ class _MemberHoldCardState extends State<MemberHoldCard> {
                       )
                   : null,
             ),
-          ] else
+            const SizedBox(height: 8),
+            FraudHelpButton(
+              onCallGuardian: _busy == null
+                  ? () => openCallSheet(
+                        context,
+                        callerId: widget.member.id,
+                        calleeId: 'guardian',
+                        peerName: '보호자',
+                      )
+                  : null,
+            ),
+          ] else ...[
             FbButton.gray('취소', busy: _busy == 'cancel', onPressed: _busy == null ? _cancel : null),
+            const SizedBox(height: 8),
+            FraudHelpButton(
+              onCallGuardian: _busy == null
+                  ? () => openCallSheet(
+                        context,
+                        callerId: widget.member.id,
+                        calleeId: 'guardian',
+                        peerName: '보호자',
+                      )
+                  : null,
+            ),
+          ],
         ],
       ),
     );
@@ -251,16 +276,29 @@ class LedgerRow extends StatelessWidget {
     return FbListRow(
       leading: TxLogo.initial(t.title),
       title: Text(t.title),
-      subtitle: formatWhen(t.at, now),
-      trailing: Text(
-        '${incoming ? '+' : '-'}${won(t.amount.abs())}',
-        style: FbText.amount(c).copyWith(color: incoming ? c.blue : c.ink),
+      subtitle: '${incoming ? '입금' : '출금'} · ${formatWhen(t.at, now)}',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ExcludeSemantics(
+            child: Icon(
+              incoming ? Icons.south_west_rounded : Icons.north_east_rounded,
+              size: 16,
+              color: incoming ? c.blueStrong : c.ink2,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${incoming ? '+' : '-'}${won(t.amount.abs())}',
+            style: FbText.amount(c).copyWith(color: incoming ? c.blueStrong : c.ink),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// 잔액 + 눈 모양 버튼 (잔액 숨기기).
+/// 잔액 + 눈 모양 버튼 (잔액 숨기기). 아이콘만 두지 않고 글자를 함께 붙입니다.
 class BalanceLine extends StatelessWidget {
   final int balance;
   const BalanceLine(this.balance, {super.key});
@@ -269,6 +307,7 @@ class BalanceLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.fb;
     final hidden = context.select((ShellCubit s) => s.state.prefs.hideBalance);
+    void toggleHide() => context.read<ShellCubit>().togglePref(PrefKey.hideBalance);
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 7.2, 0, 20),
       child: Row(
@@ -280,10 +319,37 @@ class BalanceLine extends StatelessWidget {
               child: Text(wonOrHidden(balance, hidden: hidden), style: FbText.balance(c)),
             ),
           ),
-          IconButton(
-            tooltip: hidden ? '잔액 보기' : '잔액 숨기기',
-            onPressed: () => context.read<ShellCubit>().togglePref(PrefKey.hideBalance),
-            icon: Icon(hidden ? FbIcons.eyeOff : FbIcons.eye, color: c.faint, size: 20),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: hidden ? '잔액 보기' : '잔액 숨기기',
+            child: Semantics(
+              button: true,
+              label: hidden ? '잔액 보기' : '잔액 숨기기',
+              onTap: toggleHide,
+              excludeSemantics: true,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: toggleHide,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(hidden ? FbIcons.eyeOff : FbIcons.eye, color: c.ink2, size: 18),
+                        const SizedBox(width: 4),
+                        Text(
+                          hidden ? '보기' : '숨김',
+                          style: TextStyle(fontSize: 12.6, fontWeight: FontWeight.w700, color: c.ink2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -323,6 +389,13 @@ class GuardianCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.fb;
     final g = data.guardian;
+    void callGuardian() => openCallSheet(
+      context,
+      callerId: member.id,
+      calleeId: 'guardian',
+      peerName: '보호자 ${g.name}',
+      peerPhone: g.phone,
+    );
     return FbCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -333,19 +406,36 @@ class GuardianCard extends StatelessWidget {
             leading: TxLogo.initial(g.name, blue: true),
             title: Text('${g.name} (${member.guardianRelation})'),
             subtitle: '처음 보내는 계좌나 ${won(member.approvalThreshold)} 이상은 보호자 확인 후 진행돼요',
-            trailing: Material(
-              color: c.blueSoft,
-              shape: const CircleBorder(),
-              child: IconButton(
-                tooltip: '보호자에게 전화',
-                onPressed: () => openCallSheet(
-                  context,
-                  callerId: member.id,
-                  calleeId: 'guardian',
-                  peerName: '보호자 ${g.name}',
-                  peerPhone: g.phone,
+            trailing: Tooltip(
+              message: '보호자에게 전화',
+              child: Material(
+                color: c.blueSoft,
+                borderRadius: BorderRadius.circular(14),
+                child: Semantics(
+                  button: true,
+                  label: '보호자에게 전화',
+                  onTap: callGuardian,
+                  excludeSemantics: true,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: callGuardian,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(FbIcons.phone, color: c.blueStrong, size: 18),
+                            const SizedBox(width: 4),
+                            Text('전화', style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w800, color: c.blueStrong)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                icon: Icon(FbIcons.phone, color: c.blue, size: 18),
               ),
             ),
           ),
@@ -374,7 +464,42 @@ class SosSlot extends StatelessWidget {
       );
     }
     final shell = context.read<ShellCubit>();
+    Future<void> confirmTapFreeze() async {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) {
+          final c = ctx.fb;
+          return AlertDialog(
+            icon: ExcludeSemantics(child: Icon(FbIcons.lock, color: c.redStrong, size: 30)),
+            title: Text('모든 계좌를 동결할까요?', style: TextStyle(fontWeight: FontWeight.w800, color: c.redStrong)),
+            content: Text(
+              '확인하시면 모든 계좌 출금이 24시간 멈추고, 보호자께 바로 알립니다.',
+              style: TextStyle(height: 1.55, color: c.ink),
+            ),
+            actions: [
+              SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FbButton('모든 계좌 동결', variant: FbButtonVariant.red, onPressed: () => Navigator.of(ctx).pop(true)),
+                    const SizedBox(height: 8),
+                    FbButton.gray('취소', onPressed: () => Navigator.of(ctx).pop(false)),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      );
+      if (ok == true && context.mounted) {
+        await triggerSos(context, member.id, SosTrigger.longPress);
+      }
+    }
+
     final button = SosHoldButton(
+      onTap: confirmTapFreeze,
       onStart: () => shell.say('', toast: false, vibrate: const [30], speak: false),
       onCancel: (_) => shell.say('조금 더 길게 눌러 주세요 (2초)', speak: false, vibrate: const []),
       onComplete: () => triggerSos(context, member.id, SosTrigger.longPress),
@@ -384,7 +509,7 @@ class SosSlot extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const CardTitle('SOS 계좌 동결', desc: '길게 누르거나 휴대폰을 3초 동안 세게 흔들면 모든 계좌 출금이 24시간 멈추고, 보호자에게 바로 알려요.'),
+          const CardTitle('SOS 계좌 동결', desc: 'SOS 계좌 동결 버튼을 누르거나 길게 누르고, 또는 휴대폰을 3초 동안 세게 흔들면 모든 계좌 출금이 24시간 멈추고 보호자에게 바로 알려요.'),
           button,
         ],
       ),
@@ -408,19 +533,29 @@ class SmsEntryCard extends StatelessWidget {
       leading: TxLogo(icon: dangerCount > 0 ? FbIcons.alert : FbIcons.sms, blue: dangerCount == 0),
       title: '문자',
       subtitle: sub,
-      onTap: () => openSmsSheet(
-        context,
-        member.id,
-        onTapPhone: (phone) {
-          Navigator.of(context).maybePop();
-          openCallSheet(
+      onTap: () {
+        final g = context.read<FamilyCubit>().state.snapshot?.guardian;
+        openSmsSheet(
+          context,
+          member.id,
+          onTapPhone: (phone) {
+            Navigator.of(context).maybePop();
+            openCallSheet(
+              context,
+              callerId: member.id,
+              calleeId: 'counterpart',
+              peerPhone: phone,
+            );
+          },
+          onCallGuardian: () => openCallSheet(
             context,
             callerId: member.id,
-            calleeId: 'counterpart',
-            peerPhone: phone,
-          );
-        },
-      ),
+            calleeId: 'guardian',
+            peerName: g != null ? '보호자 ${g.name}' : '보호자',
+            peerPhone: g?.phone,
+          ),
+        );
+      },
     );
   }
 }

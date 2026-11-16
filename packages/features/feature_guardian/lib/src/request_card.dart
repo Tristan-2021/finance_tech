@@ -69,7 +69,9 @@ class _RequestCardState extends State<RequestCard> {
             ),
             const SizedBox(height: 12),
           ],
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 2,
             children: [
               Icon(FbIcons.bell, size: 15, color: c.muted),
               const SizedBox(width: 5),

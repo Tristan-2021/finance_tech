@@ -60,6 +60,7 @@ from .models import (
     PairingCode,
     RiskAssessment,
     SmsMessage,
+    UserFeedback,
 )
 
 MAX_LIST = 40
@@ -2722,3 +2723,33 @@ class FamilyService:
             {"id": r.id, "at": iso(r.at), "channel": r.channel, "action": r.action, "target": r.target, "message": r.message}
             for r in rows
         ]
+
+    # ------------------------------------------------------------------ 불편한 점 보내기 (기획서 7.1 Ⅲ-③)
+    def submit_feedback(self, member_id: str, category: str, message: str = "") -> dict[str, Any]:
+        clean_category = (category or "").strip()
+        if not clean_category:
+            raise DomainError("category", "불편한 점 종류를 선택해 주세요.")
+        clean_message = (message or "").strip()
+        if len(clean_message) > 300:
+            raise DomainError("message", "한 줄 의견은 300자 이내로 적어 주세요.")
+        # 등록된 사용자이거나 guardian이면 통과, 알 수 없는 id면 오류
+        self.member(member_id)
+        row = UserFeedback(
+            id=uid("fb"),
+            member_id=member_id,
+            category=clean_category[:40],
+            message=clean_message,
+            created_at=clock.now(),
+        )
+        self.s.add(row)
+        self.s.flush()
+        return {
+            "status": "saved",
+            "feedback": {
+                "id": row.id,
+                "member_id": row.member_id,
+                "category": row.category,
+                "message": row.message,
+                "created_at": iso(row.created_at),
+            },
+        }

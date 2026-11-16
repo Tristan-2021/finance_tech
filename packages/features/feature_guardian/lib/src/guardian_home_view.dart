@@ -122,7 +122,8 @@ class _GuardianCautionCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('주의 모드 남은 시간 ', style: TextStyle(fontSize: 13.6, color: c.ink2)),
               if (member.cautionUntil != null)
@@ -246,13 +247,25 @@ class _FamilyRow extends StatelessWidget {
         ? '주의 모드'
         : '정상';
     final danger = m.isFrozen || m.cautionMode;
+    final statusIcon = m.isFrozen
+        ? FbIcons.lock
+        : m.cautionMode
+        ? FbIcons.alert
+        : FbIcons.check;
     return FbListRow(
       leading: TxLogo.initial(m.name),
       title: Text(m.label),
       subtitle: '${data.mode(m.mode).label} · $detail',
-      trailing: Text(
-        statusLabel,
-        style: FbText.note(c).copyWith(color: danger ? c.redStrong : c.muted),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ExcludeSemantics(child: Icon(statusIcon, size: 14, color: danger ? c.redStrong : c.muted)),
+          const SizedBox(width: 4),
+          Text(
+            statusLabel,
+            style: FbText.note(c).copyWith(color: danger ? c.redStrong : c.muted),
+          ),
+        ],
       ),
       chevron: true,
       onTap: () => context.read<ShellCubit>().switchTab(AppTab.safety),

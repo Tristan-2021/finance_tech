@@ -55,7 +55,7 @@ class PersonaSwitch extends StatelessWidget {
   }
 }
 
-/// 알림 종 (확인할 것이 있으면 빨간 점).
+/// 알림 종 (확인할 것이 있으면 빨간 점). 아이콘만 두지 않고 글자를 함께 붙입니다.
 class BellButton extends StatelessWidget {
   const BellButton({super.key});
 
@@ -67,20 +67,48 @@ class BellButton extends StatelessWidget {
     final memberId = shell.memberId;
     final dot = data != null &&
         (memberId == null ? data.pending().isNotEmpty : (data.memberOrNull(memberId)?.notices.isNotEmpty ?? false));
-    return IconButton(
-      tooltip: '알림',
-      onPressed: () => context.read<ShellCubit>().switchTab(memberId == null ? AppTab.alerts : AppTab.history),
-      icon: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(FbIcons.bell, color: c.ink2, size: 23),
-          if (dot)
-            Positioned(
-              top: 0,
-              right: 1,
-              child: Container(width: 7, height: 7, decoration: BoxDecoration(color: c.red, shape: BoxShape.circle)),
+    void openAlerts() => context.read<ShellCubit>().switchTab(memberId == null ? AppTab.alerts : AppTab.history);
+    return Tooltip(
+      message: dot ? '새 알림 있음' : '알림 확인',
+      child: Semantics(
+        button: true,
+        label: dot ? '새 알림 있음' : '알림 확인',
+        onTap: openAlerts,
+        excludeSemantics: true,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: openAlerts,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(FbIcons.bell, color: c.ink2, size: 21),
+                      if (dot)
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(color: c.red, shape: BoxShape.circle),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text('새 알림', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.ink2)),
+                ],
+              ),
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -157,9 +185,19 @@ class _MobileLayoutState extends State<MobileLayout> {
               child: Row(
                 children: [
                   Brand(showWordmark: !narrow),
-                  const Spacer(),
-                  const PersonaSwitch(),
-                  const BellButton(),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        PersonaSwitch(),
+                        BellButton(),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -179,8 +217,8 @@ class _MobileLayoutState extends State<MobileLayout> {
           ),
           child: SafeArea(
             top: false,
-            child: SizedBox(
-              height: 64,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 64),
               child: Row(
                 children: [
                   for (final (tab, label, icon) in navFor(shell.persona))
@@ -218,17 +256,25 @@ class _BottomNavItem extends StatelessWidget {
       selected: selected,
       button: true,
       label: label,
+      onTap: onTap,
       excludeSemantics: true,
       child: InkResponse(
         onTap: onTap,
         radius: 36,
-        child: SizedBox.expand(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 23, color: color),
               const SizedBox(height: 4),
-              Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
+              ),
             ],
           ),
         ),

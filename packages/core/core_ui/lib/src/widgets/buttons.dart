@@ -61,9 +61,9 @@ class _FbButtonState extends State<FbButton> {
               onTap: enabled ? widget.onPressed : null,
               onHighlightChanged: (v) => setState(() => _down = v),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 49.6),
+                constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
@@ -71,7 +71,7 @@ class _FbButtonState extends State<FbButton> {
                       if (widget.busy)
                         SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: fg))
                       else if (widget.icon != null)
-                        Icon(widget.icon, size: 19, color: fg),
+                        ExcludeSemantics(child: Icon(widget.icon, size: 19, color: fg)),
                       if (widget.busy || widget.icon != null) const SizedBox(width: 6),
                       Flexible(
                         child: ExcludeSemantics(
@@ -79,6 +79,8 @@ class _FbButtonState extends State<FbButton> {
                           child: Text(
                             widget.label,
                             style: FbText.button.copyWith(color: fg),
+                            maxLines: 2,
+                            softWrap: true,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
                           ),
@@ -107,7 +109,7 @@ class FbButtonRow extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     children: [
       for (var i = 0; i < children.length; i++) ...[
-        if (i > 0) const SizedBox(width: 8),
+        if (i > 0) const SizedBox(width: 10),
         Expanded(flex: flex?[i] ?? 1, child: children[i]),
       ],
     ],
@@ -130,8 +132,8 @@ class FbTextButton extends StatelessWidget {
       onPressed: onPressed,
       style: TextButton.styleFrom(
         foregroundColor: color ?? c.muted,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        minimumSize: const Size(44, 36),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        minimumSize: const Size(57, 57),
         textStyle: TextStyle(fontFamily: FbTheme.fontFamily, fontSize: fontSize, fontWeight: FontWeight.w700),
       ),
       child: Text(label),

@@ -80,28 +80,71 @@ class SheetHead extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.fb;
+    final closeAction = onClose ?? () => Navigator.of(context).maybePop();
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: SizedBox(
-        height: 40,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 57),
         child: Row(
           children: [
             if (onBack != null)
-              Transform.translate(
-                offset: const Offset(-8, 0),
-                child: IconButton(
-                  onPressed: onBack,
-                  tooltip: '뒤로',
-                  icon: Icon(FbIcons.back, color: c.ink2, size: 26),
+              Tooltip(
+                message: '뒤로',
+                child: Semantics(
+                  button: true,
+                  label: '뒤로',
+                  onTap: onBack,
+                  excludeSemantics: true,
+                  child: InkWell(
+                    onTap: onBack,
+                    borderRadius: BorderRadius.circular(12),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(FbIcons.back, color: c.ink2, size: 22),
+                            Text('뒤로', style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w700, color: c.ink2)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
+            if (onBack != null) const SizedBox(width: 4),
             Expanded(
               child: Semantics(header: true, child: Text(title, style: FbText.sheetTitle(c))),
             ),
-            IconButton(
-              onPressed: onClose ?? () => Navigator.of(context).maybePop(),
-              tooltip: '닫기',
-              icon: Icon(FbIcons.close, color: c.ink2, size: 22),
+            Tooltip(
+              message: '닫기',
+              child: Semantics(
+                button: true,
+                label: '닫기',
+                onTap: closeAction,
+                excludeSemantics: true,
+                child: InkWell(
+                  onTap: closeAction,
+                  borderRadius: BorderRadius.circular(12),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(FbIcons.close, color: c.ink2, size: 18),
+                          const SizedBox(width: 4),
+                          Text('닫기', style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w700, color: c.ink2)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),

@@ -14,31 +14,41 @@ class FbToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.fb;
+    final toggle = onChanged == null ? null : () => onChanged!(!value);
     return Semantics(
       toggled: value,
+      enabled: onChanged != null,
       label: label,
       button: true,
+      onTap: toggle,
+      excludeSemantics: true,
       child: GestureDetector(
-        onTap: onChanged == null ? null : () => onChanged!(!value),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 48,
-          height: 28,
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: value ? c.blue : const Color(0xFFD1D6DB),
-            borderRadius: BorderRadius.circular(99),
-          ),
-          child: AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              width: 22,
-              height: 22,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: Color(0x22000000), blurRadius: 3, offset: Offset(0, 1))],
+        behavior: HitTestBehavior.opaque,
+        onTap: toggle,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 48,
+              height: 28,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: value ? c.blue : c.faint,
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 200),
+                alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: Color(0x22000000), blurRadius: 3, offset: Offset(0, 1))],
+                  ),
+                ),
               ),
             ),
           ),
@@ -85,7 +95,10 @@ class FbSegmented<T> extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
-        children: compact ? children : [for (final w in children) Expanded(child: w)],
+        children: [
+          for (final w in children)
+            compact ? Flexible(fit: FlexFit.loose, child: w) : Expanded(child: w),
+        ],
       ),
     );
   }
@@ -110,7 +123,9 @@ class _SegButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 4, vertical: compact ? 6 : 9.6),
+          constraints: BoxConstraints(minWidth: compact ? 44 : 57, minHeight: compact ? 48 : 57),
+          alignment: Alignment.center,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 6, vertical: compact ? 8 : 10),
           decoration: BoxDecoration(
             color: selected ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(compact ? 8 : 9),
@@ -120,6 +135,7 @@ class _SegButton extends StatelessWidget {
             label,
             textAlign: TextAlign.center,
             maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: compact ? 12.5 : 14.1,
               fontWeight: FontWeight.w700,
@@ -144,28 +160,37 @@ class FbFilterChips extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.fb;
     return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         for (final (key, label) in items)
           Semantics(
             selected: key == active,
             button: true,
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => onSelected(key),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 15.2, vertical: 8.8),
+                constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
-                  color: key == active ? c.ink : const Color(0xFFE6EAEF),
+                  color: key == active ? c.ink : c.soft,
                   borderRadius: BorderRadius.circular(99),
+                  border: c.cardBorder != null ? Border.all(color: c.cardBorder!) : null,
                 ),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13.6,
-                    fontWeight: FontWeight.w700,
-                    color: key == active ? Colors.white : c.ink2,
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13.6,
+                        fontWeight: FontWeight.w700,
+                        color: key == active ? Colors.white : c.ink2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -202,6 +227,7 @@ class FbOptionRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
+          constraints: const BoxConstraints(minHeight: 57),
           padding: const EdgeInsets.symmetric(vertical: 13.6),
           decoration: BoxDecoration(border: divider ? Border(top: BorderSide(color: c.line)) : null),
           child: Row(

@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../shell/scenarios.dart';
 import '../shell/shake_watcher.dart';
+import 'settings_sheets.dart';
 
 /// 설정: 큰 글씨·고대비·음성 안내·흔들기 SOS·잔액 숨기기, 서버 연결과 연동 기록.
 class SettingsView extends StatefulWidget {
@@ -56,8 +57,10 @@ class _SettingsViewState extends State<SettingsView> {
     final c = context.fb;
     final shell = context.read<ShellCubit>();
     final prefs = context.select((ShellCubit s) => s.state.prefs);
-    final activeMemberId = context.select((ShellCubit s) => s.state.memberId) ?? 'senior';
+    final persona = context.select((ShellCubit s) => s.state.persona);
+    final activeMemberId = persona.memberId ?? 'senior';
     final snap = context.select((FamilyCubit f) => f.state.snapshot);
+    final feedbackAuthorId = persona.memberId ?? snap?.guardian.id ?? persona.name;
     final pairedMember = snap?.memberOrNull(activeMemberId);
     final live = context.select((FamilyCubit f) => f.state.live);
     final isWeb = FbLayout.isWebOf(context);
@@ -69,8 +72,12 @@ class _SettingsViewState extends State<SettingsView> {
       value: prefs[key],
       divider: divider,
       onChanged: (v) {
-        shell.setPref(key, v);
-        if (key == PrefKey.voice && v) shell.say('음성 안내를 켰어요', toast: false);
+        if (key == PrefKey.easyMode) {
+          shell.setEasyMode(v);
+        } else {
+          shell.setPref(key, v);
+        }
+        if (key == PrefKey.voice && v) shell.say('음성 안내를 켰어요');
       },
     );
 
@@ -81,15 +88,40 @@ class _SettingsViewState extends State<SettingsView> {
           padding: const EdgeInsets.symmetric(horizontal: 21.6, vertical: 6.4),
           child: Column(
             children: [
-              row(PrefKey.largeText, '큰 글씨', '글자와 버튼을 더 크게 보여줘요', divider: false),
+              row(PrefKey.easyMode, '쉬운 화면', '큰 버튼과 꼭 필요한 메뉴만 한눈에 보여줘요', divider: false),
+              row(PrefKey.largeText, '큰 글씨', '글자와 버튼을 더 크게 보여줘요'),
               row(PrefKey.highContrast, '고대비 모드', '글자와 테두리를 더 진하게 보여줘요'),
               row(PrefKey.voice, '음성 안내', '중요한 안내를 소리로 읽어줘요'),
+              row(PrefKey.sound, '경고음', '위험 경고가 뜰 때 짧은 경고음을 울려요'),
+              row(PrefKey.haptics, '진동', '경고나 확인이 필요할 때 진동으로 알려요'),
               row(
                 PrefKey.shake,
                 '흔들어서 SOS',
                 motionSupported ? '휴대폰을 3초 동안 세게 흔들면 바로 동결돼요 (2.5g 이상)' : '이 기기는 흔들기 감지를 지원하지 않아요 · 휴대폰에서 써 보세요',
               ),
               row(PrefKey.hideBalance, '잔액 숨기기', '다른 사람에게 금액이 보이지 않아요'),
+            ],
+          ),
+        ),
+        FbCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const CardTitle('도움말 · 의견 보내기'),
+              FbListRow(
+                leading: const TxLogo(icon: FbIcons.sparkle, blue: true),
+                title: const Text('사용 방법'),
+                subtitle: '위험 문자 경고 · 거래 보류 · SOS 안내 3장을 살펴봐요',
+                chevron: true,
+                onTap: () => openHowToUseSheet(context),
+              ),
+              FbListRow(
+                leading: const TxLogo(icon: FbIcons.sms, blue: true),
+                title: const Text('불편한 점 보내기'),
+                subtitle: '버튼 선택과 한 줄 의견으로 불편한 점을 알려 주세요',
+                chevron: true,
+                onTap: () => openFeedbackSheet(context, memberId: feedbackAuthorId),
+              ),
             ],
           ),
         ),

@@ -44,4 +44,39 @@ void main() {
     shell.goto(Persona.senior);
     expect(shell.state.tab, AppTab.history);
   });
+
+  test('easy mode and prompt state persist and restore via LocalPrefsStore', () async {
+    final store = MemoryPrefsStore();
+    final first = ShellCubit(const ShellState(), store);
+    await first.loadPrefs();
+    expect(first.state.prefs.easyMode, isFalse);
+    expect(first.state.prefs.easyModePrompted, isFalse);
+
+    first.setEasyMode(true);
+    expect(first.state.prefs.easyMode, isTrue);
+    expect(first.state.prefs.easyModePrompted, isTrue);
+    await first.close();
+
+    final second = ShellCubit(const ShellState(), store);
+    await second.loadPrefs();
+    expect(second.state.prefs.easyMode, isTrue);
+    expect(second.state.prefs.easyModePrompted, isTrue);
+
+    second.answerEasyModePrompt(false);
+    await second.close();
+
+    final third = ShellCubit(const ShellState(), store);
+    await third.loadPrefs();
+    expect(third.state.prefs.easyMode, isFalse);
+    expect(third.state.prefs.easyModePrompted, isTrue);
+
+    third.reset();
+    await third.close();
+
+    final fourth = ShellCubit(const ShellState(), store);
+    await fourth.loadPrefs();
+    expect(fourth.state.prefs.easyMode, isFalse);
+    expect(fourth.state.prefs.easyModePrompted, isFalse);
+    await fourth.close();
+  });
 }

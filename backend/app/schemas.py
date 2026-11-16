@@ -137,6 +137,14 @@ class PairingConnectBody(BaseModel):
     consented: bool = False
 
 
+class FeedbackBody(BaseModel):
+    """설정 › 불편한 점 보내기 요청 (기획서 7.1 Ⅲ-③)."""
+
+    member_id: str = "senior"
+    category: str = Field(min_length=1, max_length=40)
+    message: str = Field(default="", max_length=300)
+
+
 class PaymentBody(BaseModel):
     member_id: str
     merchant_id: str

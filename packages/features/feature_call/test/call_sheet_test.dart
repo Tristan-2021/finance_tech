@@ -430,4 +430,83 @@ void main() {
     await recorder.stop();
     expect(fakeRecorder.disposed, isTrue);
   });
+
+  testWidgets('switching from scam warning to guardian call closes previous CallSheet completely', (tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final repo = FakeFamilyRepository(demoSnapshotJson());
+    final family = FamilyCubit(repo, pollInterval: null);
+    await family.start();
+    final shell = ShellCubit();
+    addTearDown(family.close);
+    addTearDown(shell.close);
+
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: family),
+          BlocProvider.value(value: shell),
+        ],
+        child: MaterialApp(
+          theme: FbTheme.build(),
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => FbButton(
+                '통화 시작',
+                onPressed: () => openCallSheet(
+                  context,
+                  localParticipantId: 'senior',
+                  callerId: 'senior',
+                  calleeId: 'counterpart',
+                  peerPhone: '02-0000-1332',
+                  peerName: '금융감독원 민원실(사칭)',
+                  rtcSession: NoopRtcPeerSession(),
+                  chunkRecorder: NoopChunkRecorder(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+
+    await tester.tap(find.text('통화 시작'));
+    await settle(tester);
+    final scamCallId = family.state.data.activeCall!.id;
+    await family.answerCall(scamCallId);
+    await settle(tester);
+
+    repo.emitEvent(
+      FamilyEvent(
+        type: 'call_warning',
+        message: '사기 의심 통화예요.',
+        memberId: 'senior',
+        callId: scamCallId,
+        level: 'danger',
+        explanation: '사기 의심 통화예요.',
+      ),
+    );
+    await settle(tester);
+    expect(find.text('보이스피싱 위험 경고'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('fraud-help-button')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('fraud-help-button')));
+    await settle(tester);
+
+    await tester.ensureVisible(find.textContaining('보호자에게 전화'));
+    await settle(tester);
+    await tester.tap(find.textContaining('보호자에게 전화'));
+    await settle(tester);
+
+    expect(repo.calls, contains('endCall:$scamCallId'));
+    expect(repo.calls, contains('startCall:senior:guardian:010-••••-1024'));
+    // 기존 사기 통화 시트가 아래에 남지 않고 보호자 통화 시트 하나만 남아 있어야 합니다.
+    expect(find.byType(CallSheet), findsOneWidget);
+    expect(find.text('보이스피싱 위험 경고'), findsNothing);
+    expect(find.text('가족 안심 통화 · 통화 내용을 분석하지 않아요'), findsOneWidget);
+  });
 }

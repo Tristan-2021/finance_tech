@@ -331,6 +331,12 @@ class _SavingsCancelSheetState extends State<SavingsCancelSheet> {
           _resultCalc = res.calculation;
           _step = _SavingsStep.caution;
         });
+        shell.say(
+          '주의가 필요해요 · ${res.risk?.easyExplanation ?? '주의 모드 중 적금을 해지하려고 해요. 다시 한 번 확인해 주세요.'}',
+          toast: false,
+          vibrate: const [60],
+          speak: true,
+        );
         return;
       }
       if (res.isPending) {
@@ -607,6 +613,8 @@ class _SavingsCancelSheetState extends State<SavingsCancelSheet> {
             FbButton('확인했어요, 해지 진행', busy: _busy, onPressed: () => _submitCancel(answer: _questionAnswer, confirmed: true)),
           ],
         ),
+        const SizedBox(height: 8),
+        FraudHelpButton(onCallGuardian: () => _callGuardian(context, widget.memberId)),
       ],
     );
   }
@@ -665,6 +673,7 @@ class _LoanSheetState extends State<LoanSheet> {
   String? _requestId;
 
   final _customAmountCtrl = TextEditingController(text: '5,000,000');
+  final _amountFocus = FocusNode();
 
   @override
   void initState() {
@@ -677,6 +686,7 @@ class _LoanSheetState extends State<LoanSheet> {
   void dispose() {
     _readTimer?.cancel();
     _customAmountCtrl.dispose();
+    _amountFocus.dispose();
     super.dispose();
   }
 
@@ -762,7 +772,13 @@ class _LoanSheetState extends State<LoanSheet> {
           _cautionRisk = res.risk;
           _step = _LoanStep.dangerLimit;
         });
-        shell.say('대출 한도 조회에서 위험이 감지되어 보호자에게 알렸어요', toast: false, vibrate: const [80, 40, 80]);
+        shell.say(
+          '대출 한도 조회에서 위험이 감지되어 보호자에게 알렸어요 · ${res.risk?.easyExplanation ?? ''}',
+          toast: false,
+          vibrate: const [80, 40, 80],
+          speak: true,
+          alertSound: true,
+        );
         return;
       }
       if (res.isCaution) {
@@ -772,6 +788,12 @@ class _LoanSheetState extends State<LoanSheet> {
           _cautionRisk = res.risk;
           _step = _LoanStep.caution;
         });
+        shell.say(
+          '주의가 필요해요 · ${res.risk?.easyExplanation ?? ''}',
+          toast: false,
+          vibrate: const [60],
+          speak: true,
+        );
         return;
       }
       setState(() {
@@ -788,9 +810,10 @@ class _LoanSheetState extends State<LoanSheet> {
   }
 
   Future<void> _proceedToApplyComprehension(LoanProduct p) async {
-    final parsed = int.tryParse(digitsOnly(_customAmountCtrl.text)) ?? _selectedAmount;
+    final parsed = int.tryParse(digitsOnly(_customAmountCtrl.text)) ?? 0;
     if (parsed < p.minAmount || parsed > p.maxLimit) {
-      setState(() => _amountError = '대출 금액은 ${won(p.minAmount)}~${won(p.maxLimit)} 사이로 골라 주세요.');
+      setState(() => _amountError = '대출 금액은 ${won(p.minAmount)}~${won(p.maxLimit)} 사이로 입력해 주세요.');
+      _amountFocus.requestFocus();
       return;
     }
     _selectedAmount = parsed;
@@ -834,6 +857,12 @@ class _LoanSheetState extends State<LoanSheet> {
           _quote = res.quote ?? _quote;
           _step = _LoanStep.caution;
         });
+        shell.say(
+          '주의가 필요해요 · ${res.risk?.easyExplanation ?? ''}',
+          toast: false,
+          vibrate: const [60],
+          speak: true,
+        );
         return;
       }
       if (res.isPending) {
@@ -1119,20 +1148,23 @@ class _LoanSheetState extends State<LoanSheet> {
         const SizedBox(height: 10),
         TextField(
           controller: _customAmountCtrl,
+          focusNode: _amountFocus,
           keyboardType: TextInputType.number,
           inputFormatters: const [ThousandsFormatter()],
-          decoration: const InputDecoration(labelText: '직접 입력 (원)', suffixText: '원'),
+          decoration: InputDecoration(
+            labelText: '직접 입력 (원)',
+            hintText: '예: 5,000,000',
+            suffixText: '원',
+            errorText: _amountError,
+          ),
           onChanged: (v) {
+            if (_amountError != null) setState(() => _amountError = null);
             final parsed = int.tryParse(digitsOnly(v));
             if (parsed != null && parsed >= p.minAmount && parsed <= p.maxLimit) {
               _selectAmount(parsed, p);
             }
           },
         ),
-        if (_amountError != null) ...[
-          const SizedBox(height: 6),
-          Text(_amountError!, style: TextStyle(fontSize: 12.8, fontWeight: FontWeight.w600, color: c.redStrong)),
-        ],
         const SizedBox(height: 12),
         _InfoCardBox(
           children: [
@@ -1208,6 +1240,8 @@ class _LoanSheetState extends State<LoanSheet> {
             ),
           ],
         ),
+        const SizedBox(height: 8),
+        FraudHelpButton(onCallGuardian: () => _callGuardian(context, widget.memberId)),
       ],
     );
   }
@@ -1229,6 +1263,8 @@ class _LoanSheetState extends State<LoanSheet> {
           icon: FbIcons.phone,
           onPressed: () => _callGuardian(context, widget.memberId),
         ),
+        const SizedBox(height: 8),
+        FraudHelpButton(onCallGuardian: () => _callGuardian(context, widget.memberId), guardianName: data.guardian.name),
         const SizedBox(height: 8),
         FbButton.gray('닫기', onPressed: _close),
       ],
@@ -1376,8 +1412,8 @@ class _AskGuardianFooterButton extends StatelessWidget {
         icon: Icon(FbIcons.phone, size: 18, color: c.blue),
         label: Text('보호자에게 물어보기', style: TextStyle(color: c.blue, fontWeight: FontWeight.w700)),
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size.fromHeight(50),
-          side: BorderSide(color: c.line),
+          minimumSize: const Size(57, 57),
+          side: BorderSide(color: c.cardBorder ?? c.faint),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
@@ -1625,6 +1661,11 @@ class _HoldWaitingPanelState extends State<_HoldWaitingPanel> {
             icon: FbIcons.phone,
             onPressed: () => _callGuardian(context, widget.member.id),
           ),
+          const SizedBox(height: 8),
+          FraudHelpButton(
+            onCallGuardian: () => _callGuardian(context, widget.member.id),
+            guardianName: widget.data.guardian.name,
+          ),
         ],
       );
     }
@@ -1638,8 +1679,9 @@ class _HoldWaitingPanelState extends State<_HoldWaitingPanel> {
           body: '${req?.easyExplanation ?? ''}\n${widget.data.guardian.name}님께 알림을 보냈어요.',
         ),
         if (req?.expiresAt != null)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('보류 남은 시간 · ', style: FbText.hint(c)),
               CountdownText(
@@ -1658,6 +1700,11 @@ class _HoldWaitingPanelState extends State<_HoldWaitingPanel> {
         FbButton(
           '보호자 화면에서 확인하기 (시연)',
           onPressed: () => context.read<ShellCubit>().goto(Persona.guardian, AppTab.home),
+        ),
+        const SizedBox(height: 8),
+        FraudHelpButton(
+          onCallGuardian: () => _callGuardian(context, widget.member.id),
+          guardianName: widget.data.guardian.name,
         ),
         const SizedBox(height: 8),
         FbButton.gray('닫기', onPressed: widget.onClose),

@@ -121,24 +121,30 @@ class FbRail extends StatelessWidget {
   final double fraction;
   final Color? color;
   final double height;
+  final String? semanticLabel;
 
-  const FbRail({super.key, required this.fraction, this.color, this.height = 6.4});
+  const FbRail({super.key, required this.fraction, this.color, this.height = 6.4, this.semanticLabel});
 
   @override
   Widget build(BuildContext context) {
     final c = context.fb;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(99),
-      child: Container(
-        height: height,
-        color: c.soft,
-        alignment: Alignment.centerLeft,
-        child: AnimatedFractionallySizedBox(
-          duration: const Duration(milliseconds: 350),
-          widthFactor: fraction.clamp(0, 1),
-          heightFactor: 1,
-          child: Container(
-            decoration: BoxDecoration(color: color ?? c.blue, borderRadius: BorderRadius.circular(99)),
+    final pct = (fraction.clamp(0, 1) * 100).round();
+    return Semantics(
+      label: semanticLabel ?? '진행률',
+      value: '$pct%',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(99),
+        child: Container(
+          height: height,
+          color: c.soft,
+          alignment: Alignment.centerLeft,
+          child: AnimatedFractionallySizedBox(
+            duration: const Duration(milliseconds: 350),
+            widthFactor: fraction.clamp(0, 1),
+            heightFactor: 1,
+            child: Container(
+              decoration: BoxDecoration(color: color ?? c.blue, borderRadius: BorderRadius.circular(99)),
+            ),
           ),
         ),
       ),
@@ -146,7 +152,7 @@ class FbRail extends StatelessWidget {
   }
 }
 
-/// 위험 사유 상자 (.risk-box).
+/// 위험 사유 상자 (.risk-box). 색 + 글자 + 아이콘으로 표시합니다.
 class RiskBox extends StatelessWidget {
   final String title;
   final bool danger;
@@ -164,9 +170,24 @@ class RiskBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(fontSize: 13.4, fontWeight: FontWeight.w700, color: danger ? c.redStrong : c.ink),
+          Row(
+            children: [
+              Semantics(
+                label: danger ? '위험 경고' : '안내',
+                child: Icon(
+                  danger ? Icons.warning_amber_rounded : Icons.verified_user_outlined,
+                  size: 17,
+                  color: danger ? c.redStrong : c.blueStrong,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(fontSize: 13.4, fontWeight: FontWeight.w700, color: danger ? c.redStrong : c.ink),
+                ),
+              ),
+            ],
           ),
           if (items.isNotEmpty) const SizedBox(height: 5.6),
           for (final item in items) BulletText(item, style: TextStyle(fontSize: 13.1, height: 1.7, color: c.ink2)),

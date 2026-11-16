@@ -313,3 +313,15 @@ class PairingCode(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
     used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+
+class UserFeedback(Base):
+    """설정 › 불편한 점 보내기 의견 저장 테이블 (기획서 7.1 Ⅲ-③)."""
+
+    __tablename__ = "user_feedback"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    member_id: Mapped[str] = mapped_column(String(32), index=True)
+    category: Mapped[str] = mapped_column(String(40))
+    message: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)

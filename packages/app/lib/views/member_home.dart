@@ -1,12 +1,14 @@
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:feature_call/feature_call.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'easy_home.dart';
 import 'member_widgets.dart';
 
-/// 어르신 홈: 큰 버튼 [송금] [결제] [조회]와 [SOS], 주의 모드·보류 표시 (기획서 5.1, 5.7).
+/// 어르신 일반 홈: 보호자 본인 계좌 구성(AccountCard + RecentCard) 재사용 + SOS·문자·보호자.
 class SeniorHome extends StatelessWidget {
   final Member member;
   final FamilySnapshot data;
@@ -16,23 +18,37 @@ class SeniorHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = context.read<FamilyCubit>().now;
+    final prompted = context.select((ShellCubit s) => s.state.prefs.easyModePrompted);
     final caution = member.cautionMode ? CautionModeCard(member: member, now: now) : null;
     final holds = [
       for (final r in data.pending(member.id))
         if (r.isHold) MemberHoldCard(key: ValueKey('hold-${r.id}'), request: r, member: member, now: now),
     ];
-    final account = AccountCard(member: member);
+    final banking = guardianBanking(member);
+    final account = banking[0];
+    final recent = banking[1];
     final sms = SmsEntryCard(member: member);
     final sos = SosSlot(member: member, data: data);
-    final recent = RecentCard(member: member);
+    final g = data.guardian;
+    final help = FraudHelpButton(
+      guardianName: g.name,
+      onCallGuardian: () => openCallSheet(
+        context,
+        callerId: member.id,
+        calleeId: 'guardian',
+        peerName: '보호자 ${g.name}',
+        peerPhone: g.phone,
+      ),
+    );
     return FbView(
       wide: true,
       children: [
         Greeting('안녕하세요, ${member.name}님'),
+        if (!prompted) const EasyModePromptCard(),
         FbSplit(
-          main: [?caution, ...holds, account, sms, recent],
+          main: [?caution, ...holds, account, sms, recent, help],
           side: [sos, GuardianCard(member: member, data: data)],
-          mobile: [?caution, ...holds, account, sos, sms, recent],
+          mobile: [?caution, ...holds, account, sos, sms, recent, help],
         ),
       ],
     );
@@ -67,14 +83,18 @@ class ChildHome extends StatelessWidget {
             Row(
               children: [
                 Expanded(child: Text('오늘 쓴 돈', style: TextStyle(fontSize: 12.8, fontWeight: FontWeight.w600, color: c.muted))),
-                Text(
-                  '${formatNumber(m.spentToday)} / ${won(m.dailyLimit)}',
-                  style: FbText.tabular(TextStyle(fontSize: 12.8, fontWeight: FontWeight.w600, color: c.muted)),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    '${formatNumber(m.spentToday)} / ${won(m.dailyLimit)}',
+                    textAlign: TextAlign.end,
+                    style: FbText.tabular(TextStyle(fontSize: 12.8, fontWeight: FontWeight.w600, color: c.muted)),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 7.2),
-            FbRail(fraction: m.dailyLimit == 0 ? 0 : m.spentToday / m.dailyLimit),
+            FbRail(fraction: m.dailyLimit == 0 ? 0 : m.spentToday / m.dailyLimit, semanticLabel: '오늘 쓴 돈'),
           ],
         ),
       ),
@@ -87,14 +107,25 @@ class ChildHome extends StatelessWidget {
     );
     final sos = SosSlot(member: m, data: data);
     final recent = RecentCard(member: m);
+    final g = data.guardian;
+    final help = FraudHelpButton(
+      guardianName: g.name,
+      onCallGuardian: () => openCallSheet(
+        context,
+        callerId: m.id,
+        calleeId: 'guardian',
+        peerName: '보호자 ${g.name}',
+        peerPhone: g.phone,
+      ),
+    );
     return FbView(
       wide: true,
       children: [
         Greeting('안녕, ${m.callName}!'),
         FbSplit(
-          main: [?caution, ...holds, wallet, recent],
+          main: [?caution, ...holds, wallet, recent, help],
           side: [sos, modeRow],
-          mobile: [?caution, ...holds, wallet, modeRow, sos, recent],
+          mobile: [?caution, ...holds, wallet, modeRow, sos, recent, help],
         ),
       ],
     );

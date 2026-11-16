@@ -4,6 +4,7 @@ import 'package:core_family/core_family.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'app_prefs.dart';
+import 'prefs_store.dart';
 
 /// 화면 탭. [alerts](가족 알림)는 보호자에게만 있습니다.
 enum AppTab {
@@ -25,8 +26,15 @@ class FeedbackRequest {
   /// 진동 패턴 (ms, 진동/쉼 반복). 비어 있으면 진동하지 않습니다.
   final List<int> vibrate;
   final bool speak;
+  final bool alertSound;
 
-  const FeedbackRequest(this.message, {this.toast = true, this.vibrate = const [40], this.speak = true});
+  const FeedbackRequest(
+    this.message, {
+    this.toast = true,
+    this.vibrate = const [40],
+    this.speak = true,
+    this.alertSound = false,
+  });
 }
 
 class ShellState {
@@ -84,10 +92,24 @@ class ShellState {
 class ShellCubit extends Cubit<ShellState> {
   final _feedback = StreamController<FeedbackRequest>.broadcast();
   final Set<String> _announcedCallWarnings = <String>{};
+  final LocalPrefsStore _store;
 
-  ShellCubit([super.initial = const ShellState()]);
+  ShellCubit([super.initial = const ShellState(), LocalPrefsStore? store])
+    : _store = store ?? MemoryPrefsStore();
 
   Stream<FeedbackRequest> get feedback => _feedback.stream;
+
+  /// 기기에 저장된 화면 설정(쉬운 화면, 큰 글씨, 고대비 등)을 불러옵니다.
+  Future<void> loadPrefs() async {
+    final saved = await _store.load();
+    if (isClosed || saved.isEmpty) return;
+    var next = state.prefs;
+    for (final key in PrefKey.values) {
+      final v = saved[key.name];
+      if (v != null) next = next.set(key, v);
+    }
+    emit(state.copyWith(prefs: next));
+  }
 
   void switchTab(AppTab tab) => emit(state.copyWith(tab: tab));
 
@@ -105,8 +127,23 @@ class ShellCubit extends Cubit<ShellState> {
   void setTxFilter(String filter) => emit(state.copyWith(txFilter: filter));
   void setAlertFilter(String filter) => emit(state.copyWith(alertFilter: filter));
 
-  void setPref(PrefKey key, bool value) => emit(state.copyWith(prefs: state.prefs.set(key, value)));
+  void setPref(PrefKey key, bool value) {
+    emit(state.copyWith(prefs: state.prefs.set(key, value)));
+    unawaited(_store.saveBool(key.name, value));
+  }
+
   void togglePref(PrefKey key) => setPref(key, !state.prefs[key]);
+
+  /// 쉬운 화면을 켜거나 끕니다. 토글할 때 첫 실행 질문도 완료한 것으로 기록합니다.
+  void setEasyMode(bool value) {
+    final next = state.prefs.set(PrefKey.easyMode, value).set(PrefKey.easyModePrompted, true);
+    emit(state.copyWith(prefs: next));
+    unawaited(_store.saveBool(PrefKey.easyMode.name, value));
+    unawaited(_store.saveBool(PrefKey.easyModePrompted.name, true));
+  }
+
+  /// 어르신 첫 실행 질문("쉬운 화면으로 볼까요?")에 대한 선택을 저장합니다.
+  void answerEasyModePrompt(bool enableEasyMode) => setEasyMode(enableEasyMode);
 
   void showSos(String memberId) => emit(state.copyWith(sosMemberId: memberId, closeSheetsTick: state.closeSheetsTick + 1));
   void closeSos() => emit(state.copyWith(clearSos: true));
@@ -115,8 +152,24 @@ class ShellCubit extends Cubit<ShellState> {
 
   void playShake() => emit(state.copyWith(shakeTick: state.shakeTick + 1));
 
-  void say(String message, {bool toast = true, List<int> vibrate = const [40], bool speak = true}) {
-    if (!_feedback.isClosed) _feedback.add(FeedbackRequest(message, toast: toast, vibrate: vibrate, speak: speak));
+  void say(
+    String message, {
+    bool toast = true,
+    List<int> vibrate = const [40],
+    bool speak = true,
+    bool alertSound = false,
+  }) {
+    if (!_feedback.isClosed) {
+      _feedback.add(
+        FeedbackRequest(
+          message,
+          toast: toast,
+          vibrate: vibrate,
+          speak: speak,
+          alertSound: alertSound,
+        ),
+      );
+    }
   }
 
   /// 통화 중 위험 경고 피드백(진동·경고음·음성 안내)을 통화 ID별로 앱 전체에서 한 번만 실행합니다 (기획서 5.3).
@@ -126,16 +179,18 @@ class ShellCubit extends Cubit<ShellState> {
     bool toast = false,
     List<int> vibrate = const [200, 100, 200],
     bool speak = true,
+    bool alertSound = true,
   }) {
     final key = callId.trim().isEmpty ? '_active_' : callId.trim();
     if (!_announcedCallWarnings.add(key)) return false;
-    say(message, toast: toast, vibrate: vibrate, speak: speak);
+    say(message, toast: toast, vibrate: vibrate, speak: speak, alertSound: alertSound);
     return true;
   }
 
   /// 처음 상태(어르신 홈, 기본 설정)로 돌아갑니다.
   void reset() {
     _announcedCallWarnings.clear();
+    unawaited(_store.clear());
     emit(ShellState(shakeTick: state.shakeTick, closeSheetsTick: state.closeSheetsTick + 1));
   }
 

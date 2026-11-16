@@ -1,23 +1,24 @@
 import 'package:core_family/core_family.dart';
+import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// 휴대폰 문자 화면 시트를 엽니다 (기획서 5.2).
 /// [initialSenderPhone]을 주면 해당 발신 번호의 대화를 먼저 보여 줍니다.
-/// [onTapPhone]은 4단계 통화 화면 연결 전까지 `packages/app`에서 넘기지 않으며,
-/// 콜백이 없으면 전화번호를 누를 수 없는 일반 글자로 표시합니다.
 Future<void> openSmsSheet(
   BuildContext context,
   String memberId, {
   String? initialSenderPhone,
   ValueChanged<String>? onTapPhone,
+  VoidCallback? onCallGuardian,
 }) => showFbSheet<void>(
   context,
   builder: (_) => SmsSheet(
     memberId: memberId,
     initialSenderPhone: initialSenderPhone,
     onTapPhone: onTapPhone,
+    onCallGuardian: onCallGuardian,
   ),
 );
 
@@ -25,12 +26,14 @@ class SmsSheet extends StatefulWidget {
   final String memberId;
   final String? initialSenderPhone;
   final ValueChanged<String>? onTapPhone;
+  final VoidCallback? onCallGuardian;
 
   const SmsSheet({
     super.key,
     required this.memberId,
     this.initialSenderPhone,
     this.onTapPhone,
+    this.onCallGuardian,
   });
 
   @override
@@ -58,6 +61,14 @@ class _SmsSheetState extends State<SmsSheet> {
 
   void _openBlockedLink(SmsMessage message, String url) {
     setState(() => _blocked = (message: message, url: url));
+    try {
+      context.read<ShellCubit>().say(
+        '이 링크를 열지 않았어요. ${message.explanation}',
+        toast: false,
+        vibrate: const [],
+        speak: true,
+      );
+    } catch (_) {}
   }
 
   void _closeBlockedLink() {
@@ -84,6 +95,7 @@ class _SmsSheetState extends State<SmsSheet> {
                     url: blocked.url,
                     message: blocked.message,
                     onBack: _closeBlockedLink,
+                    onCallGuardian: widget.onCallGuardian,
                   ),
                 )
               : KeyedSubtree(
@@ -151,6 +163,7 @@ class _SmsSheetState extends State<SmsSheet> {
             now: now,
             onTapLink: (url) => _openBlockedLink(msg, url),
             onTapPhone: widget.onTapPhone,
+            onCallGuardian: widget.onCallGuardian,
           ),
           const SizedBox(height: 10),
         ],
@@ -280,6 +293,7 @@ class SmsBubble extends StatelessWidget {
   final DateTime now;
   final ValueChanged<String> onTapLink;
   final ValueChanged<String>? onTapPhone;
+  final VoidCallback? onCallGuardian;
 
   const SmsBubble({
     super.key,
@@ -287,6 +301,7 @@ class SmsBubble extends StatelessWidget {
     required this.now,
     required this.onTapLink,
     this.onTapPhone,
+    this.onCallGuardian,
   });
 
   static String _stripLinks(String body, List<String> links) {
@@ -318,7 +333,7 @@ class SmsBubble extends StatelessWidget {
             Row(
               children: [
                 Semantics(
-                  label: danger ? '위험 경고 아이콘' : '주의 아이콘',
+                  label: danger ? '위험 경고' : '주의',
                   child: Icon(FbIcons.alert, size: 19, color: c.redStrong),
                 ),
                 const SizedBox(width: 6),
@@ -391,6 +406,10 @@ class SmsBubble extends StatelessWidget {
                 ],
               ),
             ),
+          ],
+          if (danger || caution) ...[
+            const SizedBox(height: 10),
+            FraudHelpButton(onCallGuardian: onCallGuardian),
           ],
           const SizedBox(height: 6),
           Text(
@@ -512,35 +531,61 @@ class _SmsPhoneDisplay extends StatelessWidget {
 
 /// 위험 문자의 링크를 눌렀을 때 뜨는 차단 화면 (기획서 5.2, 7.3).
 /// 어떤 경우에도 외부 브라우저로 열지 않고 "이 링크를 열지 않았어요"와 이유를 보여 줍니다.
-class BlockedLinkView extends StatelessWidget {
+class BlockedLinkView extends StatefulWidget {
   final String url;
   final SmsMessage message;
   final VoidCallback onBack;
+  final VoidCallback? onCallGuardian;
 
   const BlockedLinkView({
     super.key,
     required this.url,
     required this.message,
     required this.onBack,
+    this.onCallGuardian,
   });
+
+  @override
+  State<BlockedLinkView> createState() => _BlockedLinkViewState();
+}
+
+class _BlockedLinkViewState extends State<BlockedLinkView> {
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = context.fb;
-    final reasonTitle = message.explanation.isNotEmpty
-        ? message.explanation
+    final reasonTitle = widget.message.explanation.isNotEmpty
+        ? widget.message.explanation
         : '사기 사이트나 악성 앱 설치로 이어질 수 있는 위험한 링크예요.';
-    final reasons = message.reasons.isNotEmpty
-        ? message.reasons
+    final reasons = widget.message.reasons.isNotEmpty
+        ? widget.message.reasons
         : const ['문자 속 인터넷 주소는 공식 기관 주소가 아닐 수 있어요'];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SheetHead(title: '링크 차단 안내', onBack: onBack),
-        const CenterBlock(
-          icon: ResultIcon(FbIcons.shield, tone: ResultTone.red),
-          title: '이 링크를 열지 않았어요',
-          body: '핑거벨이 어르신을 보호하기 위해 문자 속 인터넷 주소를 외부로 열지 않고 안전하게 막았어요.',
+        SheetHead(title: '링크 차단 안내', onBack: widget.onBack),
+        Focus(
+          focusNode: _focus,
+          child: const CenterBlock(
+            icon: ResultIcon(FbIcons.shield, tone: ResultTone.red),
+            title: '이 링크를 열지 않았어요',
+            body: '핑거벨이 어르신을 보호하기 위해 문자 속 인터넷 주소를 외부로 열지 않고 안전하게 막았어요.',
+          ),
         ),
         const SizedBox(height: 16),
         Container(
@@ -552,7 +597,7 @@ class BlockedLinkView extends StatelessWidget {
               Text('차단한 주소', style: FbText.small(c)),
               const SizedBox(height: 4),
               Text(
-                url,
+                widget.url,
                 style: TextStyle(fontSize: 13.6, fontWeight: FontWeight.w700, color: c.ink),
               ),
             ],
@@ -564,8 +609,10 @@ class BlockedLinkView extends StatelessWidget {
           danger: true,
           items: reasons,
         ),
-        const SizedBox(height: 20),
-        FbButton('문자로 돌아가기', onPressed: onBack),
+        const SizedBox(height: 16),
+        FraudHelpButton(onCallGuardian: widget.onCallGuardian),
+        const SizedBox(height: 10),
+        FbButton('문자로 돌아가기', onPressed: widget.onBack),
       ],
     );
   }

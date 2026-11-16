@@ -290,6 +290,9 @@ class FamilyCubit extends Cubit<FamilyState> {
   // ---------------------------------------------------------------- 기타
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30}) => _repo.integrationLogs(limit: limit);
 
+  Future<UserFeedbackResult> submitFeedback(String memberId, {required String category, String message = ''}) =>
+      _repo.submitFeedback(memberId, category: category, message: message);
+
   Future<void> resetDemo() => _act(_repo.resetDemo);
 
   @override

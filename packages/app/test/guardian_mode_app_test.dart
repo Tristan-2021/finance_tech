@@ -63,7 +63,7 @@ void main() {
     // 1. 진행 중인 사건 근거 요약 확인 (보류 카드에서 한 번에 열기)
     expect(find.text('위험 근거 요약'), findsOneWidget);
     await tester.ensureVisible(find.text('위험 근거 요약 보기'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('위험 근거 요약 보기'));
     await _settle(tester);
     expect(find.text('문자'), findsWidgets);
@@ -72,38 +72,40 @@ void main() {
 
     // 2. 보류 연장 후 해제
     await tester.ensureVisible(find.text('연장'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('연장'));
     await _settle(tester);
     expect(repo.calls, contains('extend:req-live-1'));
 
     await tester.ensureVisible(find.text('해제'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('해제'));
     await _settle(tester);
     expect(repo.calls, contains('decide:req-live-1:approve'));
 
     // 3. 가족에게 전화하기
     await tester.ensureVisible(find.text('어머니에게 전화하기'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('어머니에게 전화하기'));
     await _settle(tester);
     expect(repo.calls, contains('startCall:guardian:senior:앱 안 통화'));
     await tester.tap(find.text('통화 끊기'));
     await _settle(tester);
-    await tester.tap(find.text('닫기'));
+    await tester.ensureVisible(find.text('닫기').last);
+    await tester.pump();
+    await tester.tap(find.text('닫기').last);
     await _settle(tester);
 
     // 4. 주의 모드 해제
     await tester.ensureVisible(find.text('주의 모드 해제'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('주의 모드 해제'));
     await _settle(tester);
     expect(repo.calls, contains('releaseCautionMode:senior'));
 
     // 5. 지난 위험 기록 보기 → 상세
     await tester.ensureVisible(find.text('전체보기').last);
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('전체보기').last);
     await _settle(tester);
     expect(find.text('가족 알림'), findsOneWidget);
@@ -121,32 +123,32 @@ void main() {
 
     expect(find.text('보호자 연결 다시 해 보기'), findsOneWidget);
     await tester.ensureVisible(find.text('보호자 연결 다시 해 보기'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('보호자 연결 다시 해 보기'));
     await _settle(tester);
 
     expect(find.text('1 / 5'), findsOneWidget);
     await tester.ensureVisible(find.text('보호자 QR 코드 만들기'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('보호자 QR 코드 만들기'));
     await _settle(tester);
     expect(find.text('2 / 5'), findsOneWidget);
 
     await tester.ensureVisible(find.text('어르신 기기에서 입력하기'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('어르신 기기에서 입력하기'));
     await _settle(tester);
 
     expect(find.text('3 / 5'), findsOneWidget);
     await tester.enterText(find.byKey(const ValueKey('pairing-code-input')), '482910');
     await tester.ensureVisible(find.text('다음'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('다음'));
     await _settle(tester);
 
     expect(find.text('4 / 5'), findsOneWidget);
     await tester.ensureVisible(find.text('동의'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(find.text('동의'));
     await _settle(tester);
 

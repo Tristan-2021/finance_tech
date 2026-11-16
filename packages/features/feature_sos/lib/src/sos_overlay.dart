@@ -80,8 +80,9 @@ class _SosOverlayState extends State<SosOverlay> with SingleTickerProviderStateM
                         style: TextStyle(color: Colors.white, fontSize: 27.2, height: 1.3, fontWeight: FontWeight.w800, letterSpacing: -1),
                       ),
                       const SizedBox(height: 9.6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Text('자동 해제까지 ', style: TextStyle(color: Color(0xE6FFFFFF), fontSize: 14.4)),
                           if (m.frozenUntil != null)
