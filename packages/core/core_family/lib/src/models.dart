@@ -65,6 +65,36 @@ class Guardian {
   );
 }
 
+class SavingsCancelCalculation {
+  final int principal;
+  final double interestRate;
+  final double earlyCancelRate;
+  final int accruedInterest;
+  final int earlyCancelInterest;
+  final int reducedInterest;
+  final int payoutAmount;
+
+  const SavingsCancelCalculation({
+    required this.principal,
+    required this.interestRate,
+    required this.earlyCancelRate,
+    required this.accruedInterest,
+    required this.earlyCancelInterest,
+    required this.reducedInterest,
+    required this.payoutAmount,
+  });
+
+  factory SavingsCancelCalculation.fromJson(Json j) => SavingsCancelCalculation(
+    principal: asInt(j['principal']),
+    interestRate: asDouble(j['interest_rate']),
+    earlyCancelRate: asDouble(j['early_cancel_rate']),
+    accruedInterest: asInt(j['accrued_interest']),
+    earlyCancelInterest: asInt(j['early_cancel_interest']),
+    reducedInterest: asInt(j['reduced_interest']),
+    payoutAmount: asInt(j['payout_amount']),
+  );
+}
+
 class BankAccount {
   final String id;
   final String name;
@@ -73,6 +103,12 @@ class BankAccount {
   final String kind;
   final int balance;
   final bool withdrawalBlocked;
+  final double interestRate;
+  final double earlyCancelRate;
+  final DateTime? maturityDate;
+  final int accruedInterest;
+  final String status;
+  final SavingsCancelCalculation? earlyCancelPreview;
 
   const BankAccount({
     required this.id,
@@ -82,7 +118,16 @@ class BankAccount {
     this.kind = 'CHECKING',
     this.balance = 0,
     this.withdrawalBlocked = false,
+    this.interestRate = 0,
+    this.earlyCancelRate = 0,
+    this.maturityDate,
+    this.accruedInterest = 0,
+    this.status = 'active',
+    this.earlyCancelPreview,
   });
+
+  bool get isSavings => kind == 'SAVINGS' || kind == 'DEPOSIT';
+  bool get isActive => status == 'active';
 
   factory BankAccount.fromJson(Json j) => BankAccount(
     id: asString(j['id']),
@@ -92,6 +137,129 @@ class BankAccount {
     kind: asString(j['kind'], 'CHECKING'),
     balance: asInt(j['balance']),
     withdrawalBlocked: asBool(j['withdrawal_blocked']),
+    interestRate: asDouble(j['interest_rate']),
+    earlyCancelRate: asDouble(j['early_cancel_rate']),
+    maturityDate: asDate(j['maturity_date']),
+    accruedInterest: asInt(j['accrued_interest']),
+    status: asString(j['status'], 'active'),
+    earlyCancelPreview: j['early_cancel_preview'] is Map<String, dynamic>
+        ? SavingsCancelCalculation.fromJson(j['early_cancel_preview'] as Json)
+        : null,
+  );
+}
+
+class LoanProduct {
+  final String id;
+  final String name;
+  final String bank;
+  final double interestRate;
+  final bool isVariableRate;
+  final double prepaymentFeeRate;
+  final String repaymentMethod;
+  final int termMonths;
+  final String repaymentCycle;
+  final int minAmount;
+  final int maxLimit;
+  final double delinquencyRate;
+  final int withdrawalRightDays;
+
+  const LoanProduct({
+    required this.id,
+    required this.name,
+    required this.bank,
+    required this.interestRate,
+    required this.isVariableRate,
+    required this.prepaymentFeeRate,
+    required this.repaymentMethod,
+    required this.termMonths,
+    required this.repaymentCycle,
+    required this.minAmount,
+    required this.maxLimit,
+    required this.delinquencyRate,
+    required this.withdrawalRightDays,
+  });
+
+  static const defaultProduct = LoanProduct(
+    id: 'loan-senior-1',
+    name: '핑거벨 안심 생활자금 대출',
+    bank: '핑거벨',
+    interestRate: 5.4,
+    isVariableRate: true,
+    prepaymentFeeRate: 0.6,
+    repaymentMethod: '원리금균등분할상환',
+    termMonths: 24,
+    repaymentCycle: '매월 같은 날',
+    minAmount: 1000000,
+    maxLimit: 20000000,
+    delinquencyRate: 8.4,
+    withdrawalRightDays: 14,
+  );
+
+  factory LoanProduct.fromJson(Json j) => LoanProduct(
+    id: asString(j['id'], defaultProduct.id),
+    name: asString(j['name'], defaultProduct.name),
+    bank: asString(j['bank'], defaultProduct.bank),
+    interestRate: asDouble(j['interest_rate'], defaultProduct.interestRate),
+    isVariableRate: asBool(j['is_variable_rate'], defaultProduct.isVariableRate),
+    prepaymentFeeRate: asDouble(j['prepayment_fee_rate'], defaultProduct.prepaymentFeeRate),
+    repaymentMethod: asString(j['repayment_method'], defaultProduct.repaymentMethod),
+    termMonths: asInt(j['term_months'], defaultProduct.termMonths),
+    repaymentCycle: asString(j['repayment_cycle'], defaultProduct.repaymentCycle),
+    minAmount: asInt(j['min_amount'], defaultProduct.minAmount),
+    maxLimit: asInt(j['max_limit'], defaultProduct.maxLimit),
+    delinquencyRate: asDouble(j['delinquency_rate'], defaultProduct.delinquencyRate),
+    withdrawalRightDays: asInt(j['withdrawal_right_days'], defaultProduct.withdrawalRightDays),
+  );
+}
+
+class LoanQuote {
+  final int amount;
+  final double annualRate;
+  final int termMonths;
+  final int monthlyPayment;
+  final int totalInterest;
+  final int totalRepayment;
+
+  const LoanQuote({
+    required this.amount,
+    required this.annualRate,
+    required this.termMonths,
+    required this.monthlyPayment,
+    required this.totalInterest,
+    required this.totalRepayment,
+  });
+
+  factory LoanQuote.fromJson(Json j) => LoanQuote(
+    amount: asInt(j['amount']),
+    annualRate: asDouble(j['annual_rate']),
+    termMonths: asInt(j['term_months'], 24),
+    monthlyPayment: asInt(j['monthly_payment']),
+    totalInterest: asInt(j['total_interest']),
+    totalRepayment: asInt(j['total_repayment']),
+  );
+}
+
+class ConfirmationQuestion {
+  final String actionKind;
+  final String question;
+  final List<String> options;
+  final String source;
+  final bool cached;
+
+  const ConfirmationQuestion({
+    required this.actionKind,
+    required this.question,
+    this.options = const [],
+    this.source = 'rule',
+    this.cached = false,
+  });
+
+  factory ConfirmationQuestion.fromJson(Json j) => ConfirmationQuestion(
+    actionKind: asString(j['action_kind']),
+    question: asString(j['question']),
+    options: asStrings(j['options']),
+    source: asString(j['source'], 'rule'),
+    cached: asBool(j['cached']),
   );
 }
 
@@ -739,7 +907,7 @@ class ApprovalRequest {
     this.failReason,
   });
 
-  bool get isHold => type == 'transfer';
+  bool get isHold => type == 'transfer' || type == 'savings_cancel' || type == 'loan_apply';
   bool get isPending => status == 'pending';
   bool get isReconfirm => status == 'reconfirm';
   bool get isActive => status == 'pending' || status == 'reconfirm';
@@ -872,6 +1040,7 @@ class FamilySnapshot {
   final List<ModeInfo> modes;
   final List<String> banks;
   final List<CallScript> callScripts;
+  final LoanProduct loanProduct;
   final int blockedToday;
   final int riskyTransfers;
 
@@ -888,6 +1057,7 @@ class FamilySnapshot {
     this.modes = const [],
     this.banks = const [],
     this.callScripts = const [],
+    this.loanProduct = LoanProduct.defaultProduct,
     this.blockedToday = 0,
     this.riskyTransfers = 0,
   });
@@ -912,6 +1082,9 @@ class FamilySnapshot {
       modes: asList(catalog['modes'], ModeInfo.fromJson),
       banks: asStrings(catalog['banks']),
       callScripts: asList(catalog['call_scripts'], CallScript.fromJson),
+      loanProduct: catalog['loan_product'] is Map<String, dynamic>
+          ? LoanProduct.fromJson(catalog['loan_product'] as Json)
+          : LoanProduct.defaultProduct,
       blockedToday: asInt(stats['blocked_today']),
       riskyTransfers: asInt(stats['risky_transfers']),
     );

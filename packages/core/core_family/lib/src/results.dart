@@ -17,20 +17,30 @@ class TransferDraft {
   final NewAccount? newAccount;
   final int amount;
   final bool confirmed;
+  final String? questionAnswer;
 
-  const TransferDraft({this.contactId, this.newAccount, this.amount = 0, this.confirmed = false});
+  const TransferDraft({
+    this.contactId,
+    this.newAccount,
+    this.amount = 0,
+    this.confirmed = false,
+    this.questionAnswer,
+  });
 
   TransferDraft copyWith({
     String? contactId,
     NewAccount? newAccount,
     int? amount,
     bool? confirmed,
+    String? questionAnswer,
     bool clearContact = false,
+    bool clearQuestionAnswer = false,
   }) => TransferDraft(
     contactId: clearContact ? null : (contactId ?? this.contactId),
     newAccount: contactId != null ? null : (newAccount ?? this.newAccount),
     amount: amount ?? this.amount,
     confirmed: confirmed ?? this.confirmed,
+    questionAnswer: clearQuestionAnswer ? null : (questionAnswer ?? this.questionAnswer),
   );
 
   Json toJson(String memberId) => {
@@ -39,6 +49,7 @@ class TransferDraft {
     'new_account': newAccount?.toJson(),
     'amount': amount,
     'confirmed': confirmed,
+    'question_answer': ?questionAnswer,
   };
 }
 
@@ -74,34 +85,173 @@ class TransferPreview {
   final Recipient recipient;
   final int amount;
   final RiskAssessment risk;
+  final int avgTransfer;
+  final bool needsQuestion;
 
-  const TransferPreview({required this.recipient, required this.amount, required this.risk});
+  const TransferPreview({
+    required this.recipient,
+    required this.amount,
+    required this.risk,
+    this.avgTransfer = 0,
+    this.needsQuestion = false,
+  });
 
   factory TransferPreview.fromJson(Json j) => TransferPreview(
     recipient: Recipient.fromJson(asJson(j['recipient'])),
     amount: asInt(j['amount']),
     risk: RiskAssessment.fromJson(asJson(j['risk'])),
+    avgTransfer: asInt(j['avg_transfer']),
+    needsQuestion: asBool(j['needs_question']),
   );
 }
 
 class TransferResult {
-  /// done: 바로 보냄 / pending: 30분 보류 / caution: 본인 주의 확인 필요
+  /// done: 바로 보냄 / pending: 30분 보류 / caution: 본인 주의 확인 필요 / question: 확인 질문 필요
   final String status;
   final ApprovalRequest? request;
   final Recipient? recipient;
   final int amount;
   final RiskAssessment? risk;
+  final ConfirmationQuestion? question;
 
-  const TransferResult({required this.status, this.request, this.recipient, this.amount = 0, this.risk});
+  const TransferResult({
+    required this.status,
+    this.request,
+    this.recipient,
+    this.amount = 0,
+    this.risk,
+    this.question,
+  });
 
   bool get isPending => status == 'pending';
   bool get isCaution => status == 'caution';
+  bool get needsQuestion => status == 'question' && question != null;
 
   factory TransferResult.fromJson(Json j) => TransferResult(
     status: asString(j['status']),
     request: j['request'] is Map<String, dynamic> ? ApprovalRequest.fromJson(j['request'] as Json) : null,
     recipient: j['recipient'] is Map<String, dynamic> ? Recipient.fromJson(j['recipient'] as Json) : null,
     amount: asInt(j['amount'], asInt(asJson(j['request'])['amount'])),
+    risk: j['risk'] is Map<String, dynamic> ? RiskAssessment.fromJson(j['risk'] as Json) : null,
+    question: j['question'] is Map<String, dynamic> ? ConfirmationQuestion.fromJson(j['question'] as Json) : null,
+  );
+}
+
+class ConfirmationQuestionResult {
+  final bool needsQuestion;
+  final bool cautionMode;
+  final ConfirmationQuestion? question;
+
+  const ConfirmationQuestionResult({
+    required this.needsQuestion,
+    this.cautionMode = false,
+    this.question,
+  });
+
+  factory ConfirmationQuestionResult.fromJson(Json j) => ConfirmationQuestionResult(
+    needsQuestion: asBool(j['needs_question']),
+    cautionMode: asBool(j['caution_mode']),
+    question: j['question'] is Map<String, dynamic> ? ConfirmationQuestion.fromJson(j['question'] as Json) : null,
+  );
+}
+
+class SavingsCancelResult {
+  final String status; // done / question / caution / pending
+  final BankAccount? account;
+  final SavingsCancelCalculation? calculation;
+  final ConfirmationQuestion? question;
+  final ApprovalRequest? request;
+  final RiskAssessment? risk;
+
+  const SavingsCancelResult({
+    required this.status,
+    this.account,
+    this.calculation,
+    this.question,
+    this.request,
+    this.risk,
+  });
+
+  bool get needsQuestion => status == 'question' && question != null;
+  bool get isCaution => status == 'caution';
+  bool get isPending => status == 'pending';
+
+  factory SavingsCancelResult.fromJson(Json j) => SavingsCancelResult(
+    status: asString(j['status']),
+    account: j['account'] is Map<String, dynamic> ? BankAccount.fromJson(j['account'] as Json) : null,
+    calculation: j['calculation'] is Map<String, dynamic>
+        ? SavingsCancelCalculation.fromJson(j['calculation'] as Json)
+        : null,
+    question: j['question'] is Map<String, dynamic> ? ConfirmationQuestion.fromJson(j['question'] as Json) : null,
+    request: j['request'] is Map<String, dynamic> ? ApprovalRequest.fromJson(j['request'] as Json) : null,
+    risk: j['risk'] is Map<String, dynamic> ? RiskAssessment.fromJson(j['risk'] as Json) : null,
+  );
+}
+
+class LoanLimitResult {
+  final String status; // done / question / caution / danger
+  final LoanProduct? product;
+  final int maxLimit;
+  final LoanQuote? sampleQuote;
+  final ConfirmationQuestion? question;
+  final RiskAssessment? risk;
+  final bool guardianNotified;
+
+  const LoanLimitResult({
+    required this.status,
+    this.product,
+    this.maxLimit = 0,
+    this.sampleQuote,
+    this.question,
+    this.risk,
+    this.guardianNotified = false,
+  });
+
+  bool get needsQuestion => status == 'question' && question != null;
+  bool get isCaution => status == 'caution';
+  bool get isDanger => status == 'danger';
+
+  factory LoanLimitResult.fromJson(Json j) => LoanLimitResult(
+    status: asString(j['status']),
+    product: j['product'] is Map<String, dynamic> ? LoanProduct.fromJson(j['product'] as Json) : null,
+    maxLimit: asInt(j['max_limit']),
+    sampleQuote: j['sample_quote'] is Map<String, dynamic> ? LoanQuote.fromJson(j['sample_quote'] as Json) : null,
+    question: j['question'] is Map<String, dynamic> ? ConfirmationQuestion.fromJson(j['question'] as Json) : null,
+    risk: j['risk'] is Map<String, dynamic> ? RiskAssessment.fromJson(j['risk'] as Json) : null,
+    guardianNotified: asBool(j['guardian_notified']),
+  );
+}
+
+class LoanApplyResult {
+  final String status; // done / question / caution / pending
+  final LoanProduct? product;
+  final LoanQuote? quote;
+  final int amount;
+  final ConfirmationQuestion? question;
+  final ApprovalRequest? request;
+  final RiskAssessment? risk;
+
+  const LoanApplyResult({
+    required this.status,
+    this.product,
+    this.quote,
+    this.amount = 0,
+    this.question,
+    this.request,
+    this.risk,
+  });
+
+  bool get needsQuestion => status == 'question' && question != null;
+  bool get isCaution => status == 'caution';
+  bool get isPending => status == 'pending';
+
+  factory LoanApplyResult.fromJson(Json j) => LoanApplyResult(
+    status: asString(j['status']),
+    product: j['product'] is Map<String, dynamic> ? LoanProduct.fromJson(j['product'] as Json) : null,
+    quote: j['quote'] is Map<String, dynamic> ? LoanQuote.fromJson(j['quote'] as Json) : null,
+    amount: asInt(j['amount']),
+    question: j['question'] is Map<String, dynamic> ? ConfirmationQuestion.fromJson(j['question'] as Json) : null,
+    request: j['request'] is Map<String, dynamic> ? ApprovalRequest.fromJson(j['request'] as Json) : null,
     risk: j['risk'] is Map<String, dynamic> ? RiskAssessment.fromJson(j['risk'] as Json) : null,
   );
 }

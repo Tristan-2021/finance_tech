@@ -11,6 +11,7 @@ export 'src/theme/fb_theme.dart';
 export 'src/widgets/brand.dart';
 export 'src/widgets/buttons.dart';
 export 'src/widgets/card.dart';
+export 'src/widgets/confirmation_question_view.dart';
 export 'src/widgets/controls.dart';
 export 'src/widgets/countdown_text.dart';
 export 'src/widgets/rows.dart';

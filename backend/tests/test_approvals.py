@@ -257,9 +257,12 @@ def test_caution_mode_start_extend_incident_log_and_guardian_release(app, client
 
     # 주의 모드 중 위험 송금을 시도하면 사건 기록에 행동·판정·보류가 시간순으로 남습니다
     clock.advance(timedelta(minutes=5))
-    req_id = hold(client)
+    # 주의 모드 안의 큰 송금은 먼저 확인 질문을 돌려주고(5.6), 답을 실어 다시 보내야 판정합니다
+    first = client.post("/api/v1/transaction/transfer", json=PHISHING).json()
+    assert first["status"] == "question"
+    req_id = hold(client, {**PHISHING, "question_answer": "잘 모르겠어요"})
     inc = member(state(client), "senior")["active_incident"]
-    assert [item["kind"] for item in inc["items"]] == ["sms", "call", "action", "judgment", "hold"]
+    assert [item["kind"] for item in inc["items"]] == ["sms", "call", "action", "answer", "judgment", "hold"]
 
     # 본인이 재확인 진행을 해도 주의 모드는 꺼지지 않습니다
     clock.advance(timedelta(minutes=31))

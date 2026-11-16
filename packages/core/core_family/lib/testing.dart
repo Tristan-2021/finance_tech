@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:core_api/core_api.dart';
 import 'package:core_errors/core_errors.dart';
@@ -177,7 +178,28 @@ Map<String, dynamic> demoSnapshotJson({
         'account': {'id': 'a1', 'name': '핑거벨 입출금 통장', 'bank': '핑거벨', 'number': '3333-12-••••-5678', 'balance': 2350000},
         'accounts': [
           {'id': 'a1', 'name': '핑거벨 입출금 통장', 'bank': '핑거벨', 'number': '3333-12-••••-5678', 'balance': 2350000},
-          {'id': 'a2', 'name': '노후 생활비 통장', 'bank': '핑거벨', 'number': '3333-15-••••-2086', 'balance': 18400000, 'kind': 'SAVINGS'},
+          {
+            'id': 'a2',
+            'name': '노후 생활비 통장',
+            'bank': '핑거벨',
+            'number': '3333-15-••••-2086',
+            'balance': 18400000,
+            'kind': 'SAVINGS',
+            'interest_rate': 4.2,
+            'early_cancel_rate': 1.0,
+            'maturity_date': t.add(const Duration(days: 180)).toIso8601String(),
+            'accrued_interest': 1159200,
+            'status': 'active',
+            'early_cancel_preview': {
+              'principal': 18400000,
+              'interest_rate': 4.2,
+              'early_cancel_rate': 1.0,
+              'accrued_interest': 1159200,
+              'early_cancel_interest': 276000,
+              'reduced_interest': 883200,
+              'payout_amount': 18676000,
+            },
+          },
         ],
         'spent_today': 12400,
         'daily_limit': 1000000,
@@ -263,6 +285,21 @@ Map<String, dynamic> demoSnapshotJson({
       ],
       'banks': ['핑거벨', '국민', '신한'],
       'call_scripts': defaultCallScriptsJson(),
+      'loan_product': {
+        'id': 'loan-senior-1',
+        'name': '핑거벨 안심 생활자금 대출',
+        'bank': '핑거벨',
+        'interest_rate': 5.4,
+        'is_variable_rate': true,
+        'prepayment_fee_rate': 0.6,
+        'repayment_method': '원리금균등분할상환',
+        'term_months': 24,
+        'repayment_cycle': '매월 같은 날',
+        'min_amount': 1000000,
+        'max_limit': 20000000,
+        'delinquency_rate': 8.4,
+        'withdrawal_right_days': 14,
+      },
     },
   };
 }
@@ -655,6 +692,122 @@ class FakeFamilyRepository implements FamilyRepository {
     );
   }
 
+  bool _isCautionMode(String memberId) {
+    final members = snapshotJson['members'];
+    if (members is! List) return false;
+    for (final m in members) {
+      if (m is Map<String, dynamic> && m['id'] == memberId) {
+        return m['caution_mode'] == true;
+      }
+    }
+    return false;
+  }
+
+  int _avgTransfer(String memberId) {
+    final members = snapshotJson['members'];
+    if (members is! List) return 100000;
+    for (final m in members) {
+      if (m is Map<String, dynamic> && m['id'] == memberId) {
+        return (m['avg_transfer'] as int?) ?? 100000;
+      }
+    }
+    return 100000;
+  }
+
+  ConfirmationQuestion _questionFor(String actionKind) => switch (actionKind) {
+    'savings_cancel' => const ConfirmationQuestion(
+      actionKind: 'savings_cancel',
+      question: '적금을 만기 전에 해지하려고 하시네요. 혹시 누가 해지하라고 했나요?',
+      options: [
+        '금융감독원·검찰·은행 직원이 해지하라고 했어요',
+        '괜찮아요, 아는 사람이에요',
+        '가족(보호자)과 이미 상의했어요',
+        '잘 모르겠어요',
+      ],
+    ),
+    'loan_apply' => const ConfirmationQuestion(
+      actionKind: 'loan_apply',
+      question: '대출을 신청하려고 하시네요. 혹시 누가 대출을 받으라고 했나요?',
+      options: [
+        '금융감독원·검찰·은행 직원이 대출을 받으라고 했어요',
+        '괜찮아요, 아는 사람이에요',
+        '가족(보호자)과 이미 상의했어요',
+        '잘 모르겠어요',
+      ],
+    ),
+    'loan_limit' => const ConfirmationQuestion(
+      actionKind: 'loan_limit',
+      question: '대출 한도를 조회하려고 하시네요. 혹시 누가 대출을 알아보라고 했나요?',
+      options: [
+        '금융감독원·검찰·은행 직원이 알아보라고 했어요',
+        '괜찮아요, 아는 사람이에요',
+        '가족(보호자)과 이미 상의했어요',
+        '잘 모르겠어요',
+      ],
+    ),
+    _ => const ConfirmationQuestion(
+      actionKind: 'transfer',
+      question: '평소보다 큰 금액을 보내려고 하시네요. 혹시 누가 이 돈을 보내라고 했나요?',
+      options: [
+        '금융감독원·검찰·수사관이 안전계좌로 보내라고 했어요',
+        '괜찮아요, 아는 사람이에요',
+        '가족(보호자)과 이미 상의했어요',
+        '잘 모르겠어요',
+      ],
+    ),
+  };
+
+  String _classifyAnswer(String answer) {
+    if (answer.contains('금융감독원') || answer.contains('검찰') || answer.contains('잘 모르겠어요')) {
+      return 'danger';
+    }
+    if (answer.contains('가족') || answer.contains('보호자')) {
+      return 'low';
+    }
+    return 'caution';
+  }
+
+  RiskAssessment _cautionRisk(String level, String answer) => switch (level) {
+    'danger' => RiskAssessment(
+      score: 85,
+      level: RiskLevel.high,
+      needsApproval: true,
+      explanation: '사기 의심 연락 뒤에 이어진 시도로 보이스피싱 위험이 매우 높아요.',
+      signals: [RiskSignal(id: 'inc-1', label: '확인 질문 응답: $answer', weight: 20)],
+    ),
+    'caution' => RiskAssessment(
+      score: 45,
+      level: RiskLevel.caution,
+      needsApproval: false,
+      explanation: '주의 모드 중 거래를 진행하고 있어요. 다시 한 번 확인해 주세요.',
+      signals: [RiskSignal(id: 'inc-1', label: '확인 질문 응답: $answer', weight: 20)],
+    ),
+    _ => const RiskAssessment(
+      score: 15,
+      level: RiskLevel.safe,
+      needsApproval: false,
+      explanation: '보호자와 상의한 거래로 확인되어 진행해요.',
+      signals: [RiskSignal(id: 'inc-1', label: '보호자와 이미 상의했어요', weight: 20)],
+    ),
+  };
+
+  LoanQuote _calcLoanQuote(int amount) {
+    const rate = 5.4;
+    const months = 24;
+    final monthlyRate = rate / 100.0 / 12.0;
+    final factor = math.pow(1.0 + monthlyRate, months).toDouble();
+    final monthly = (amount * (monthlyRate * factor) / (factor - 1.0)).round();
+    final total = monthly * months;
+    return LoanQuote(
+      amount: amount,
+      annualRate: rate,
+      termMonths: months,
+      monthlyPayment: monthly,
+      totalInterest: math.max(0, total - amount),
+      totalRepayment: total,
+    );
+  }
+
   /// 보호자 본인 송금은 서버처럼 위험해도 승인 없이 보냅니다.
   @override
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) => _call(
@@ -662,6 +815,8 @@ class FakeFamilyRepository implements FamilyRepository {
     TransferPreview(
       recipient: _recipient(draft),
       amount: draft.amount,
+      avgTransfer: _avgTransfer(memberId),
+      needsQuestion: memberId != 'guardian' && _isCautionMode(memberId) && draft.amount > _avgTransfer(memberId),
       risk: draft.newAccount != null
           ? _newAccountRisk(memberId, draft.amount)
           : const RiskAssessment(score: 5, level: RiskLevel.safe),
@@ -669,21 +824,300 @@ class FakeFamilyRepository implements FamilyRepository {
   );
 
   @override
-  Future<TransferResult> submitTransfer(String memberId, TransferDraft draft) => _call(
-    'transfer:$memberId:${draft.amount}${draft.confirmed ? ':confirmed' : ''}',
-    draft.newAccount != null && memberId != 'guardian'
-        ? (draft.amount < 100000
-              ? (draft.confirmed
-                    ? TransferResult(status: 'done', amount: draft.amount, recipient: _recipient(draft))
-                    : TransferResult(
-                        status: 'caution',
-                        amount: draft.amount,
-                        recipient: _recipient(draft),
-                        risk: _newAccountRisk(memberId, draft.amount),
-                      ))
-              : TransferResult(status: 'pending', request: ApprovalRequest.fromJson(pendingTransferJson())))
-        : TransferResult(status: 'done', amount: draft.amount, recipient: _recipient(draft)),
-  );
+  Future<TransferResult> submitTransfer(String memberId, TransferDraft draft) {
+    final inCaution = memberId != 'guardian' && _isCautionMode(memberId) && draft.amount > _avgTransfer(memberId);
+    if (inCaution) {
+      final ans = draft.questionAnswer?.trim() ?? '';
+      if (ans.isEmpty) {
+        return _call(
+          'transfer:$memberId:${draft.amount}:question',
+          TransferResult(status: 'question', amount: draft.amount, recipient: _recipient(draft), question: _questionFor('transfer')),
+        );
+      }
+      final level = _classifyAnswer(ans);
+      final risk = _cautionRisk(level, ans);
+      final fdsHigh = draft.newAccount != null && draft.amount >= 100000;
+      if (level == 'danger' || fdsHigh || draft.amount >= 300000) {
+        final reqJson = pendingTransferJson(id: 'req-tr-${calls.length + 1}', memberId: memberId);
+        reqJson['amount'] = draft.amount;
+        final existingReqs = (snapshotJson['requests'] as List?)?.cast<Map<String, dynamic>>() ?? <Map<String, dynamic>>[];
+        snapshotJson['requests'] = [reqJson, ...existingReqs];
+        return _call(
+          'transfer:$memberId:${draft.amount}:pending',
+          TransferResult(status: 'pending', request: ApprovalRequest.fromJson(reqJson), risk: risk),
+        );
+      }
+      if (level == 'caution' && !draft.confirmed) {
+        return _call(
+          'transfer:$memberId:${draft.amount}:caution',
+          TransferResult(status: 'caution', amount: draft.amount, recipient: _recipient(draft), risk: risk),
+        );
+      }
+      return _call(
+        'transfer:$memberId:${draft.amount}:done',
+        TransferResult(status: 'done', amount: draft.amount, recipient: _recipient(draft), risk: risk),
+      );
+    }
+    return _call(
+      'transfer:$memberId:${draft.amount}${draft.confirmed ? ':confirmed' : ''}',
+      draft.newAccount != null && memberId != 'guardian'
+          ? (draft.amount < 100000
+                ? (draft.confirmed
+                      ? TransferResult(status: 'done', amount: draft.amount, recipient: _recipient(draft))
+                      : TransferResult(
+                          status: 'caution',
+                          amount: draft.amount,
+                          recipient: _recipient(draft),
+                          risk: _newAccountRisk(memberId, draft.amount),
+                        ))
+                : TransferResult(status: 'pending', request: ApprovalRequest.fromJson(pendingTransferJson())))
+          : TransferResult(status: 'done', amount: draft.amount, recipient: _recipient(draft)),
+    );
+  }
+
+  @override
+  Future<ConfirmationQuestionResult> fetchConfirmationQuestion(String memberId, String actionKind, {int? amount}) {
+    final caution = memberId != 'guardian' && _isCautionMode(memberId);
+    final needs = caution && (actionKind != 'transfer' || amount == null || amount > _avgTransfer(memberId));
+    return _call(
+      'question:$memberId:$actionKind',
+      ConfirmationQuestionResult(
+        needsQuestion: needs,
+        cautionMode: caution,
+        question: needs ? _questionFor(actionKind) : null,
+      ),
+    );
+  }
+
+  @override
+  Future<SavingsCancelResult> cancelSavings(
+    String memberId,
+    String accountId, {
+    String? questionAnswer,
+    bool confirmed = false,
+  }) {
+    final snap = FamilySnapshot.fromJson(snapshotJson);
+    final acct = snap.member(memberId).accounts.firstWhere((a) => a.id == accountId);
+    final calc = acct.earlyCancelPreview ??
+        const SavingsCancelCalculation(
+          principal: 18400000,
+          interestRate: 4.2,
+          earlyCancelRate: 1.0,
+          accruedInterest: 1159200,
+          earlyCancelInterest: 276000,
+          reducedInterest: 883200,
+          payoutAmount: 18676000,
+        );
+    final inCaution = memberId != 'guardian' && _isCautionMode(memberId);
+    if (inCaution) {
+      final ans = questionAnswer?.trim() ?? '';
+      if (ans.isEmpty) {
+        return _call(
+          'cancelSavings:$memberId:$accountId:question',
+          SavingsCancelResult(status: 'question', account: acct, calculation: calc, question: _questionFor('savings_cancel')),
+        );
+      }
+      final level = _classifyAnswer(ans);
+      final risk = _cautionRisk(level, ans);
+      if (level == 'danger') {
+        final now = DateTime.now().toUtc();
+        final reqJson = <String, dynamic>{
+          'id': 'req-sav-${calls.length + 1}',
+          'member_id': memberId,
+          'type': 'savings_cancel',
+          'title': '${acct.name} 만기 전 해지',
+          'amount': calc.payoutAmount,
+          'detail': '원금 18,400,000원 · 줄어드는 이자 883,200원',
+          'status': 'pending',
+          'channel': '앱 알림',
+          'created_at': now.toIso8601String(),
+          'expires_at': now.add(const Duration(minutes: 30)).toIso8601String(),
+          'risk': {
+            'score': risk.score,
+            'level': 'high',
+            'needs_approval': true,
+            'explanation': risk.explanation,
+            'signals': [for (final s in risk.signals) {'id': s.id, 'label': s.label, 'weight': s.weight}],
+          },
+        };
+        final existingReqs = (snapshotJson['requests'] as List?)?.cast<Map<String, dynamic>>() ?? <Map<String, dynamic>>[];
+        snapshotJson['requests'] = [reqJson, ...existingReqs];
+        return _call(
+          'cancelSavings:$memberId:$accountId:pending',
+          SavingsCancelResult(
+            status: 'pending',
+            account: acct,
+            calculation: calc,
+            request: ApprovalRequest.fromJson(reqJson),
+            risk: risk,
+          ),
+        );
+      }
+      if (level == 'caution' && !confirmed) {
+        return _call(
+          'cancelSavings:$memberId:$accountId:caution',
+          SavingsCancelResult(status: 'caution', account: acct, calculation: calc, risk: risk),
+        );
+      }
+    }
+    _markSavingsCancelled(memberId, accountId, calc.payoutAmount);
+    return _call(
+      'cancelSavings:$memberId:$accountId:done',
+      SavingsCancelResult(status: 'done', account: acct, calculation: calc),
+    );
+  }
+
+  void _markSavingsCancelled(String memberId, String accountId, int payout) {
+    final members = snapshotJson['members'];
+    if (members is! List) return;
+    for (final m in members) {
+      if (m is Map<String, dynamic> && m['id'] == memberId) {
+        m['balance'] = ((m['balance'] as int?) ?? 0) + payout;
+        final accts = m['accounts'];
+        if (accts is List) {
+          for (final a in accts) {
+            if (a is Map<String, dynamic> && a['id'] == accountId) {
+              a['balance'] = 0;
+              a['status'] = 'cancelled';
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @override
+  Future<LoanQuote> quoteLoan(int amount) => _call('quoteLoan:$amount', _calcLoanQuote(amount));
+
+  @override
+  Future<LoanLimitResult> checkLoanLimit(String memberId, {String? questionAnswer, bool confirmed = false}) {
+    final quote = _calcLoanQuote(5000000);
+    final inCaution = memberId != 'guardian' && _isCautionMode(memberId);
+    if (inCaution) {
+      final ans = questionAnswer?.trim() ?? '';
+      if (ans.isEmpty) {
+        return _call(
+          'loanLimit:$memberId:question',
+          LoanLimitResult(status: 'question', product: LoanProduct.defaultProduct, question: _questionFor('loan_limit')),
+        );
+      }
+      final level = _classifyAnswer(ans);
+      final risk = _cautionRisk(level, ans);
+      if (level == 'danger') {
+        return _call(
+          'loanLimit:$memberId:danger',
+          LoanLimitResult(
+            status: 'danger',
+            product: LoanProduct.defaultProduct,
+            maxLimit: LoanProduct.defaultProduct.maxLimit,
+            sampleQuote: quote,
+            risk: risk,
+            guardianNotified: true,
+          ),
+        );
+      }
+      if (level == 'caution' && !confirmed) {
+        return _call(
+          'loanLimit:$memberId:caution',
+          LoanLimitResult(
+            status: 'caution',
+            product: LoanProduct.defaultProduct,
+            maxLimit: LoanProduct.defaultProduct.maxLimit,
+            sampleQuote: quote,
+            risk: risk,
+          ),
+        );
+      }
+    }
+    return _call(
+      'loanLimit:$memberId:done',
+      LoanLimitResult(
+        status: 'done',
+        product: LoanProduct.defaultProduct,
+        maxLimit: LoanProduct.defaultProduct.maxLimit,
+        sampleQuote: quote,
+      ),
+    );
+  }
+
+  @override
+  Future<LoanApplyResult> applyLoan(
+    String memberId,
+    int amount, {
+    String? questionAnswer,
+    bool confirmed = false,
+  }) {
+    final quote = _calcLoanQuote(amount);
+    final inCaution = memberId != 'guardian' && _isCautionMode(memberId);
+    if (inCaution) {
+      final ans = questionAnswer?.trim() ?? '';
+      if (ans.isEmpty) {
+        return _call(
+          'applyLoan:$memberId:$amount:question',
+          LoanApplyResult(
+            status: 'question',
+            product: LoanProduct.defaultProduct,
+            quote: quote,
+            amount: amount,
+            question: _questionFor('loan_apply'),
+          ),
+        );
+      }
+      final level = _classifyAnswer(ans);
+      final risk = _cautionRisk(level, ans);
+      if (level == 'danger') {
+        final now = DateTime.now().toUtc();
+        final reqJson = <String, dynamic>{
+          'id': 'req-loan-${calls.length + 1}',
+          'member_id': memberId,
+          'type': 'loan_apply',
+          'title': '${LoanProduct.defaultProduct.name} 신청',
+          'amount': amount,
+          'detail': '월 ${quote.monthlyPayment}원 · 24개월',
+          'status': 'pending',
+          'channel': '앱 알림',
+          'created_at': now.toIso8601String(),
+          'expires_at': now.add(const Duration(minutes: 30)).toIso8601String(),
+          'risk': {
+            'score': risk.score,
+            'level': 'high',
+            'needs_approval': true,
+            'explanation': risk.explanation,
+            'signals': [for (final s in risk.signals) {'id': s.id, 'label': s.label, 'weight': s.weight}],
+          },
+        };
+        final existingReqs = (snapshotJson['requests'] as List?)?.cast<Map<String, dynamic>>() ?? <Map<String, dynamic>>[];
+        snapshotJson['requests'] = [reqJson, ...existingReqs];
+        return _call(
+          'applyLoan:$memberId:$amount:pending',
+          LoanApplyResult(
+            status: 'pending',
+            product: LoanProduct.defaultProduct,
+            quote: quote,
+            amount: amount,
+            request: ApprovalRequest.fromJson(reqJson),
+            risk: risk,
+          ),
+        );
+      }
+      if (level == 'caution' && !confirmed) {
+        return _call(
+          'applyLoan:$memberId:$amount:caution',
+          LoanApplyResult(
+            status: 'caution',
+            product: LoanProduct.defaultProduct,
+            quote: quote,
+            amount: amount,
+            risk: risk,
+          ),
+        );
+      }
+    }
+    return _call(
+      'applyLoan:$memberId:$amount:done',
+      LoanApplyResult(status: 'done', product: LoanProduct.defaultProduct, quote: quote, amount: amount),
+    );
+  }
 
   Recipient _recipient(TransferDraft draft) => Recipient(
     name: draft.newAccount?.name ?? '김사랑',
@@ -724,13 +1158,19 @@ class FakeFamilyRepository implements FamilyRepository {
         item['status'] = status;
         if (failReason != null) item['fail_reason'] = failReason;
         if (deductBalance) {
-          final memberId = item['member_id'];
+          final memberId = item['member_id'] as String? ?? '';
+          final reqType = item['type'] as String? ?? 'transfer';
           final amount = (item['amount'] as int?) ?? 0;
-          final members = snapshotJson['members'];
-          if (members is List && amount > 0) {
-            for (final m in members) {
-              if (m is Map<String, dynamic> && m['id'] == memberId) {
-                m['balance'] = ((m['balance'] as int?) ?? 0) - amount;
+          if (reqType == 'savings_cancel') {
+            _markSavingsCancelled(memberId, 'a2', amount);
+          } else {
+            final members = snapshotJson['members'];
+            if (members is List && amount > 0) {
+              for (final m in members) {
+                if (m is Map<String, dynamic> && m['id'] == memberId) {
+                  final current = (m['balance'] as int?) ?? 0;
+                  m['balance'] = reqType == 'loan_apply' ? current + amount : current - amount;
+                }
               }
             }
           }

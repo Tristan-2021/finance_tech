@@ -168,4 +168,119 @@ void main() {
     await tester.pump();
     expect(find.text('계좌번호는 숫자 10~14자리로 입력해 주세요.'), findsOneWidget);
   });
+
+  testWidgets('large transfer in caution mode asks confirmation question with no preselected option', (tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final repo = FakeFamilyRepository(demoSnapshotJson(seniorCautionMode: true));
+    final family = FamilyCubit(repo, pollInterval: null);
+    await family.start();
+    final shell = ShellCubit();
+    addTearDown(family.close);
+    addTearDown(shell.close);
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [BlocProvider.value(value: family), BlocProvider.value(value: shell)],
+        child: MaterialApp(
+          theme: FbTheme.build(),
+          home: const Scaffold(body: SingleChildScrollView(child: TransferSheet(memberId: 'senior'))),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.textContaining('김사랑', findRichText: true).first);
+    await settle(tester);
+    await tester.enterText(find.byType(TextField), '200000');
+    await tester.tap(find.text('다음'));
+    await settle(tester);
+
+    await tester.tap(find.text('보내기'));
+    await settle(tester);
+
+    expect(find.text('주의 모드 확인 질문'), findsOneWidget);
+    expect(find.textContaining('평소보다 큰 금액을 보내려고 하시네요'), findsOneWidget);
+    // 어느 선택지도 미리 선택되지 않았는지 확인합니다.
+    for (var i = 0; i < 4; i++) {
+      final optFinder = find.byKey(ValueKey('caution-option-$i'));
+      expect(optFinder, findsOneWidget);
+      final sem = tester.widget<Semantics>(optFinder);
+      expect(sem.properties.selected, isFalse);
+    }
+
+    await tester.ensureVisible(find.byKey(const ValueKey('caution-option-0')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('caution-option-0')));
+    await settle(tester);
+    expect(find.text('거래를 30분 동안 보류했어요'), findsOneWidget);
+  });
+
+  testWidgets('caution verdict after question in caution mode shows new explanation and requires fresh confirmation', (tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final snap = demoSnapshotJson(seniorCautionMode: true);
+    final members = snap['members'] as List<dynamic>;
+    (members[0] as Map<String, dynamic>)['avg_transfer'] = 50000;
+
+    final repo = FakeFamilyRepository(snap);
+    final family = FamilyCubit(repo, pollInterval: null);
+    await family.start();
+    final shell = ShellCubit();
+    addTearDown(family.close);
+    addTearDown(shell.close);
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [BlocProvider.value(value: family), BlocProvider.value(value: shell)],
+        child: MaterialApp(
+          theme: FbTheme.build(),
+          home: const Scaffold(body: SingleChildScrollView(child: TransferSheet(memberId: 'senior'))),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('새 계좌로 보내기'));
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, '계좌번호'), '12345678907788');
+    await tester.enterText(find.widgetWithText(TextField, '받는 분 이름'), '이정민');
+    await tester.tap(find.text('다음'));
+    await settle(tester);
+
+    await tester.enterText(find.byType(TextField), '80000');
+    await tester.tap(find.text('다음'));
+    await settle(tester);
+
+    // 1차 FDS 주의 경고 확인 후 확인 질문으로 이동
+    expect(find.text('한 번 더 확인이 필요해요'), findsOneWidget);
+    expect(find.text('처음 보내는 계좌예요'), findsOneWidget);
+    await tester.ensureVisible(find.text('확인했어요, 보내기'));
+    await settle(tester);
+    await tester.tap(find.text('확인했어요, 보내기'));
+    await settle(tester);
+
+    expect(find.text('주의 모드 확인 질문'), findsOneWidget);
+
+    // 답 제출 시 이전 confirmed 값을 재사용하지 않고 새 종합 판정 '주의' 설명을 먼저 보여 주어야 합니다
+    await tester.ensureVisible(find.byKey(const ValueKey('caution-option-1')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('caution-option-1')));
+    await settle(tester);
+
+    expect(repo.calls, contains('transfer:senior:80000:caution'));
+    expect(repo.calls, isNot(contains('transfer:senior:80000:done')));
+    expect(find.text('한 번 더 확인이 필요해요'), findsOneWidget);
+    expect(find.text('주의 모드 중 거래를 진행하고 있어요. 다시 한 번 확인해 주세요.'), findsOneWidget);
+    expect(find.text('이정민님께 80,000원을 보냈어요'), findsNothing);
+
+    // 새 설명을 본 뒤 본인이 확인해야 송금이 완료됩니다
+    await tester.ensureVisible(find.text('확인했어요, 보내기'));
+    await settle(tester);
+    await tester.tap(find.text('확인했어요, 보내기'));
+    await settle(tester);
+
+    expect(repo.calls, contains('transfer:senior:80000:done'));
+    expect(find.text('이정민님께 80,000원을 보냈어요'), findsOneWidget);
+  });
 }

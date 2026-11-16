@@ -10,6 +10,8 @@ import 'package:feature_transfer/feature_transfer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'banking_sheets.dart';
+
 /// 본인 홈에 보이는 주의 모드 카드 (기획서 5.1: 상태와 남은 시간 표시, 본인은 끌 수 없음).
 class CautionModeCard extends StatelessWidget {
   final Member member;
@@ -204,12 +206,13 @@ class AccountCard extends StatelessWidget {
     );
     void pay() => openPaySheet(context, m.id);
     void history() => context.read<ShellCubit>().switchTab(AppTab.history);
+    void accounts() => openAccountsSheet(context, m.id);
     final buttons = m.isChild
         ? [FbButton('결제', onPressed: pay), FbButton.gray('보내기', onPressed: send), FbButton.gray('내역', onPressed: history)]
         : [
             FbButton('송금', onPressed: send),
             FbButton.gray('결제', onPressed: pay),
-            FbButton.gray(m.isGuardian ? '내역' : '조회', onPressed: history),
+            FbButton.gray(m.isGuardian ? '내역' : '조회', onPressed: m.isGuardian ? history : accounts),
           ];
     return FbCard(
       child: Column(

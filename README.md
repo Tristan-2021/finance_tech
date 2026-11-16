@@ -57,10 +57,10 @@ flowchart LR
 | **문자 감지** | 휴대폰 문자 앱을 재현한 화면에서 시연 문자의 내용과 링크를 분석합니다(규칙 1차 → OpenRouter LLM 최종). 위험하면 경고와 쉬운 설명을 붙이고 주의 모드를 시작하며 링크를 차단합니다. | 구현됨 (`backend/app/domain/sms.py` · `backend/app/integrations.py` · `feature_sms`) |
 | **통화 감지** | 앱 안 인터넷 음성 통화(WebRTC)의 음성을 글자로 바꿔 실시간으로 분석하고(규칙 1차 → OpenRouter LLM 최종), 사기 징후가 잡히면 통화 중에 큰 경고·진동·경고음·`[통화 끊기]`를 띄우고 보호자에게 알립니다. 시연 상대 화면의 대본 문장 보내기도 지원합니다. | 구현됨 (`backend/app/domain/call.py` · `backend/app/integrations.py` · `feature_call`) |
 | **주의 모드** | 위험 문자나 위험 통화가 감지되면 24시간 유지됩니다. 본인은 끌 수 없고 보호자는 끝낼 수 있습니다. | 구현됨 (`backend/app/service.py` · `feature_guardian`) |
-| **확인 질문과 종합 판정** | 주의 모드 중 적금·예금 해지, 큰 금액 송금, 대출 신청을 시도하면 AI가 앞선 연락에 맞춘 질문을 하고, 규칙·점수 1차와 LLM 최종으로 낮음 / 주의 / 위험을 정합니다. | 일부 구현. 주의 모드 밖 송금 판정(낮음 / 주의 / 위험)과 문자·통화 판정(규칙 1차 + LLM 최종)은 구현됨. 주의 모드 안 금융 행동 확인 질문과 종합 판정은 구현 예정 |
-| **거래 보류** | 위험 판정 거래를 30분 멈춥니다. 보호자는 해제·연장, 본인은 취소할 수 있고, 보호자 응답이 없으면 본인이 다시 확인해야 진행됩니다. | 구현됨 (`backend/app/service.py` · `feature_transfer` · `feature_guardian`) |
+| **확인 질문과 종합 판정** | 주의 모드 중 적금·예금 해지, 큰 금액 송금, 대출 한도 조회·신청을 시도하면 AI가 앞선 연락에 맞춘 질문을 하고, 규칙·점수 1차와 LLM 최종으로 낮음 / 주의 / 위험을 정합니다. | 구현됨 (`backend/app/domain/banking.py` · `backend/app/integrations.py` · `core_ui` · `feature_transfer`) |
+| **거래 보류** | 위험 판정 거래(송금·적금 해지·대출 신청)를 30분 멈춥니다. 보호자는 해제·연장, 본인은 취소할 수 있고, 보호자 응답이 없으면 본인이 다시 확인해야 진행됩니다. | 구현됨 (`backend/app/service.py` · `feature_transfer` · `feature_guardian`) |
 | **보호자 모드** | 위험 근거 요약, 보류 해제·연장, 앱 안 통화, 주의 모드 해제, 위험 기록, 가족 상태·한도·모드 관리. | 일부 구현. 보류 해제·연장, 주의 모드 해제, 앱 안 가족 통화, 가족 상태·알림·한도·모드 관리와 결제·동결 승인은 구현됨. 근거 요약, 위험 기록, QR 연결은 구현 예정 |
-| **가상 은행** | 계좌 조회, 송금, 결제, 거래 내역, 적금·예금 만기 전 해지, 대출 한도 조회·신청. | 일부 구현. 계좌 조회·송금·결제·거래 내역은 구현됨. 적금·예금, 대출은 구현 예정 |
+| **가상 은행** | 계좌 조회, 송금, 결제, 거래 내역, 적금·예금 만기 전 해지, 대출 한도 조회·신청(온라인 설명의무 7.2 반영). | 구현됨 (`backend/app/domain/banking.py` · `packages/app/lib/views/banking_sheets.dart`) |
 | **위험 점수(AI FDS)** | 송금마다 설명 가능한 규칙과 Isolation Forest로 0~99점을 매깁니다. 종합 판정의 1차 단계입니다. | 구현됨 (`backend/app/domain/fds.py`) |
 | **SOS 계좌 동결** | 휴대폰을 3초 동안 세게 흔들거나 SOS 버튼을 2초 누르면 모든 계좌의 출금이 24시간 멈추고 보호자에게 알립니다. | 구현됨 (`backend/app/service.py` `freeze()` · `feature_sos`) |
 | **아이 모드와 안심 모드** | 등교·병원 모드의 업종(MCC) 화이트리스트로 결제를 제한하고, 수면 안심 시간(23:00~06:00)의 이체는 보호자 확인을 거칩니다. | 구현됨 (`backend/app/domain/catalog.py` · `feature_payment`) |
@@ -142,7 +142,7 @@ flowchart TD
 | 실시간 | `GET /api/v1/state` + `WS /api/v1/ws` (WebRTC `ready` → `offer` → `answer` → `ice` 신호 전달 포함) | 구현됨 |
 | 통화 | WebRTC 직접 연결 (`flutter_webrtc`, `iceServers: []`, 음성 전용) + 4초 조각 녹음 (`record`) | 구현됨 (`feature_call`, 실기기 미확인) |
 | 음성인식(STT) | 1순위 OpenRouter(`POST /api/v1/audio/transcriptions`), 2순위 기기 내 음성인식 | 1순위 OpenRouter 구현됨 (`backend/app/integrations.py`) · 2순위 기기 내 음성인식은 미구현 (1단계 스파이크 필요) |
-| LLM | OpenRouter. 인터넷이나 키가 없으면 규칙·점수 판정만 | 문자·통화 판정 구현됨 (`backend/app/integrations.py`) |
+| LLM | OpenRouter. 인터넷이나 키가 없으면 규칙·점수 판정만 | 문자·통화·확인 질문·사건 종합 판정 구현됨 (`backend/app/integrations.py`) |
 | 외부 연동 | 오픈뱅킹·푸시·SMS 모의 어댑터 | 구현됨 |
 
 ### 통화·음성인식 방식의 가정과 실기기 미확인 항목
@@ -170,8 +170,9 @@ backend/                    FastAPI 서버 · SQLite(기본)/PostgreSQL · AI FD
   app/domain/fds.py         규칙 + Isolation Forest 위험도
   app/domain/sms.py         문자 규칙 1차 판정 · 시연 문자 프리셋 · 가상 검증 모음
   app/domain/call.py        통화 규칙 1차 판정 · 시연 통화 대본(사기·정상) · 가상 검증 모음
+  app/domain/banking.py     적금 만기 전 해지 계산 · 대출 상품/상환 계산 · 확인 질문 · 주의 모드 종합 판정 1차 규칙
   app/domain/catalog.py     안심 모드 · 업종(MCC) · 시연 가맹점
-  app/service.py            사건·주의 모드 · 문자 수신/판정 · 통화 세션/분석 · 송금 판정·보류 · 결제 제어 · SOS 동결 · 타이머
+  app/service.py            사건·주의 모드 · 문자 수신/판정 · 통화 세션/분석 · 송금/해지/대출 판정·보류 · 결제 제어 · SOS 동결 · 타이머
   app/integrations.py       오픈뱅킹 · FCM · SMS (모의) · OpenRouter LLM · 음성인식(STT) 게이트웨이 (모의 + 실제)
 packages/
   app/                      셸: 웹(16:9 사이드바·2단)/모바일(하단 메뉴) 레이아웃, 화면 연결
@@ -256,6 +257,8 @@ Flutter 웹을 빌드해 같은 서버에서 제공합니다. <http://127.0.0.1:
 | `POST /api/v1/transaction/transfer` | 송금. 낮음이면 바로 진행, 주의면 본인 확인(`confirmed=true`) 후 진행, 위험·확인 금액 이상·수면 안심 시간이면 30분 보류 |
 | `POST /api/v1/transaction/request-approval` | 이상 거래 보류 요청 → `transaction_id`, `status: PENDING_APPROVAL`, `hold_seconds: 1800` |
 | `POST /api/v1/transaction/cancel` · `/transaction/reconfirm` · `/transaction/extend` | 보류 중 본인 취소 / 30분 무응답 뒤 본인 재확인(`[그래도 진행]` / `[그만두기]`) / 보호자 보류 30분 연장 |
+| `POST /api/v1/banking/question` · `/banking/savings/cancel` | 주의 모드 확인 질문 생성 · 적금 만기 전 해지(주의 모드 중 질문·종합 판정 → 위험 시 30분 보류, 주의 모드 밖 즉시 해지) |
+| `GET /api/v1/banking/loan/product` · `POST /banking/loan/quote` · `/banking/loan/limit` · `/banking/loan/apply` | 대출 상품 조회 · 월 납입액/총 이자 계산 · 한도 조회(보류 없이 위험 시 경고+보호자 알림) · 대출 신청(위험 시 30분 보류) |
 | `POST /api/v1/guardian/callback-decision` | 보호자 보류 해제·연장 및 요청 승인·거절. `transaction_id`, `guardian_id`, `decision`(RELEASE / EXTEND / APPROVE / REJECT), `reason` |
 | `POST /api/v1/payments/pay` · `/payments/request-approval` | 안심 모드를 따르는 결제 / 막힌 결제의 보호자 요청 |
 | `POST /api/v1/modes` · `/guardian/limits` · `/guardian/sleep-guard` | 안심 모드 · 하루 한도 · 수면 안심 모드 |

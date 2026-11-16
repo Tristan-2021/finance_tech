@@ -84,6 +84,11 @@ class Account(Base):
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     balance: Mapped[int] = mapped_column(Integer)
     withdrawal_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    interest_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    early_cancel_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    maturity_date: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    accrued_interest: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="active")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     member: Mapped[Member] = relationship(back_populates="accounts")
@@ -167,7 +172,7 @@ class ApprovalRequest(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     member_id: Mapped[str] = mapped_column(ForeignKey("members.id"), index=True)
-    type: Mapped[str] = mapped_column(String(12))
+    type: Mapped[str] = mapped_column(String(20))
     title: Mapped[str] = mapped_column(String(80))
     amount: Mapped[int] = mapped_column(Integer, default=0)
     detail: Mapped[str] = mapped_column(String(120), default="")

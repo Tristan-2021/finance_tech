@@ -8,5 +8,5 @@
 - **글자** `FbText`: 시안의 rem 크기를 16px 기준으로 옮긴 스타일.
 - **레이아웃** `FbLayout`(웹/모바일 판단), `FbView`, `FbSplit`(웹 2단 · 모바일 순서 지정).
 - **시트** `showFbSheet`: 모바일은 바텀 시트, 웹은 모달. `SheetHead`.
-- **위젯** `FbCard`, `FbButton`, `FbButtonRow`, `FbToggle`, `FbSegmented`, `FbFilterChips`, `FbOptionRow`, `FbSettingRow`, `FbListRow`, `TxLogo`, `FbRowLink`, `FbBanner`, `ResultIcon`, `CenterBlock`, `FbRail`, `RiskBox`, `CountdownText`, `Brand`.
+- **위젯** `FbCard`, `FbButton`, `FbButtonRow`, `FbToggle`, `FbSegmented`, `FbFilterChips`, `FbOptionRow`, `FbSettingRow`, `FbListRow`, `TxLogo`, `FbRowLink`, `FbBanner`, `ResultIcon`, `CenterBlock`, `FbRail`, `RiskBox`, `CountdownText`, `Brand`, `ConfirmationQuestionView`.
 - **형식** `won`, `wonOrHidden`, `formatWhen`, `formatCountdown`, `formatMinSec`, `ThousandsFormatter`.

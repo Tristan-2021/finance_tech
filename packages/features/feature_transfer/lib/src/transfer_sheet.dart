@@ -32,7 +32,7 @@ Future<void> openTransferSheet(
   );
 }
 
-enum TransferStep { who, amount, check, waiting, done }
+enum TransferStep { who, amount, check, question, waiting, done }
 
 String maskDigits(String digits) {
   final d = digitsOnly(digits);
@@ -63,6 +63,7 @@ class _TransferSheetState extends State<TransferSheet> {
   late bool _newMode;
   TransferPreview? _preview;
   TransferResult? _result;
+  ConfirmationQuestion? _question;
   String? _requestId;
   String? _error;
   bool _busy = false;
@@ -141,7 +142,7 @@ class _TransferSheetState extends State<TransferSheet> {
       setState(() => _error = '1원 이상 금액을 입력해 주세요.');
       return;
     }
-    _draft = _draft.copyWith(amount: amount);
+    _draft = _draft.copyWith(amount: amount, confirmed: false, clearQuestionAnswer: true);
     setState(() => _busy = true);
     try {
       final preview = await _family.assessTransfer(widget.memberId, _draft);
@@ -166,16 +167,31 @@ class _TransferSheetState extends State<TransferSheet> {
     }
   }
 
-  Future<void> _send() async {
+  Future<void> _answerQuestion(String option) async {
+    _draft = _draft.copyWith(questionAnswer: option, confirmed: false);
+    await _send(allowConfirm: false);
+  }
+
+  Future<void> _send({bool allowConfirm = true}) async {
     setState(() => _busy = true);
     try {
-      final confirm = _preview != null && !_preview!.risk.isSafe;
-      final draft = confirm ? _draft.copyWith(confirmed: true) : _draft;
+      final confirm = allowConfirm && _preview != null && !_preview!.risk.isSafe && !_preview!.needsQuestion;
+      final draft = _draft.copyWith(confirmed: confirm);
       final result = await _family.submitTransfer(widget.memberId, draft);
       if (!mounted) return;
+      if (result.needsQuestion) {
+        setState(() {
+          _busy = false;
+          _draft = _draft.copyWith(confirmed: false, clearQuestionAnswer: true);
+          _question = result.question;
+          _step = TransferStep.question;
+        });
+        return;
+      }
       if (result.isCaution && result.recipient != null && result.risk != null) {
         setState(() {
           _busy = false;
+          _draft = _draft.copyWith(confirmed: false);
           _preview = TransferPreview(recipient: result.recipient!, amount: result.amount, risk: result.risk!);
           _step = TransferStep.check;
         });
@@ -252,6 +268,7 @@ class _TransferSheetState extends State<TransferSheet> {
               TransferStep.who => _who(member, data, hidden),
               TransferStep.amount => _amountStep(member),
               TransferStep.check => _checkStep(data),
+              TransferStep.question => _questionStep(),
               TransferStep.waiting => _waiting(member, data),
               TransferStep.done => _done(member, hidden),
             },
@@ -520,6 +537,19 @@ class _TransferSheetState extends State<TransferSheet> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _questionStep() {
+    final q = _question!;
+    return ConfirmationQuestionView(
+      question: q.question,
+      options: q.options,
+      busy: _busy,
+      onBack: () => _go(TransferStep.check),
+      onClose: _close,
+      onAskGuardian: widget.onCallGuardian,
+      onSelected: _answerQuestion,
     );
   }
 

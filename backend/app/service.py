@@ -27,10 +27,20 @@ from sqlalchemy.orm import Session
 
 from . import clock
 from .config import Settings
+from .domain.banking import (
+    LOAN_PRODUCT,
+    VALID_ACTION_KINDS,
+    SavingsCancelCalculation,
+    assess_caution_action_rules,
+    build_risk_dict_from_verdict,
+    calculate_loan_repayment,
+    calculate_savings_cancellation,
+    preset_question,
+)
 from .domain.call import CALL_SCRIPTS, CallVerdict, assess_call_rules
 from .domain.catalog import BANKS, CATEGORIES, MERCHANTS, MODES, REQUEST_EMOJI, SOURCE_LABEL, Merchant, merchant
 from .domain.fds import FdsEngine, RiskResult, Sample, TransferContext
-from .domain.sms import SMS_PRESETS, assess_sms_rules, extract_links, extract_phones, resolve_preset
+from .domain.sms import SMS_PRESETS, SmsVerdict, assess_sms_rules, extract_links, extract_phones, resolve_preset
 from .events import EventHub
 from .integrations import Gateways, IntegrationRecord
 from .models import (
@@ -56,7 +66,7 @@ MAX_AMOUNT = 100_000_000
 HISTORY_DAYS = 180  # 신규 계좌 판단: 최근 6개월 송금 이력
 AVERAGE_DAYS = 90  # 평균 송금액: 최근 3개월
 SPLIT_WINDOW = timedelta(minutes=10)
-HOLD_TYPES = {"transfer"}
+HOLD_TYPES = {"transfer", "savings_cancel", "loan_apply"}
 EXPIRING_TYPES = {"payment", "mode"}
 ACTIVE_REQUEST_STATUSES = ("pending", "reconfirm")
 ACTIVE_CALL_STATUSES = ("ringing", "active")
@@ -961,12 +971,19 @@ class FamilyService:
             return Recipient(known.name, known.relation, known.bank, digits, False, known.id)
         return Recipient(name[:20], "새 계좌", bank, digits, self.is_new_recipient(m, digits))
 
+    def _payee_account(self, digits: str) -> Account | None:
+        payee = self.s.scalars(select(Account).where(Account.digits == digits)).first()
+        if payee is not None and payee.status != "active":
+            raise DomainError("cancelled", "해지된 계좌로는 보낼 수 없어요.")
+        return payee
+
     def _validate_transfer(self, m: Member, draft: dict[str, Any]) -> tuple[Recipient, int]:
         if self.is_frozen(m):
             raise DomainError("frozen", "계좌가 동결되어 있어 보낼 수 없어요.")
         recipient = self.resolve_recipient(m, draft.get("contact_id"), draft.get("new_account"))
         if any(a.digits == recipient.digits for a in m.accounts):
             raise DomainError("recipient", "내 계좌로는 보낼 수 없어요.")
+        self._payee_account(recipient.digits)
         amount = draft.get("amount")
         if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
             raise DomainError("amount", "1원 이상 금액을 입력해 주세요.")
@@ -996,17 +1013,199 @@ class FamilyService:
             risk = replace(risk, needs_approval=False)
         return risk
 
+    def _incident_context(self, inc: Incident | None, *, trim_count: int = 0) -> list[dict[str, Any]]:
+        if inc is None:
+            return []
+        items = inc.items[:-trim_count] if trim_count > 0 else inc.items
+        return [{"kind": item.kind, "summary": item.summary, "at": iso(item.at)} for item in items]
+
+    def _generate_question(self, m: Member, action_kind: str):
+        inc = self.active_incident(m.id)
+        ctx = self._incident_context(inc)
+        fallback = preset_question(action_kind, ctx)
+        question, rec = self.gw.llm.generate_question(action_kind, ctx, fallback)
+        self._integrate(rec)
+        return question
+
+    def get_confirmation_question(self, member_id: str, action_kind: str, amount: int | None = None) -> dict[str, Any]:
+        if action_kind not in VALID_ACTION_KINDS:
+            raise DomainError("action", f"알 수 없는 금융 행동이에요: {action_kind}")
+        m = self.member(member_id)
+        caution = m.supervised and self.is_caution_mode(m)
+        needs_q = caution
+        if caution and action_kind == "transfer" and amount is not None:
+            needs_q = amount > self.avg_transfer(m)
+        if not needs_q:
+            return {"needs_question": False, "caution_mode": caution, "question": None}
+        q = self._generate_question(m, action_kind)
+        return {"needs_question": True, "caution_mode": True, "question": q.to_dict()}
+
+    def _judge_caution_action(
+        self,
+        m: Member,
+        action_kind: str,
+        action_summary: str,
+        answer: str,
+        *,
+        fds_risk: RiskResult | None = None,
+        confirmed: bool = False,
+    ) -> tuple[SmsVerdict, int, bool]:
+        clean_ans = (answer or "").strip()
+        inc = self.active_incident(m.id)
+        already_logged = (
+            confirmed
+            and inc is not None
+            and len(inc.items) >= 3
+            and inc.items[-3].kind == "action"
+            and inc.items[-3].summary == action_summary
+            and inc.items[-2].kind == "answer"
+            and inc.items[-2].detail.get("action_kind") == action_kind
+            and inc.items[-2].detail.get("answer") == clean_ans
+            and inc.items[-1].kind == "judgment"
+            and inc.items[-1].detail.get("action_kind") == action_kind
+        )
+        ctx = self._incident_context(inc, trim_count=3 if already_logged else 0)
+        first_pass, score = assess_caution_action_rules(
+            action_kind, action_summary, clean_ans, ctx, fds_risk=fds_risk
+        )
+        verdict, llm_rec = self.gw.llm.judge_incident(action_kind, action_summary, clean_ans, ctx, first_pass)
+        self._integrate(llm_rec)
+
+        caution_confirmed = already_logged and inc is not None and inc.items[-1].detail.get("level") == "caution"
+
+        if not already_logged:
+            self.record_incident_item(m.id, "action", action_summary, {"action_kind": action_kind})
+            self.record_incident_item(
+                m.id,
+                "answer",
+                f"확인 질문 응답: {clean_ans}",
+                {"action_kind": action_kind, "answer": clean_ans},
+            )
+            self.record_incident_item(
+                m.id,
+                "judgment",
+                f"{action_summary} 판정 {verdict.level} · {verdict.explanation}",
+                {
+                    "action_kind": action_kind,
+                    "level": verdict.level,
+                    "reasons": list(verdict.reasons),
+                    "explanation": verdict.explanation,
+                    "source": verdict.source,
+                },
+            )
+        elif confirmed and verdict.level == "caution":
+            self.record_incident_item(
+                m.id,
+                "action",
+                f"본인이 경고를 확인하고 {action_summary} 진행",
+                {"action_kind": action_kind, "confirmed": True},
+            )
+        return verdict, score, caution_confirmed
+
     def assess_transfer(self, member_id: str, draft: dict[str, Any]) -> dict[str, Any]:
         m = self.member(member_id)
         recipient, amount = self._validate_transfer(m, draft)
         risk = self._risk(m, recipient, amount)
-        return {"recipient": recipient.to_dict(), "amount": amount, "risk": risk.to_dict()}
+        avg = self.avg_transfer(m)
+        needs_question = m.supervised and self.is_caution_mode(m) and amount > avg
+        return {
+            "recipient": recipient.to_dict(),
+            "amount": amount,
+            "avg_transfer": avg,
+            "needs_question": needs_question,
+            "risk": risk.to_dict(),
+        }
 
     def submit_transfer(self, member_id: str, draft: dict[str, Any], force_approval: bool = False) -> dict[str, Any]:
         m = self.member(member_id)
         recipient, amount = self._validate_transfer(m, draft)
         risk = self._risk(m, recipient, amount)
         confirmed = bool(draft.get("confirmed"))
+        answer = str(draft.get("question_answer") or "").strip()
+
+        is_monitored = m.supervised and self.is_caution_mode(m) and amount > self.avg_transfer(m)
+        if is_monitored and not force_approval:
+            if not answer:
+                q = self._generate_question(m, "transfer")
+                return {
+                    "status": "question",
+                    "amount": amount,
+                    "recipient": recipient.to_dict(),
+                    "question": q.to_dict(),
+                    "caution_mode": True,
+                }
+            verdict, score, caution_confirmed = self._judge_caution_action(
+                m,
+                "transfer",
+                f"{recipient.name}님께 {won(amount)} 송금 시도",
+                answer,
+                fds_risk=risk,
+                confirmed=confirmed,
+            )
+            over_threshold = amount >= m.approval_threshold
+            sleep_window = risk.sleep_window
+            forced_hold = over_threshold or sleep_window
+            needs_approval = (verdict.level == "danger") or forced_hold
+            risk_dict = build_risk_dict_from_verdict(verdict, score, needs_approval=needs_approval, fds_risk=risk)
+            if forced_hold:
+                hold_reasons: list[str] = []
+                if over_threshold:
+                    hold_reasons.append(f"보호자 확인 금액({won(m.approval_threshold)}) 이상이라 보호자 확인이 필요해요")
+                if sleep_window:
+                    hold_reasons.append("수면 안심 시간(23:00~06:00)이라 보호자 확인이 필요해요")
+                combined_reasons = list(risk_dict["reasons"])
+                for hr in hold_reasons:
+                    if hr not in combined_reasons:
+                        combined_reasons.append(hr)
+                risk_dict["reasons"] = combined_reasons
+                risk_dict["signals"] = [
+                    {"id": f"inc-{idx + 1}", "label": reason, "weight": 20}
+                    for idx, reason in enumerate(combined_reasons)
+                ]
+                risk_dict["explanation"] = f"{' · '.join(hold_reasons)} · {verdict.explanation}"
+            if verdict.level == "caution" and not needs_approval and not caution_confirmed:
+                return {
+                    "status": "caution",
+                    "amount": amount,
+                    "recipient": recipient.to_dict(),
+                    "risk": risk_dict,
+                    "verdict": verdict.to_dict(),
+                }
+            self.s.add(
+                RiskAssessment(
+                    id=uid("as"),
+                    member_id=m.id,
+                    at=clock.now(),
+                    amount=amount,
+                    recipient=recipient.name,
+                    is_new=recipient.is_new,
+                    score=risk_dict["score"],
+                    level=risk_dict["level"],
+                    signals=risk_dict["signals"],
+                    needs_approval=needs_approval,
+                    anomaly_score=risk.anomaly.decision if risk.anomaly else None,
+                )
+            )
+            if needs_approval:
+                req = self._create_request(
+                    m,
+                    "transfer",
+                    {"recipient": recipient.to_dict()},
+                    title=f"{recipient.name}님께 송금",
+                    amount=amount,
+                    detail=f"{recipient.bank} {recipient.number}" + (" · 처음 보내는 계좌" if recipient.is_new else ""),
+                    risk=risk_dict,
+                )
+                return {"status": "pending", "request": self._request_dict(req), "risk": risk_dict, "verdict": verdict.to_dict()}
+            self._do_transfer(m, recipient, amount)
+            self._emit("transfer", f"{self._who(m)}이 {recipient.name}님께 {won(amount)}을 보냈어요", member_id=m.id)
+            return {
+                "status": "done",
+                "amount": amount,
+                "recipient": recipient.to_dict(),
+                "risk": risk_dict,
+                "verdict": verdict.to_dict(),
+            }
 
         # 주의(caution) 단계: 경고와 쉬운 설명을 보여 주고 본인이 확인하면 진행합니다 (기획서 5.5)
         if m.supervised and not risk.needs_approval and not force_approval and risk.level == "caution" and not confirmed:
@@ -1062,6 +1261,7 @@ class FamilyService:
         acct = self.primary(m)
         if acct.withdrawal_blocked:
             raise DomainError("frozen", "출금이 정지된 계좌예요.")
+        payee = self._payee_account(recipient.digits)
         acct.balance -= amount
         if recipient.is_new and not any(c.account_digits == recipient.digits for c in m.contacts):
             m.contacts.append(
@@ -1087,13 +1287,22 @@ class FamilyService:
         self._integrate(self.gw.open_banking.transfer(m.name, acct.number, recipient.bank, recipient.number, amount))
         if alert:
             self._alert(m, f"{recipient.name}님께 송금", "ok", "💸", amount)
-        payee = self.s.scalars(select(Account).where(Account.digits == recipient.digits)).first()
         if payee is not None:
             self._deposit(payee, m, amount)
 
     def _deposit(self, acct: Account, sender: Member, amount: int) -> None:
         """핑거벨 안의 계좌로 보낸 돈을 받는 사람 계좌에 넣습니다 (예: 보호자가 아이에게 보낸 용돈)."""
-        acct.balance += amount
+        if acct.status != "active":
+            raise DomainError("cancelled", "해지된 계좌로는 입금할 수 없어요.")
+        self.s.flush()
+        credited = self.s.execute(
+            update(Account)
+            .where(Account.id == acct.id, Account.status == "active")
+            .values(balance=Account.balance + amount)
+        )
+        if not credited.rowcount:
+            raise DomainError("cancelled", "해지된 계좌로는 입금할 수 없어요.")
+        self.s.refresh(acct)
         owner = acct.member
         self._log(
             owner,
@@ -1108,6 +1317,362 @@ class FamilyService:
         # 보호자가 받는 돈은 보낸 가족의 송금 알림으로 이미 알게 됩니다
         if owner.supervised:
             self._emit("deposit", f"{sender.name}님이 {won(amount)}을 보냈어요", member_id=owner.id)
+
+    # ------------------------------------------------------------------ 적금·예금 만기 전 해지 & 대출 (기획서 5.4, 5.5, 5.6)
+    def cancel_savings(
+        self,
+        member_id: str,
+        account_id: str,
+        *,
+        question_answer: str | None = None,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        m = self.member(member_id)
+        acct = self.s.get(Account, account_id)
+        if acct is None or acct.member_id != m.id:
+            raise DomainError("account", "계좌를 찾을 수 없어요.", 404)
+        if acct.kind not in ("SAVINGS", "DEPOSIT"):
+            raise DomainError("account-kind", "입출금 계좌는 만기 전 해지 대상이 아니에요.")
+        if acct.status != "active":
+            raise DomainError("cancelled", "이미 해지된 계좌예요.", 409)
+        if self.is_frozen(m) or acct.withdrawal_blocked:
+            raise DomainError("frozen", "계좌가 동결되어 해지할 수 없어요.")
+
+        calc = calculate_savings_cancellation(
+            acct.balance,
+            acct.interest_rate,
+            acct.early_cancel_rate,
+            accrued_interest=acct.accrued_interest,
+        )
+        if not (m.supervised and self.is_caution_mode(m)):
+            self._do_cancel_savings(m, acct, calc)
+            self._emit("savings_cancel", f"{self._who(m)}이 {acct.name}을 만기 전 해지했어요", member_id=m.id, account_id=acct.id)
+            return {
+                "status": "done",
+                "account": self._account_dict(acct),
+                "calculation": calc.to_dict(),
+            }
+
+        answer = (question_answer or "").strip()
+        if not answer:
+            q = self._generate_question(m, "savings_cancel")
+            return {
+                "status": "question",
+                "account": self._account_dict(acct),
+                "calculation": calc.to_dict(),
+                "question": q.to_dict(),
+                "caution_mode": True,
+            }
+
+        verdict, score, caution_confirmed = self._judge_caution_action(
+            m,
+            "savings_cancel",
+            f"{acct.name} 만기 전 해지 시도 ({won(calc.payout_amount)})",
+            answer,
+            confirmed=confirmed,
+        )
+        needs_approval = verdict.level == "danger"
+        risk_dict = build_risk_dict_from_verdict(verdict, score, needs_approval=needs_approval)
+        if verdict.level == "caution" and not caution_confirmed:
+            return {
+                "status": "caution",
+                "account": self._account_dict(acct),
+                "calculation": calc.to_dict(),
+                "risk": risk_dict,
+                "verdict": verdict.to_dict(),
+            }
+        if needs_approval:
+            req = self._create_request(
+                m,
+                "savings_cancel",
+                {"account_id": acct.id, "account_name": acct.name, "calculation": calc.to_dict()},
+                title=f"{acct.name} 만기 전 해지",
+                amount=calc.payout_amount,
+                detail=f"원금 {won(calc.principal)} · 줄어드는 이자 {won(calc.reduced_interest)}",
+                risk=risk_dict,
+            )
+            return {
+                "status": "pending",
+                "request": self._request_dict(req),
+                "account": self._account_dict(acct),
+                "calculation": calc.to_dict(),
+                "risk": risk_dict,
+                "verdict": verdict.to_dict(),
+            }
+
+        self._do_cancel_savings(m, acct, calc)
+        self._emit("savings_cancel", f"{self._who(m)}이 {acct.name}을 만기 전 해지했어요", member_id=m.id, account_id=acct.id)
+        return {
+            "status": "done",
+            "account": self._account_dict(acct),
+            "calculation": calc.to_dict(),
+            "risk": risk_dict,
+            "verdict": verdict.to_dict(),
+        }
+
+    def _do_cancel_savings(
+        self,
+        m: Member,
+        acct: Account,
+        calc: SavingsCancelCalculation,
+        alert: bool = True,
+    ) -> None:
+        if acct.withdrawal_blocked:
+            raise DomainError("frozen", "출금이 정지된 계좌예요.")
+        self.s.flush()
+        claimed = self.s.execute(
+            update(Account)
+            .where(
+                Account.id == acct.id,
+                Account.member_id == m.id,
+                Account.kind.in_(("SAVINGS", "DEPOSIT")),
+                Account.status == "active",
+                Account.withdrawal_blocked.is_(False),
+            )
+            .values(balance=0, accrued_interest=0, status="cancelled")
+        )
+        if not claimed.rowcount:
+            self.s.refresh(acct)
+            if acct.withdrawal_blocked:
+                raise DomainError("frozen", "출금이 정지된 계좌예요.")
+            raise DomainError("cancelled", "이미 해지된 계좌예요.", 409)
+        self.s.refresh(acct)
+
+        to_acct = self.primary(m)
+        self.s.execute(
+            update(Account)
+            .where(Account.id == to_acct.id)
+            .values(balance=Account.balance + calc.payout_amount)
+        )
+        self.s.refresh(to_acct)
+        self._log(
+            m,
+            kind="in",
+            title=f"{acct.name} 만기 전 해지",
+            desc=f"이자 {won(calc.reduced_interest)} 감소",
+            amount=calc.payout_amount,
+            emoji="🏦",
+            category="deposit",
+        )
+        self._integrate(
+            self.gw.open_banking.cancel_savings(
+                m.name,
+                acct.number,
+                to_acct.number,
+                calc.payout_amount,
+                calc.reduced_interest,
+            )
+        )
+        if alert:
+            self._alert(m, f"{acct.name} 만기 전 해지", "ok", "🏦", calc.payout_amount)
+
+    def loan_quote(self, amount: int) -> dict[str, Any]:
+        if not isinstance(amount, int) or isinstance(amount, bool) or not LOAN_PRODUCT.min_amount <= amount <= LOAN_PRODUCT.max_limit:
+            raise DomainError(
+                "amount",
+                f"대출 금액은 {won(LOAN_PRODUCT.min_amount)}~{won(LOAN_PRODUCT.max_limit)} 사이로 입력해 주세요.",
+            )
+        return {
+            "product": LOAN_PRODUCT.to_dict(),
+            "quote": calculate_loan_repayment(amount).to_dict(),
+        }
+
+    def check_loan_limit(
+        self,
+        member_id: str,
+        *,
+        question_answer: str | None = None,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        m = self.member(member_id)
+        sample_quote = calculate_loan_repayment(5_000_000).to_dict()
+        if not (m.supervised and self.is_caution_mode(m)):
+            return {
+                "status": "done",
+                "product": LOAN_PRODUCT.to_dict(),
+                "max_limit": LOAN_PRODUCT.max_limit,
+                "sample_quote": sample_quote,
+            }
+
+        answer = (question_answer or "").strip()
+        if not answer:
+            q = self._generate_question(m, "loan_limit")
+            return {
+                "status": "question",
+                "product": LOAN_PRODUCT.to_dict(),
+                "question": q.to_dict(),
+                "caution_mode": True,
+            }
+
+        verdict, score, caution_confirmed = self._judge_caution_action(
+            m,
+            "loan_limit",
+            f"{LOAN_PRODUCT.name} 한도 조회 시도",
+            answer,
+            confirmed=confirmed,
+        )
+        risk_dict = build_risk_dict_from_verdict(verdict, score, needs_approval=False)
+        if verdict.level == "danger":
+            # 한도 조회는 실행할 거래가 없으므로 보류하지 않고 경고와 보호자 알림만 합니다 (지시서 5번).
+            self._alert(m, "주의 모드 중 대출 한도 조회 위험 감지", "danger", "🚨")
+            g = self.guardian()
+            self._integrate(
+                self.gw.push.send(
+                    g.name,
+                    f"위험 경고 · {self._who(m)}",
+                    f"주의 모드 중 대출 한도를 조회했어요 · {verdict.explanation}",
+                    {"type": "loan_limit_warning", "member_id": m.id},
+                )
+            )
+            self._emit(
+                "loan_limit_warning",
+                verdict.explanation,
+                member_id=m.id,
+                level=verdict.level,
+                explanation=verdict.explanation,
+            )
+            return {
+                "status": "danger",
+                "held": False,
+                "guardian_notified": True,
+                "product": LOAN_PRODUCT.to_dict(),
+                "max_limit": LOAN_PRODUCT.max_limit,
+                "sample_quote": sample_quote,
+                "risk": risk_dict,
+                "verdict": verdict.to_dict(),
+            }
+        if verdict.level == "caution" and not caution_confirmed:
+            return {
+                "status": "caution",
+                "product": LOAN_PRODUCT.to_dict(),
+                "max_limit": LOAN_PRODUCT.max_limit,
+                "sample_quote": sample_quote,
+                "risk": risk_dict,
+                "verdict": verdict.to_dict(),
+            }
+        return {
+            "status": "done",
+            "product": LOAN_PRODUCT.to_dict(),
+            "max_limit": LOAN_PRODUCT.max_limit,
+            "sample_quote": sample_quote,
+            "risk": risk_dict,
+            "verdict": verdict.to_dict(),
+        }
+
+    def apply_loan(
+        self,
+        member_id: str,
+        amount: int,
+        *,
+        question_answer: str | None = None,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        m = self.member(member_id)
+        if self.is_frozen(m) or self.primary(m).withdrawal_blocked:
+            raise DomainError("frozen", "계좌가 동결되어 대출을 신청할 수 없어요.")
+        if not isinstance(amount, int) or isinstance(amount, bool) or not LOAN_PRODUCT.min_amount <= amount <= LOAN_PRODUCT.max_limit:
+            raise DomainError(
+                "amount",
+                f"대출 금액은 {won(LOAN_PRODUCT.min_amount)}~{won(LOAN_PRODUCT.max_limit)} 사이로 입력해 주세요.",
+            )
+        quote = calculate_loan_repayment(amount)
+        if not (m.supervised and self.is_caution_mode(m)):
+            self._do_disburse_loan(m, amount)
+            self._emit("loan_apply", f"{self._who(m)}이 {LOAN_PRODUCT.name} {won(amount)}을 신청했어요", member_id=m.id, amount=amount)
+            return {
+                "status": "done",
+                "product": LOAN_PRODUCT.to_dict(),
+                "quote": quote.to_dict(),
+                "amount": amount,
+            }
+
+        answer = (question_answer or "").strip()
+        if not answer:
+            q = self._generate_question(m, "loan_apply")
+            return {
+                "status": "question",
+                "product": LOAN_PRODUCT.to_dict(),
+                "quote": quote.to_dict(),
+                "amount": amount,
+                "question": q.to_dict(),
+                "caution_mode": True,
+            }
+
+        verdict, score, caution_confirmed = self._judge_caution_action(
+            m,
+            "loan_apply",
+            f"{LOAN_PRODUCT.name} {won(amount)} 신청 시도",
+            answer,
+            confirmed=confirmed,
+        )
+        needs_approval = verdict.level == "danger"
+        risk_dict = build_risk_dict_from_verdict(verdict, score, needs_approval=needs_approval)
+        if verdict.level == "caution" and not caution_confirmed:
+            return {
+                "status": "caution",
+                "product": LOAN_PRODUCT.to_dict(),
+                "quote": quote.to_dict(),
+                "amount": amount,
+                "risk": risk_dict,
+                "verdict": verdict.to_dict(),
+            }
+        if needs_approval:
+            req = self._create_request(
+                m,
+                "loan_apply",
+                {"product_id": LOAN_PRODUCT.id, "product_name": LOAN_PRODUCT.name, "quote": quote.to_dict()},
+                title=f"{LOAN_PRODUCT.name} 신청",
+                amount=amount,
+                detail=f"월 {won(quote.monthly_payment)} · {LOAN_PRODUCT.term_months}개월 · 총 이자 {won(quote.total_interest)}",
+                risk=risk_dict,
+            )
+            return {
+                "status": "pending",
+                "request": self._request_dict(req),
+                "product": LOAN_PRODUCT.to_dict(),
+                "quote": quote.to_dict(),
+                "amount": amount,
+                "risk": risk_dict,
+                "verdict": verdict.to_dict(),
+            }
+
+        self._do_disburse_loan(m, amount)
+        self._emit("loan_apply", f"{self._who(m)}이 {LOAN_PRODUCT.name} {won(amount)}을 신청했어요", member_id=m.id, amount=amount)
+        return {
+            "status": "done",
+            "product": LOAN_PRODUCT.to_dict(),
+            "quote": quote.to_dict(),
+            "amount": amount,
+            "risk": risk_dict,
+            "verdict": verdict.to_dict(),
+        }
+
+    def _do_disburse_loan(self, m: Member, amount: int, alert: bool = True) -> None:
+        acct = self.primary(m)
+        if acct.withdrawal_blocked:
+            raise DomainError("frozen", "출금이 정지된 계좌예요.")
+        quote = calculate_loan_repayment(amount)
+        self.s.flush()
+        credited = self.s.execute(
+            update(Account)
+            .where(Account.id == acct.id, Account.withdrawal_blocked.is_(False))
+            .values(balance=Account.balance + amount)
+        )
+        if not credited.rowcount:
+            raise DomainError("frozen", "출금이 정지된 계좌예요.")
+        self.s.refresh(acct)
+        self._log(
+            m,
+            kind="in",
+            title=f"{LOAN_PRODUCT.name} 입금",
+            desc=f"월 {won(quote.monthly_payment)} · {LOAN_PRODUCT.term_months}개월",
+            amount=amount,
+            emoji="💳",
+            category="deposit",
+        )
+        self._integrate(self.gw.open_banking.disburse_loan(m.name, acct.number, LOAN_PRODUCT.name, amount))
+        if alert:
+            self._alert(m, f"{LOAN_PRODUCT.name} 실행", "ok", "💳", amount)
 
     # ------------------------------------------------------------------ 결제 + 상황별 안심 모드
     def check_payment(self, m: Member, mc: Merchant, spent_today: int | None = None) -> PaymentCheck:
@@ -1193,9 +1758,9 @@ class FamilyService:
         how = SOURCE_LABEL[trigger_type]
         self._integrate(self.gw.open_banking.stop_withdrawals(m.name, self._accounts_payload(m), f"SOS {how}"))
 
-        # 동결되면 기다리던 송금·결제 요청은 자동 취소
+        # 동결되면 기다리던 보류·결제 요청은 자동 취소
         for r in self.pending(m.id):
-            if r.type in ("transfer", "payment"):
+            if r.type in HOLD_TYPES or r.type == "payment":
                 r.status = "cancelled"
                 r.decided_at = now
                 r.decided_by = "system"
@@ -1532,7 +2097,42 @@ class FamilyService:
                 return False, "계좌가 동결되어 보내지 못했어요."
             if req.amount > self.primary(m).balance:
                 return False, "잔액이 부족해 보내지 못했어요."
-            self._do_transfer(m, Recipient.from_dict(req.payload["recipient"]), req.amount, alert=False)
+            try:
+                self._do_transfer(m, Recipient.from_dict(req.payload["recipient"]), req.amount, alert=False)
+            except DomainError as exc:
+                return False, exc.message
+            return True, ""
+        if req.type == "savings_cancel":
+            if self.is_frozen(m):
+                return False, "계좌가 동결되어 해지하지 못했어요."
+            acct = self.s.get(Account, req.payload.get("account_id", ""))
+            if acct is None or acct.member_id != m.id:
+                return False, "해지할 계좌를 찾을 수 없어요."
+            if acct.status != "active":
+                return False, "이미 해지된 계좌예요."
+            if acct.withdrawal_blocked:
+                return False, "출금이 정지된 계좌예요."
+            calc = calculate_savings_cancellation(
+                acct.balance,
+                acct.interest_rate,
+                acct.early_cancel_rate,
+                accrued_interest=acct.accrued_interest,
+            )
+            try:
+                self._do_cancel_savings(m, acct, calc, alert=False)
+            except DomainError as exc:
+                return False, exc.message
+            return True, ""
+        if req.type == "loan_apply":
+            if self.is_frozen(m) or self.primary(m).withdrawal_blocked:
+                return False, "계좌가 동결되어 대출을 실행하지 못했어요."
+            amount = int(req.amount)
+            if not LOAN_PRODUCT.min_amount <= amount <= LOAN_PRODUCT.max_limit:
+                return False, "대출 한도를 벗어난 금액이에요."
+            try:
+                self._do_disburse_loan(m, amount, alert=False)
+            except DomainError as exc:
+                return False, exc.message
             return True, ""
         if req.type == "payment":
             mc = merchant(m.id, req.payload.get("merchant_id", ""))
@@ -1763,6 +2363,7 @@ class FamilyService:
                     for p in SMS_PRESETS.values()
                 ],
                 "call_scripts": [script.to_dict() for script in CALL_SCRIPTS.values()],
+                "loan_product": LOAN_PRODUCT.to_dict(),
             },
         }
 
@@ -1889,6 +2490,16 @@ class FamilyService:
 
     @staticmethod
     def _account_dict(a: Account) -> dict[str, Any]:
+        preview = (
+            calculate_savings_cancellation(
+                a.balance,
+                a.interest_rate,
+                a.early_cancel_rate,
+                accrued_interest=a.accrued_interest,
+            ).to_dict()
+            if a.kind in ("SAVINGS", "DEPOSIT") and a.status == "active"
+            else None
+        )
         return {
             "id": a.id,
             "name": a.name,
@@ -1897,6 +2508,12 @@ class FamilyService:
             "kind": a.kind,
             "balance": a.balance,
             "withdrawal_blocked": a.withdrawal_blocked,
+            "interest_rate": a.interest_rate,
+            "early_cancel_rate": a.early_cancel_rate,
+            "maturity_date": iso(a.maturity_date),
+            "accrued_interest": a.accrued_interest,
+            "status": a.status,
+            "early_cancel_preview": preview,
         }
 
     @staticmethod

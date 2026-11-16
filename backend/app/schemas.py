@@ -31,6 +31,7 @@ class TransferDraft(BaseModel):
     new_account: NewAccount | None = None
     amount: int
     confirmed: bool = False
+    question_answer: str | None = Field(default=None, max_length=200)
     # 클라이언트가 보낸 점수·단계는 참고만 하고 항상 서버가 다시 계산합니다 (기획서 1절, 5.5).
     risk_score: int | None = None
     risk_level: str | None = None
@@ -42,7 +43,45 @@ class TransferDraft(BaseModel):
             "new_account": self.new_account.model_dump() if self.new_account else None,
             "amount": self.amount,
             "confirmed": self.confirmed,
+            "question_answer": self.question_answer,
         }
+
+
+class CautionQuestionBody(BaseModel):
+    member_id: str = "senior"
+    action_kind: Literal["savings_cancel", "transfer", "loan_apply", "loan_limit"]
+    amount: int | None = None
+
+
+class SavingsCancelBody(BaseModel):
+    member_id: str = "senior"
+    account_id: str
+    question_answer: str | None = Field(default=None, max_length=200)
+    confirmed: bool = False
+    # 클라이언트가 보낸 점수·단계는 무시하고 서버가 계산합니다.
+    risk_level: str | None = None
+    risk_score: int | None = None
+
+
+class LoanQuoteBody(BaseModel):
+    amount: int
+
+
+class LoanLimitBody(BaseModel):
+    member_id: str = "senior"
+    question_answer: str | None = Field(default=None, max_length=200)
+    confirmed: bool = False
+    risk_level: str | None = None
+    risk_score: int | None = None
+
+
+class LoanApplyBody(BaseModel):
+    member_id: str = "senior"
+    amount: int
+    question_answer: str | None = Field(default=None, max_length=200)
+    confirmed: bool = False
+    risk_level: str | None = None
+    risk_score: int | None = None
 
 
 class ApprovalRequestBody(BaseModel):

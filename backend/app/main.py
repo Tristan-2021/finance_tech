@@ -31,14 +31,19 @@ from .schemas import (
     CallSignalBody,
     CallStartBody,
     CallTranscriptBody,
+    CautionQuestionBody,
     CautionReleaseBody,
     HoldCancelBody,
     HoldExtendBody,
     HoldReconfirmBody,
     LimitBody,
+    LoanApplyBody,
+    LoanLimitBody,
+    LoanQuoteBody,
     MemberRequest,
     ModeBody,
     PaymentBody,
+    SavingsCancelBody,
     SleepGuardBody,
     SmsReceiveBody,
     SosFreezeRequest,
@@ -354,6 +359,60 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
         else:
             result = svc.decide(body.transaction_id, body.decision in ("APPROVE", "RELEASE"), "guardian", body.reason)
         return done(svc, {"transaction_id": body.transaction_id, **result, "status": result["status"].upper()})
+
+    # ---------------- 가상 은행 확장: 확인 질문 · 적금 해지 · 대출 (기획서 5.4, 5.5, 5.6)
+    @api.post("/banking/question")
+    @api.post("/caution/question", include_in_schema=False)
+    def caution_question(body: CautionQuestionBody, svc: FamilyService = Depends(service)):
+        return done(svc, svc.get_confirmation_question(body.member_id, body.action_kind, body.amount))
+
+    @api.post("/banking/savings/cancel")
+    @api.post("/savings/cancel", include_in_schema=False)
+    def cancel_savings(body: SavingsCancelBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.cancel_savings(
+                body.member_id,
+                body.account_id,
+                question_answer=body.question_answer,
+                confirmed=body.confirmed,
+            ),
+        )
+
+    @api.get("/banking/loan/product")
+    def loan_product():
+        from .domain.banking import LOAN_PRODUCT
+
+        return {"product": LOAN_PRODUCT.to_dict()}
+
+    @api.post("/banking/loan/quote")
+    def loan_quote(body: LoanQuoteBody, svc: FamilyService = Depends(service)):
+        return svc.loan_quote(body.amount)
+
+    @api.post("/banking/loan/limit")
+    @api.post("/loan/limit", include_in_schema=False)
+    def loan_limit(body: LoanLimitBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.check_loan_limit(
+                body.member_id,
+                question_answer=body.question_answer,
+                confirmed=body.confirmed,
+            ),
+        )
+
+    @api.post("/banking/loan/apply")
+    @api.post("/loan/apply", include_in_schema=False)
+    def loan_apply(body: LoanApplyBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.apply_loan(
+                body.member_id,
+                body.amount,
+                question_answer=body.question_answer,
+                confirmed=body.confirmed,
+            ),
+        )
 
     # ---------------- 핵심 기능 3: 상황별 안심 모드 · 한도
     @api.post("/payments/pay")

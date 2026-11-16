@@ -143,6 +143,9 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
           'blocked',
           'expired',
           'transfer',
+          'savings_cancel',
+          'loan_apply',
+          'loan_limit_warning',
           'payment',
           'mode',
         };
@@ -157,6 +160,8 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
           'mode',
           'limit',
           'deposit',
+          'savings_cancel',
+          'loan_apply',
         };
         final family = context.read<FamilyCubit>().state;
         final mine = family.isReady ? family.data.accountOf(persona)?.id : persona.memberId;

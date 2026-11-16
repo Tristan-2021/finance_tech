@@ -117,7 +117,14 @@ MERCHANTS: dict[str, list[Merchant]] = {
 BANKS = ["핑거벨", "국민", "신한", "우리", "하나", "농협", "카카오뱅크", "토스뱅크"]
 
 SOURCE_LABEL = {"LONG_PRESS": "길게 누르기", "SHAKE_MOTION": "흔들기", "GUARDIAN_REMOTE": "보호자 원격"}
-REQUEST_EMOJI = {"transfer": "💸", "payment": "💳", "mode": "🔁", "unfreeze": "🔓"}
+REQUEST_EMOJI = {
+    "transfer": "💸",
+    "savings_cancel": "🏦",
+    "loan_apply": "💳",
+    "payment": "💳",
+    "mode": "🔁",
+    "unfreeze": "🔓",
+}
 
 
 def merchant(member_id: str, merchant_id: str) -> Merchant | None:

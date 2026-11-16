@@ -45,6 +45,22 @@ abstract interface class FamilyRepository {
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft);
   Future<TransferResult> submitTransfer(String memberId, TransferDraft draft);
 
+  Future<ConfirmationQuestionResult> fetchConfirmationQuestion(String memberId, String actionKind, {int? amount});
+  Future<SavingsCancelResult> cancelSavings(
+    String memberId,
+    String accountId, {
+    String? questionAnswer,
+    bool confirmed = false,
+  });
+  Future<LoanQuote> quoteLoan(int amount);
+  Future<LoanLimitResult> checkLoanLimit(String memberId, {String? questionAnswer, bool confirmed = false});
+  Future<LoanApplyResult> applyLoan(
+    String memberId,
+    int amount, {
+    String? questionAnswer,
+    bool confirmed = false,
+  });
+
   Future<PaymentResult> pay(String memberId, String merchantId);
   Future<PaymentResult> requestPayment(String memberId, String merchantId);
 
@@ -182,6 +198,60 @@ class ApiFamilyRepository implements FamilyRepository {
   @override
   Future<TransferResult> submitTransfer(String memberId, TransferDraft draft) async =>
       TransferResult.fromJson(await api.post('/transaction/transfer', draft.toJson(memberId)));
+
+  @override
+  Future<ConfirmationQuestionResult> fetchConfirmationQuestion(String memberId, String actionKind, {int? amount}) async =>
+      ConfirmationQuestionResult.fromJson(
+        await api.post('/banking/question', {
+          'member_id': memberId,
+          'action_kind': actionKind,
+          'amount': ?amount,
+        }),
+      );
+
+  @override
+  Future<SavingsCancelResult> cancelSavings(
+    String memberId,
+    String accountId, {
+    String? questionAnswer,
+    bool confirmed = false,
+  }) async => SavingsCancelResult.fromJson(
+    await api.post('/banking/savings/cancel', {
+      'member_id': memberId,
+      'account_id': accountId,
+      'question_answer': ?questionAnswer,
+      'confirmed': confirmed,
+    }),
+  );
+
+  @override
+  Future<LoanQuote> quoteLoan(int amount) async =>
+      LoanQuote.fromJson(asJson((await api.post('/banking/loan/quote', {'amount': amount}))['quote']));
+
+  @override
+  Future<LoanLimitResult> checkLoanLimit(String memberId, {String? questionAnswer, bool confirmed = false}) async =>
+      LoanLimitResult.fromJson(
+        await api.post('/banking/loan/limit', {
+          'member_id': memberId,
+          'question_answer': ?questionAnswer,
+          'confirmed': confirmed,
+        }),
+      );
+
+  @override
+  Future<LoanApplyResult> applyLoan(
+    String memberId,
+    int amount, {
+    String? questionAnswer,
+    bool confirmed = false,
+  }) async => LoanApplyResult.fromJson(
+    await api.post('/banking/loan/apply', {
+      'member_id': memberId,
+      'amount': amount,
+      'question_answer': ?questionAnswer,
+      'confirmed': confirmed,
+    }),
+  );
 
   @override
   Future<PaymentResult> pay(String memberId, String merchantId) async =>

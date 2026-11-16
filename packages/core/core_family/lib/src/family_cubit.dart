@@ -224,11 +224,33 @@ class FamilyCubit extends Cubit<FamilyState> {
   Future<CallAnalysisResult> sendCallTranscript(String callId, {required String text}) =>
       _act(() => _repo.sendCallTranscript(callId, text: text));
 
-  // ---------------------------------------------------------------- 송금 · 결제
+  // ---------------------------------------------------------------- 송금 · 적금 해지 · 대출 · 결제
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) => _repo.assessTransfer(memberId, draft);
 
   Future<TransferResult> submitTransfer(String memberId, TransferDraft draft) =>
       _act(() => _repo.submitTransfer(memberId, draft));
+
+  Future<ConfirmationQuestionResult> fetchConfirmationQuestion(String memberId, String actionKind, {int? amount}) =>
+      _repo.fetchConfirmationQuestion(memberId, actionKind, amount: amount);
+
+  Future<SavingsCancelResult> cancelSavings(
+    String memberId,
+    String accountId, {
+    String? questionAnswer,
+    bool confirmed = false,
+  }) => _act(() => _repo.cancelSavings(memberId, accountId, questionAnswer: questionAnswer, confirmed: confirmed));
+
+  Future<LoanQuote> quoteLoan(int amount) => _repo.quoteLoan(amount);
+
+  Future<LoanLimitResult> checkLoanLimit(String memberId, {String? questionAnswer, bool confirmed = false}) =>
+      _act(() => _repo.checkLoanLimit(memberId, questionAnswer: questionAnswer, confirmed: confirmed));
+
+  Future<LoanApplyResult> applyLoan(
+    String memberId,
+    int amount, {
+    String? questionAnswer,
+    bool confirmed = false,
+  }) => _act(() => _repo.applyLoan(memberId, amount, questionAnswer: questionAnswer, confirmed: confirmed));
 
   Future<PaymentResult> pay(String memberId, String merchantId) => _act(() => _repo.pay(memberId, merchantId));
 
