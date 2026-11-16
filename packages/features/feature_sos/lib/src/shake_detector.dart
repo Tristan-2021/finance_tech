@@ -1,12 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
 import 'shake_analyzer.dart';
 
 /// sensors_plus 가속도 스트림을 [ShakeAnalyzer]에 연결합니다.
-/// 센서가 없는 기기(데스크톱 브라우저 등)에서는 [supported]가 false가 됩니다.
+/// 센서가 없는 기기에서는 [supported]가 false가 됩니다.
 class ShakeDetector {
   final ShakeAnalyzer analyzer;
   final void Function(double peakG) onShake;
@@ -31,8 +30,7 @@ class ShakeDetector {
     if (_sub != null || !_supported) return;
     final Stream<AccelerometerEvent> stream;
     try {
-      stream = source?.call() ??
-          (kIsWeb ? accelerometerEventStream() : accelerometerEventStream(samplingPeriod: SensorInterval.gameInterval));
+      stream = source?.call() ?? accelerometerEventStream(samplingPeriod: SensorInterval.gameInterval);
     } catch (_) {
       _supported = false;
       return;

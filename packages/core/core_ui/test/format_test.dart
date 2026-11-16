@@ -29,31 +29,17 @@ void main() {
     expect(v.text, '500,000');
   });
 
-  testWidgets('FbSplit stacks the mobile order on narrow layouts', (tester) async {
+  testWidgets('FbSplit stacks children in the mobile order', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: FbTheme.build(),
-        home: const FbLayout(
-          isWeb: false,
-          child: FbSplit(main: [Text('A')], side: [Text('B')], mobile: [Text('B'), Text('A')]),
+        home: const Scaffold(
+          body: FbSplit(main: [Text('A')], side: [Text('B')], mobile: [Text('B'), Text('A')]),
         ),
       ),
     );
     final b = tester.getTopLeft(find.text('B'));
     final a = tester.getTopLeft(find.text('A'));
     expect(b.dy, lessThan(a.dy));
-  });
-
-  testWidgets('FbSplit puts columns side by side on the web', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: FbTheme.build(),
-        home: const FbLayout(isWeb: true, child: FbSplit(main: [Text('A')], side: [Text('B')])),
-      ),
-    );
-    expect(tester.getTopLeft(find.text('B')).dx, greaterThan(tester.getTopLeft(find.text('A')).dx));
   });
 }

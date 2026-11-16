@@ -20,7 +20,6 @@ class GuardianManageView extends StatelessWidget {
         ManageCard(key: ValueKey(m.id), member: m, data: data, onCallMember: onCallMember),
     ];
     return FbView(
-      wide: true,
       children: [
         const Greeting('가족 관리'),
         if (cards.length >= 2) FbSplit(main: [cards[0]], side: [cards[1], ...cards.skip(2)]) else ...cards,

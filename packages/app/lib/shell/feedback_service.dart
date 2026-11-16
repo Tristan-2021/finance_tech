@@ -69,7 +69,7 @@ class DeviceFeedback implements FeedbackOutput {
       final tts = _tts ??= FlutterTts();
       if (!_ttsReady) {
         await tts.setLanguage('ko-KR');
-        await tts.setSpeechRate(kIsWeb ? 0.95 : 0.5);
+        await tts.setSpeechRate(0.5);
         _ttsReady = true;
       }
       await tts.stop();

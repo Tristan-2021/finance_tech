@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
-import 'package:core_ui/core_ui.dart';
 import 'package:feature_call/feature_call.dart';
 import 'package:feature_sos/feature_sos.dart';
 import 'package:flutter/material.dart';
@@ -15,7 +14,7 @@ import 'shake_watcher.dart';
 import 'startup_views.dart';
 import 'toast.dart';
 
-/// 앱 셸: 서버 연결 → 웹/모바일 레이아웃 → 그 위의 SOS 화면·토스트.
+/// 앱 셸: 서버 연결 → 모바일 레이아웃 → 그 위의 SOS 화면·토스트.
 /// 실시간 이벤트에 반응하고(다른 기기 알림), 피드백 요청을 진동·음성으로 내보냅니다.
 class AppShell extends StatefulWidget {
   static final navigatorKey = GlobalKey<NavigatorState>();
@@ -222,7 +221,6 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
                   )
                 : const LoadingView();
           }
-          final isWeb = FbLayout.isWebOf(context);
           // 토스트·흔들기 막대처럼 레이아웃 바깥에 뜨는 글자도 테마 글꼴을 쓰도록 Material로 감쌉니다.
           return Material(
             type: MaterialType.transparency,
@@ -236,13 +234,11 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
                         offset: Offset(_shakeOffset(_shake.value), 0),
                         child: Transform.rotate(angle: _shakeOffset(_shake.value) / 400, child: child),
                       ),
-                      child: isWeb
-                          ? WebLayout(serverAddress: widget.serverAddress)
-                          : MobileLayout(serverAddress: widget.serverAddress),
+                      child: MobileLayout(serverAddress: widget.serverAddress),
                     ),
                   ),
                   const Positioned.fill(child: SosLayer()),
-                  Positioned.fill(child: ToastHost(key: _toast, top: isWeb ? 84 : 64, centered: isWeb)),
+                  Positioned.fill(child: ToastHost(key: _toast, top: 64)),
                 ],
               ),
             ),

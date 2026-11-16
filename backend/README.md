@@ -13,7 +13,8 @@
 | `app/domain/catalog.py` | 안심 모드, 업종 MCC, 시연 가맹점 |
 | `app/integrations.py` | 오픈뱅킹 · FCM · SMS 어댑터(모의)와 OpenRouter LLM · 음성인식(STT) 게이트웨이(키가 없으면 모의, `OPENROUTER_API_KEY`가 있으면 OpenRouter 호출, 모델 기본값 `FINGERBELL_LLM_MODEL=anthropic/claude-haiku-5.5`, `FINGERBELL_STT_MODEL=openai/whisper-large-v3`) |
 | `app/seed.py` | 시연 가족(김사랑 보호자, 김순자 어르신, 이민준 아이), 초기 정상 문자, FDS 학습용 과거 거래 |
-| `tests/` | pytest 테스트 |
+| `scripts/eval_llm.py` | `OPENROUTER_API_KEY`가 있을 때 사람이 직접 실행하는 LLM 정확도·오탐·3회 일관성 평가 스크립트 |
+| `tests/` | pytest 테스트 (규칙 단계 검증, LLM/STT 실패 대체, 대표 시나리오 종단 통합 테스트 `test_stage8_scenario.py` 포함) |
 
 ## 실행
 
@@ -30,6 +31,12 @@ python -m venv .venv
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
+```
+
+`OPENROUTER_API_KEY`가 있을 때 실제 LLM 정확도·오탐·일관성을 보려면 아래 수동 스크립트를 실행합니다 (`pytest`/CI에서는 호출하지 않습니다).
+
+```powershell
+.\.venv\Scripts\python.exe scripts/eval_llm.py
 ```
 
 테스트는 임시 SQLite와 고정된 시각(`app.clock.freeze_at`)을 써서, 30분 보류·24시간 만료·심야 판정을 실제로 기다리지 않고 확인합니다.

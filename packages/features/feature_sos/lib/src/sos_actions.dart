@@ -4,7 +4,7 @@ import 'package:core_shell/core_shell.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-/// 강한 진동 3회 (기획서 3.1).
+/// 강한 진동 3회 (기획서 5.9).
 const sosVibration = [400, 120, 400, 120, 400];
 
 /// SOS 동결을 서버에 요청하고 결과 화면을 띄웁니다.

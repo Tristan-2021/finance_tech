@@ -63,7 +63,6 @@ class _SettingsViewState extends State<SettingsView> {
     final feedbackAuthorId = persona.memberId ?? snap?.guardian.id ?? persona.name;
     final pairedMember = snap?.memberOrNull(activeMemberId);
     final live = context.select((FamilyCubit f) => f.state.live);
-    final isWeb = FbLayout.isWebOf(context);
     final now = context.read<FamilyCubit>().now();
 
     FbSettingRow row(PrefKey key, String title, String hint, {bool divider = true}) => FbSettingRow(
@@ -142,22 +141,27 @@ class _SettingsViewState extends State<SettingsView> {
             ],
           ),
         ),
-        if (!isWeb)
-          FbCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const CardTitle('바로 시연해 보기'),
-                for (final s in Scenario.values)
-                  FbListRow(
-                    leading: const TxLogo(icon: FbIcons.sparkle, blue: true),
-                    title: Text(s.label),
-                    chevron: true,
-                    onTap: () => runScenario(context, s),
-                  ),
-              ],
-            ),
+        FbCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const CardTitle('바로 시연해 보기'),
+              for (final s in Scenario.values)
+                FbListRow(
+                  leading: const TxLogo(icon: FbIcons.sparkle, blue: true),
+                  title: Text(s.label),
+                  chevron: true,
+                  onTap: () => runScenario(context, s),
+                ),
+              FbListRow(
+                leading: const TxLogo(icon: FbIcons.reset, blue: true),
+                title: const Text('처음 상태로 되돌리기'),
+                chevron: true,
+                onTap: _reset,
+              ),
+            ],
           ),
+        ),
         FbCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -192,16 +196,11 @@ class _SettingsViewState extends State<SettingsView> {
             ],
           ),
         ),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 8,
-          children: [
-            FbTextButton('처음 상태로 되돌리기', onPressed: _reset),
-            FbTextButton(
-              '오픈소스 라이선스',
-              onPressed: () => showLicensePage(context: context, applicationName: '핑거벨', applicationVersion: '1.0.0'),
-            ),
-          ],
+        Center(
+          child: FbTextButton(
+            '오픈소스 라이선스',
+            onPressed: () => showLicensePage(context: context, applicationName: '핑거벨', applicationVersion: '1.0.0'),
+          ),
         ),
         Text(
           '가상 데이터를 쓰는 경진대회 시연용 앱입니다.\n실제 은행·금융 서비스와 연결되지 않습니다.',

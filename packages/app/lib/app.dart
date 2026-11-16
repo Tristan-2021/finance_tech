@@ -49,7 +49,7 @@ class FingerBellApp extends StatelessWidget {
               final scale = mq.textScaler.scale(1) * textFactor(s);
               return MediaQuery(
                 data: mq.copyWith(textScaler: TextScaler.linear(scale)),
-                child: FbLayout(isWeb: mq.size.width >= webBreakpoint, child: child ?? const SizedBox.shrink()),
+                child: child ?? const SizedBox.shrink(),
               );
             },
             home: AppShell(serverAddress: serverAddress),

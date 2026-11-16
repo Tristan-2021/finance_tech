@@ -159,7 +159,6 @@ class EasyMemberHome extends StatelessWidget {
     final hasStatus = member.cautionMode || holds.isNotEmpty;
 
     return FbView(
-      wide: true,
       children: [
         Greeting(member.isChild ? '안녕, ${member.callName}!' : '안녕하세요, ${member.name}님'),
         if (hasStatus)
@@ -292,7 +291,6 @@ class EasyGuardianHome extends StatelessWidget {
     final me = data.guardian.banking;
     final pending = data.pending();
     return FbView(
-      wide: true,
       children: [
         Greeting(
           pending.isEmpty ? '가족 모두 안전해요' : '확인할 요청이 ${pending.length}건 있어요',

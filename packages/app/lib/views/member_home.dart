@@ -41,7 +41,6 @@ class SeniorHome extends StatelessWidget {
       ),
     );
     return FbView(
-      wide: true,
       children: [
         Greeting('안녕하세요, ${member.name}님'),
         if (!prompted) const EasyModePromptCard(),
@@ -119,7 +118,6 @@ class ChildHome extends StatelessWidget {
       ),
     );
     return FbView(
-      wide: true,
       children: [
         Greeting('안녕, ${m.callName}!'),
         FbSplit(

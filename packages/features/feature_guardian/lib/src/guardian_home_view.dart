@@ -69,13 +69,11 @@ class GuardianHomeView extends StatelessWidget {
     );
 
     return FbView(
-      wide: true,
       children: [
         Greeting(
           pending.isEmpty ? '가족 모두 안전해요' : '확인할 요청이 ${pending.length}건 있어요',
           sub: '${data.guardian.name}님',
         ),
-        // 웹: 왼쪽은 요청과 내 계좌, 오른쪽은 가족 (내 계좌가 없으면 알림을 왼쪽에)
         FbSplit(
           main: [...cautionCards, ...requests, ...banking, if (banking.isEmpty) alerts],
           side: [familyCard, if (banking.isNotEmpty) alerts, historyCard],

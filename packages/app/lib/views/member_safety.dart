@@ -80,7 +80,6 @@ class MemberSafety extends StatelessWidget {
       ),
     );
     return FbView(
-      wide: true,
       children: [
         const Greeting('안심'),
         FbSplit(

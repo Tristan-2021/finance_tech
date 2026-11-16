@@ -6,7 +6,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../views/view_for.dart';
 import 'banners.dart';
-import 'scenarios.dart';
 
 typedef NavEntry = (AppTab tab, String label, IconData icon);
 
@@ -124,19 +123,13 @@ class ShellBody extends StatelessWidget {
     final shell = context.watch<ShellCubit>().state;
     final family = context.watch<FamilyCubit>().state;
     final banner = bannerFor(context, shell, family);
-    final isWeb = FbLayout.isWebOf(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (banner != null)
           Padding(
-            padding: EdgeInsets.only(bottom: isWeb ? 12 : 6, top: isWeb ? 0 : 2),
-            child: isWeb
-                ? Align(
-                    alignment: Alignment.topLeft,
-                    child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: banner),
-                  )
-                : banner,
+            padding: const EdgeInsets.only(bottom: 6, top: 2),
+            child: banner,
           ),
         KeyedSubtree(
           key: ValueKey('${shell.persona.name}-${shell.tab.name}'),
@@ -276,190 +269,6 @@ class _BottomNavItem extends StatelessWidget {
                 style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------- 웹 (16:9, 사이드바 + 2단)
-class WebLayout extends StatefulWidget {
-  final String serverAddress;
-  const WebLayout({super.key, required this.serverAddress});
-
-  @override
-  State<WebLayout> createState() => _WebLayoutState();
-}
-
-class _WebLayoutState extends State<WebLayout> {
-  final _scroll = ScrollController();
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.fb;
-    final size = MediaQuery.sizeOf(context);
-    final shell = context.watch<ShellCubit>().state;
-    final sidebarWidth = size.width < 1100 ? 200.0 : 232.0;
-    final framed = size.width > 1600 || size.height > 900;
-
-    final frame = Row(
-      children: [
-        Container(
-          width: sidebarWidth,
-          padding: const EdgeInsets.fromLTRB(16, 28, 16, 22),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(right: BorderSide(color: Color(0xFFEEF0F3))),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(10, 0, 10, 34),
-                child: Align(alignment: Alignment.centerLeft, child: Brand(size: 20)),
-              ),
-              for (final (tab, label, icon) in navFor(shell.persona))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: _SideNavItem(
-                    label: label,
-                    icon: icon,
-                    selected: shell.tab == tab,
-                    onTap: () => context.read<ShellCubit>().switchTab(tab),
-                  ),
-                ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.fromLTRB(10, 18, 10, 0),
-                decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF0F2F5)))),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('바로 시연해 보기', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: c.faint)),
-                    const SizedBox(height: 6),
-                    for (final s in Scenario.values)
-                      InkWell(
-                        onTap: () => runScenario(context, s),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text(s.label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink2)),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Column(
-            children: [
-              Container(
-                height: 68,
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(bottom: BorderSide(color: Color(0xFFEEF0F3))),
-                ),
-                child: Row(
-                  children: [
-                    if (size.width >= 560) ...[
-                      Text('시연 사용자', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.muted)),
-                      const SizedBox(width: 10),
-                    ],
-                    const PersonaSwitch(),
-                    const Spacer(),
-                    const BellButton(),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: BlocListener<ShellCubit, ShellState>(
-                  listenWhen: (a, b) => a.tab != b.tab || a.persona != b.persona,
-                  listener: (_, _) {
-                    if (_scroll.hasClients) _scroll.jumpTo(0);
-                  },
-                  child: Scrollbar(
-                    controller: _scroll,
-                    child: SingleChildScrollView(
-                      controller: _scroll,
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1120),
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(size.width < 1100 ? 26 : 36, 24, size.width < 1100 ? 26 : 36, 48),
-                            child: ShellBody(serverAddress: widget.serverAddress),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-
-    return ColoredBox(
-      color: framed ? c.backdrop : c.bg,
-      child: Center(
-        child: Container(
-          width: size.width.clamp(0, 1600),
-          height: size.height.clamp(0, 900),
-          decoration: BoxDecoration(
-            color: c.bg,
-            boxShadow: framed ? const [BoxShadow(color: Color(0x242D4468), blurRadius: 70, offset: Offset(0, 24))] : null,
-          ),
-          clipBehavior: Clip.hardEdge,
-          child: Material(color: c.bg, child: frame),
-        ),
-      ),
-    );
-  }
-}
-
-class _SideNavItem extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _SideNavItem({required this.label, required this.icon, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.fb;
-    final color = selected ? c.blueStrong : c.muted;
-    return Semantics(
-      selected: selected,
-      child: Material(
-        color: selected ? c.blueSoft : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          hoverColor: c.soft,
-          onTap: onTap,
-          child: SizedBox(
-            height: 46,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Row(
-                children: [
-                  Icon(icon, size: 21, color: color),
-                  const SizedBox(width: 12),
-                  Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
-                ],
-              ),
-            ),
           ),
         ),
       ),

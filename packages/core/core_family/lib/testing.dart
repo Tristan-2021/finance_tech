@@ -42,7 +42,7 @@ Map<String, dynamic> normalSmsJson({
   String id = 'sms-normal-1',
   String memberId = 'senior',
   String senderName = '안심택배',
-  String senderPhone = '1588-0000',
+  String senderPhone = '02-0000-5880',
   String body = '[안심택배] 김순자님 주문하신 건강즙 상품이 오늘 오후 배송 완료되었습니다. 문 앞을 확인해 주세요.',
   DateTime? now,
 }) {
@@ -57,7 +57,7 @@ Map<String, dynamic> normalSmsJson({
     'reasons': <String>[],
     'explanation': '사기 의심 징후가 없는 일반 문자예요.',
     'links': <String>[],
-    'phones': <String>['1588-0000'],
+    'phones': <String>[senderPhone],
     'at': t.toIso8601String(),
   };
 }
@@ -117,7 +117,7 @@ Map<String, dynamic> demoSnapshotJson({
     normalSmsJson(
       id: 'sms-seed-bank',
       senderName: '핑거벨은행',
-      senderPhone: '1599-0000',
+      senderPhone: '02-0000-5990',
       body: '[핑거벨] 김순자님 연금 650,000원이 입출금 통장(5678)으로 입금되었습니다.',
       now: t.subtract(const Duration(hours: 26)),
     ),
@@ -540,7 +540,7 @@ class FakeFamilyRepository implements FamilyRepository {
             id: 'sms-${calls.length + 1}',
             memberId: memberId,
             senderName: senderName ?? '안심택배',
-            senderPhone: senderPhone ?? '1588-0000',
+            senderPhone: senderPhone ?? '02-0000-5880',
             body: body ?? '[안심택배] 김순자님 주문하신 건강즙 상품이 오늘 오후 배송 완료되었습니다. 문 앞을 확인해 주세요.',
             now: now,
           );

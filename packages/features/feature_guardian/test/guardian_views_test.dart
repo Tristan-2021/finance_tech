@@ -8,8 +8,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<(FakeFamilyRepository, FamilyCubit)> pump(WidgetTester tester, Widget Function(FamilySnapshot) view,
-    {Map<String, dynamic>? snapshot, bool web = false}) async {
-  tester.view.physicalSize = web ? const Size(1400, 900) : const Size(420, 1600);
+    {Map<String, dynamic>? snapshot}) async {
+  tester.view.physicalSize = const Size(420, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final repo = FakeFamilyRepository(snapshot);
@@ -21,11 +21,8 @@ Future<(FakeFamilyRepository, FamilyCubit)> pump(WidgetTester tester, Widget Fun
       child: MaterialApp(
         theme: FbTheme.build(),
         home: Scaffold(
-          body: FbLayout(
-            isWeb: web,
-            child: SingleChildScrollView(
-              child: BlocBuilder<FamilyCubit, FamilyState>(builder: (_, s) => view(s.data)),
-            ),
+          body: SingleChildScrollView(
+            child: BlocBuilder<FamilyCubit, FamilyState>(builder: (_, s) => view(s.data)),
           ),
         ),
       ),
@@ -91,11 +88,5 @@ void main() {
     await tester.tap(find.text('일반').last);
     await tester.pump();
     expect(repo.calls, contains('mode:child:normal:guardian'));
-  });
-
-  testWidgets('manage view works in the two column web layout', (tester) async {
-    await pump(tester, (d) => GuardianManageView(data: d), web: true);
-    expect(find.byType(ManageCard), findsNWidgets(2));
-    expect(find.text('원격으로 출금 동결'), findsNWidgets(2));
   });
 }

@@ -1,9 +1,6 @@
-import 'package:flutter/foundation.dart';
-
 /// 백엔드 주소. `--dart-define=FINGERBELL_API_URL=http://192.168.0.10:8765`으로 바꿉니다.
 ///
-/// 지정하지 않으면 웹은 앱을 연 주소(같은 서버가 웹 앱을 제공하는 경우),
-/// 그 밖의 기기는 `http://127.0.0.1:8765`을 씁니다. Android는 `adb reverse
+/// 지정하지 않으면 `http://127.0.0.1:8765`을 씁니다. Android는 `adb reverse
 /// tcp:8765 tcp:8765`으로 PC의 서버에 연결합니다 (run-android.ps1이 해 줍니다).
 class ApiConfig {
   final Uri baseUrl;
@@ -14,7 +11,6 @@ class ApiConfig {
 
   factory ApiConfig.fromEnvironment() {
     if (_defined.isNotEmpty) return ApiConfig(Uri.parse(_defined));
-    if (kIsWeb) return ApiConfig(Uri.parse(Uri.base.origin));
     return ApiConfig(Uri.parse('http://127.0.0.1:8765'));
   }
 

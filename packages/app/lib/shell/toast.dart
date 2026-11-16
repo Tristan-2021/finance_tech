@@ -6,9 +6,8 @@ import 'package:flutter/semantics.dart';
 /// 화면 위쪽에 잠깐 떴다 사라지는 안내 (.toast).
 class ToastHost extends StatefulWidget {
   final double top;
-  final bool centered;
 
-  const ToastHost({super.key, required this.top, this.centered = false});
+  const ToastHost({super.key, required this.top});
 
   @override
   State<ToastHost> createState() => ToastHostState();
@@ -64,9 +63,7 @@ class ToastHostState extends State<ToastHost> {
           top: MediaQuery.paddingOf(context).top + widget.top,
           left: 20,
           right: 20,
-          child: widget.centered
-              ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 520), child: toast))
-              : toast,
+          child: toast,
         ),
       ],
     );

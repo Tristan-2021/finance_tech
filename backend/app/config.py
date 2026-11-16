@@ -6,8 +6,6 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# flutter build web 결과물. 있으면 FINGERBELL_WEB_DIR 없이도 같은 서버에서 웹 앱을 제공합니다.
-DEFAULT_WEB_BUILD = Path(__file__).resolve().parents[2] / "packages" / "app" / "build" / "web"
 # 기본 DB는 실행 위치와 상관없이 backend/fingerbell.db
 DEFAULT_DATABASE_URL = f"sqlite:///{(Path(__file__).resolve().parents[1] / 'fingerbell.db').as_posix()}"
 DEFAULT_LLM_MODEL = "anthropic/claude-haiku-5.5"
@@ -47,8 +45,6 @@ class Settings:
     llm_timeout_seconds: float = 5.0
     stt_model: str = DEFAULT_STT_MODEL
     stt_timeout_seconds: float = 5.0
-    # Flutter 웹 빌드 폴더. 지정하면 같은 서버에서 웹 앱도 제공합니다.
-    web_dir: str | None = None
     cors_origins: list[str] = field(default_factory=lambda: ["*"])
 
     @classmethod
@@ -67,12 +63,5 @@ class Settings:
             openrouter_api_key=(os.getenv("OPENROUTER_API_KEY") or "").strip(),
             llm_model=model,
             stt_model=stt_model,
-            web_dir=os.getenv("FINGERBELL_WEB_DIR") or _default_web_dir(),
             cors_origins=[o.strip() for o in origins.split(",") if o.strip()],
         )
-
-
-def _default_web_dir() -> str | None:
-    if os.getenv("FINGERBELL_NO_WEB"):
-        return None
-    return str(DEFAULT_WEB_BUILD) if (DEFAULT_WEB_BUILD / "index.html").is_file() else None

@@ -475,9 +475,9 @@ class _SmsLinkButton extends StatelessWidget {
   }
 }
 
-/// 문자 속 전화번호 표시 (기획서 5.2, 3단계 지시서 8번).
-/// [onTapPhone] 콜백이 주어지면 누를 수 있는 버튼으로 표시하고,
-/// 4단계 통화 화면 연결 전(`onTapPhone == null`)에는 누를 수 없는 일반 글자로 보여 줍니다.
+/// 문자 속 전화번호 표시 (기획서 5.2).
+/// [onTapPhone] 콜백이 주어지면 통화 화면 발신 버튼으로 표시하고,
+/// 주어지지 않으면(`onTapPhone == null`) 누를 수 없는 일반 글자로 보여 줍니다.
 class _SmsPhoneDisplay extends StatelessWidget {
   final String phone;
   final ValueChanged<String>? onTapPhone;

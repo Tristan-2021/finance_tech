@@ -406,7 +406,7 @@ def test_openrouter_gateway_caches_fallback_verdict_across_outage_and_recovery()
         model="anthropic/claude-haiku-5.5",
         transport=httpx.MockTransport(handler),
     )
-    sender = "1588-0000"
+    sender = "02-0000-5880"
     body = "배송 조회 안내 http://delivery-track.invalid/1"
     first_pass = assess_sms_rules(sender, body)
     assert first_pass.level == "caution"

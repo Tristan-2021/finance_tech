@@ -6,14 +6,11 @@ import asyncio
 import logging
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, select
 
 from . import clock
@@ -489,13 +486,6 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
             hub.disconnect(ws)
 
     app.include_router(api)
-
-    if settings.web_dir:
-        web = Path(settings.web_dir)
-        if (web / "index.html").is_file():
-            app.mount("/", StaticFiles(directory=web, html=True), name="web")
-        else:
-            log.warning("FINGERBELL_WEB_DIR에 index.html이 없어 웹 앱을 제공하지 않습니다: %s", web)
 
     # 테스트와 첫 실행에서 테이블이 바로 필요할 수 있으므로 미리 만들어 둡니다
     if not inspect(engine).get_table_names():

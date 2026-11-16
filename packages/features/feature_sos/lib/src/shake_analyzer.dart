@@ -13,7 +13,7 @@ class ShakeUpdate {
   const ShakeUpdate(this.progress, {this.fired = false, this.peakG = 0});
 }
 
-/// 가속도 센서 값으로 "격렬한 흔들기"를 판정합니다 (기획서 3.1).
+/// 가속도 센서 값으로 "격렬한 흔들기"를 판정합니다 (기획서 5.9).
 ///
 /// 3축 가속도 합이 [thresholdG] (기본 2.5g)를 넘는 순간이 [maxGap] 이내 간격으로
 /// [sustain] (기본 3초) 동안 이어지면 발동합니다. 발동 뒤 [cooldown] 동안은 무시합니다.

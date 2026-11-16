@@ -41,18 +41,7 @@ void main() {
     expect(find.text('송금'), findsOneWidget);
     expect(find.text('결제'), findsOneWidget);
     expect(find.text('조회'), findsOneWidget);
-    expect(find.text('바로 시연해 보기'), findsNothing); // 웹 사이드바 전용
-  });
-
-  testWidgets('web layout has the sidebar, scenarios and two columns', (tester) async {
-    await pumpApp(tester, size: const Size(1440, 900));
-    expect(find.text('시연 사용자'), findsOneWidget);
-    expect(find.text('바로 시연해 보기'), findsOneWidget);
-    expect(find.text('낯선 계좌로 50만원 송금'), findsOneWidget);
-    expect(find.text('보호자'), findsWidgets); // 보호자 카드는 웹 2단에서만 홈에 보임
-    final account = tester.getTopLeft(find.text('핑거벨 입출금 통장'));
-    final sos = tester.getTopLeft(find.text('계좌 동결'));
-    expect(sos.dx, greaterThan(account.dx));
+    expect(find.text('바로 시연해 보기'), findsNothing); // 설정 탭 전용
   });
 
   testWidgets('switching to the guardian shows the approval request', (tester) async {
@@ -202,10 +191,14 @@ void main() {
     await tester.tap(find.byWidgetPredicate((w) => w is FbToggle && w.label == '고대비 모드'));
     await settle(tester);
     expect(shell.state.prefs.highContrast, isTrue);
-    expect(find.text('바로 시연해 보기'), findsOneWidget); // 모바일은 설정에 시나리오가 있음
+    expect(find.text('바로 시연해 보기'), findsOneWidget);
     expect(find.text('사칭 문자 받기'), findsOneWidget);
     expect(find.text('정상 문자 받기'), findsOneWidget);
     expect(find.text('시연 상대 화면 열기'), findsOneWidget);
+    expect(find.text('흔들어서 SOS 동결'), findsOneWidget);
+    expect(find.text('낯선 계좌로 50만원 송금'), findsOneWidget);
+    expect(find.text('등교 모드에서 게임 결제'), findsOneWidget);
+    expect(find.text('처음 상태로 되돌리기'), findsOneWidget);
   });
 
   testWidgets('tapping phishing sms phone number dials counterpart, receives script warning, and alerts guardian', (tester) async {
