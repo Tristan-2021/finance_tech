@@ -72,13 +72,14 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
       default:
         if (e.fromThisDevice || e.message.isEmpty) return;
         const forGuardian = {'request', 'caution_mode', 'cancelled', 'freeze', 'blocked', 'expired', 'transfer', 'payment', 'mode'};
-        const forMember = {'decision', 'extend', 'reconfirm', 'caution_mode', 'freeze', 'unfreeze', 'mode', 'limit', 'deposit'};
+        const forMember = {'sms', 'decision', 'extend', 'reconfirm', 'caution_mode', 'freeze', 'unfreeze', 'mode', 'limit', 'deposit'};
         final family = context.read<FamilyCubit>().state;
         final mine = family.isReady ? family.data.accountOf(persona)?.id : persona.memberId;
-        if (persona == Persona.guardian && forGuardian.contains(e.type)) {
+        if (persona == Persona.guardian && (forGuardian.contains(e.type) || (e.type == 'sms' && e.level == 'danger'))) {
           shell.say(e.message, vibrate: e.type == 'freeze' ? sosVibration : const [60]);
         } else if (mine != null && mine == e.memberId && forMember.contains(e.type)) {
-          shell.say(e.message, vibrate: const [60]);
+          final vib = (e.type == 'sms' && e.level == 'danger') ? const [80, 40, 80] : const [60];
+          shell.say(e.message, vibrate: vib);
         }
     }
   }

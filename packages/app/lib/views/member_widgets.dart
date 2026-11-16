@@ -3,6 +3,7 @@ import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:feature_payment/feature_payment.dart';
+import 'package:feature_sms/feature_sms.dart';
 import 'package:feature_sos/feature_sos.dart';
 import 'package:feature_transfer/feature_transfer.dart';
 import 'package:flutter/material.dart';
@@ -351,6 +352,27 @@ class SosSlot extends StatelessWidget {
           button,
         ],
       ),
+    );
+  }
+}
+
+/// 어르신 홈에서 한 번에 들어가는 문자 진입점 (기획서 5.2, 7.1).
+class SmsEntryCard extends StatelessWidget {
+  final Member member;
+  const SmsEntryCard({super.key, required this.member});
+
+  @override
+  Widget build(BuildContext context) {
+    final dangerCount = member.dangerSmsCount;
+    final total = member.smsMessages.length;
+    final sub = dangerCount > 0
+        ? '사기 의심 경고 $dangerCount건 · 눌러서 확인하세요'
+        : '받은 문자 $total건 · 사기 문자를 자동으로 살펴봐요';
+    return FbRowLink(
+      leading: TxLogo(icon: dangerCount > 0 ? FbIcons.alert : FbIcons.sms, blue: dangerCount == 0),
+      title: '문자',
+      subtitle: sub,
+      onTap: () => openSmsSheet(context, member.id),
     );
   }
 }

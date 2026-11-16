@@ -2,6 +2,7 @@ import 'package:core_api/core_api.dart';
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:feature_payment/feature_payment.dart';
+import 'package:feature_sms/feature_sms.dart';
 import 'package:feature_sos/feature_sos.dart';
 import 'package:feature_transfer/feature_transfer.dart';
 import 'package:flutter/widgets.dart';
@@ -9,8 +10,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'app_shell.dart';
 
-/// 발표용 바로 시연 시나리오 (시안의 "바로 시연해 보기").
+/// 발표용 바로 시연 시나리오 (시안의 "바로 시연해 보기", 기획서 8절).
 enum Scenario {
+  phishingSms('사칭 문자 받기'),
+  normalSms('정상 문자 받기'),
   shake('흔들어서 SOS 동결'),
   phishing('낯선 계좌로 50만원 송금'),
   game('등교 모드에서 게임 결제');
@@ -21,6 +24,23 @@ enum Scenario {
 
 const phishingAccount = NewAccount(bank: '국민', number: '12345678907788', name: '이정민');
 
+void _announceSms(ShellCubit shell, SmsMessage msg) {
+  switch (msg.level) {
+    case SmsRiskLevel.danger:
+      shell.say(
+        '위험 의심 문자가 도착했어요 · ${msg.explanation}',
+        vibrate: const [80, 40, 80],
+      );
+    case SmsRiskLevel.caution:
+      shell.say(
+        '확인이 필요한 문자가 도착했어요 · ${msg.explanation}',
+        vibrate: const [60],
+      );
+    case SmsRiskLevel.low:
+      shell.say('${msg.displaySender} 문자가 도착했어요');
+  }
+}
+
 Future<void> runScenario(BuildContext context, Scenario s) async {
   final shell = context.read<ShellCubit>();
   final family = context.read<FamilyCubit>();
@@ -29,6 +49,16 @@ Future<void> runScenario(BuildContext context, Scenario s) async {
 
   try {
     switch (s) {
+      case Scenario.phishingSms:
+      case Scenario.normalSms:
+        shell.goto(Persona.senior, AppTab.home);
+        final kind = s == Scenario.phishingSms ? 'phishing' : 'normal';
+        final res = await family.receiveSms('senior', kind: kind);
+        _announceSms(shell, res.message);
+        final ctx = nav();
+        if (ctx.mounted) {
+          await openSmsSheet(ctx, 'senior', initialSenderPhone: res.message.senderPhone);
+        }
       case Scenario.shake:
         shell.goto(Persona.senior, AppTab.home);
         if (family.state.data.member('senior').isFrozen) {

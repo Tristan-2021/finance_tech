@@ -33,4 +33,6 @@ abstract final class FbIcons {
   static const moon = Icons.bedtime_outlined;
   static const cloud = Icons.cloud_outlined;
   static const cloudOff = Icons.cloud_off_outlined;
+  static const sms = Icons.sms_outlined;
+  static const linkOff = Icons.link_off_rounded;
 }

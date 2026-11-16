@@ -183,12 +183,36 @@ class DecisionResult {
   );
 }
 
+/// 시연 문자 수신 결과 (기획서 5.2, 5.5).
+class SmsReceiveResult {
+  final String status;
+  final SmsMessage message;
+  final bool cautionMode;
+  final DateTime? cautionUntil;
+
+  const SmsReceiveResult({
+    required this.status,
+    required this.message,
+    this.cautionMode = false,
+    this.cautionUntil,
+  });
+
+  factory SmsReceiveResult.fromJson(Json j) => SmsReceiveResult(
+    status: asString(j['status'], 'received'),
+    message: SmsMessage.fromJson(asJson(j['message'])),
+    cautionMode: asBool(j['caution_mode']),
+    cautionUntil: asDate(j['caution_until']),
+  );
+}
+
 /// 서버 실시간 이벤트. [fromThisDevice]이면 이 기기의 요청으로 생긴 이벤트입니다.
 class FamilyEvent {
   final String type;
   final String message;
   final String? memberId;
   final String? requestId;
+  final String? smsId;
+  final String? level;
   final bool fromThisDevice;
 
   const FamilyEvent({
@@ -196,6 +220,8 @@ class FamilyEvent {
     this.message = '',
     this.memberId,
     this.requestId,
+    this.smsId,
+    this.level,
     this.fromThisDevice = false,
   });
 
@@ -204,6 +230,8 @@ class FamilyEvent {
     message: asString(j['message']),
     memberId: asStringOrNull(j['member_id']),
     requestId: asStringOrNull(j['request_id']),
+    smsId: asStringOrNull(j['sms_id']),
+    level: asStringOrNull(j['level']),
     fromThisDevice: j['origin'] == clientId,
   );
 }

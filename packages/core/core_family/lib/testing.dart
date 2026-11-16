@@ -8,11 +8,65 @@ import 'package:core_errors/core_errors.dart';
 
 import 'core_family.dart';
 
+Map<String, dynamic> scamSmsJson({
+  String id = 'sms-phishing-1',
+  String memberId = 'senior',
+  String senderName = '금융감독원 민원실(사칭)',
+  String senderPhone = '02-0000-1332',
+  String body =
+      '[금융감독원] 김순자님 명의 대포통장 개설 사건이 접수되었습니다. 즉시 본인 확인 바랍니다. 사건 확인 http://fss-verify.invalid/case/8821 담당 조사관 02-0000-1332',
+  DateTime? now,
+}) {
+  final t = (now ?? DateTime.now()).toUtc();
+  return {
+    'id': id,
+    'member_id': memberId,
+    'sender_name': senderName,
+    'sender_phone': senderPhone,
+    'body': body,
+    'level': 'danger',
+    'reasons': [
+      '공공·금융기관 사칭 의심 표현(금융감독원)이 들어 있어요',
+      '불안을 주거나 확인을 재촉하는 표현(대포통장)이 있어요',
+      '문자 안에 출처가 불분명한 인터넷 주소(링크)가 들어 있어요',
+    ],
+    'explanation': '기관이나 회사를 사칭해 링크를 누르게 하거나 전화를 유도하는 사기 의심 문자예요. 문자 속 링크를 누르거나 적힌 번호로 전화하지 마세요.',
+    'links': ['http://fss-verify.invalid/case/8821'],
+    'phones': ['02-0000-1332'],
+    'at': t.toIso8601String(),
+  };
+}
+
+Map<String, dynamic> normalSmsJson({
+  String id = 'sms-normal-1',
+  String memberId = 'senior',
+  String senderName = '안심택배',
+  String senderPhone = '1588-0000',
+  String body = '[안심택배] 김순자님 주문하신 건강즙 상품이 오늘 오후 배송 완료되었습니다. 문 앞을 확인해 주세요.',
+  DateTime? now,
+}) {
+  final t = (now ?? DateTime.now()).toUtc();
+  return {
+    'id': id,
+    'member_id': memberId,
+    'sender_name': senderName,
+    'sender_phone': senderPhone,
+    'body': body,
+    'level': 'low',
+    'reasons': <String>[],
+    'explanation': '사기 의심 징후가 없는 일반 문자예요.',
+    'links': <String>[],
+    'phones': <String>['1588-0000'],
+    'at': t.toIso8601String(),
+  };
+}
+
 Map<String, dynamic> demoSnapshotJson({
   DateTime? now,
   bool seniorFrozen = false,
   bool seniorCautionMode = false,
   List<Map<String, dynamic>> requests = const [],
+  List<Map<String, dynamic>>? seniorSmsMessages,
   String childMode = 'school',
 }) {
   final t = (now ?? DateTime.now()).toUtc();
@@ -20,6 +74,23 @@ Map<String, dynamic> demoSnapshotJson({
   Map<String, dynamic> merchant(String id, String name, String cat, String label, int amount, Map<String, dynamic> check) =>
       {'id': id, 'name': name, 'category': cat, 'category_label': label, 'mcc': '0000', 'amount': amount, 'emoji': '', 'check': check};
   const ok = {'ok': true, 'code': 'ok', 'message': '', 'can_request': false};
+  final defaultSms = <Map<String, dynamic>>[
+    normalSmsJson(id: 'sms-seed-delivery', now: t.subtract(const Duration(hours: 5))),
+    normalSmsJson(
+      id: 'sms-seed-family',
+      senderName: '김사랑 (딸)',
+      senderPhone: '010-0000-1024',
+      body: '엄마, 이번 주말에 민준이랑 반찬 가지고 갈게요. 식사 꼭 챙겨 드세요!',
+      now: t.subtract(const Duration(hours: 18)),
+    ),
+    normalSmsJson(
+      id: 'sms-seed-bank',
+      senderName: '핑거벨은행',
+      senderPhone: '1599-0000',
+      body: '[핑거벨] 김순자님 연금 650,000원이 입출금 통장(5678)으로 입금되었습니다.',
+      now: t.subtract(const Duration(hours: 26)),
+    ),
+  ];
 
   return {
     'server_time': t.toIso8601String(),
@@ -95,6 +166,7 @@ Map<String, dynamic> demoSnapshotJson({
         'frozen_source': seniorFrozen ? 'LONG_PRESS' : null,
         'caution_mode': seniorCautionMode,
         'caution_until': seniorCautionMode ? t.add(const Duration(hours: 24)).toIso8601String() : null,
+        'sms_messages': seniorSmsMessages ?? defaultSms,
         'contacts': [
           {'id': 'c-sarang', 'name': '김사랑', 'relation': '딸', 'bank': '핑거벨', 'number': '333-••••-1024'},
           {'id': 'c-younghee', 'name': '박영희', 'relation': '이웃', 'bank': '농협', 'number': '302-••••-4471'},
@@ -204,6 +276,7 @@ class FakeFamilyRepository implements FamilyRepository {
   final _connection = StreamController<bool>.broadcast();
   bool failNetwork = false;
   String? failDecisionReason;
+  SmsRiskLevel? forceSmsLevel;
 
   FakeFamilyRepository([Map<String, dynamic>? snapshot]) : snapshotJson = snapshot ?? demoSnapshotJson();
 
@@ -241,6 +314,76 @@ class FakeFamilyRepository implements FamilyRepository {
 
   @override
   Future<void> releaseCautionMode(String memberId, String guardianId) => _call('releaseCautionMode:$memberId', null);
+
+  @override
+  Future<SmsReceiveResult> receiveSms(
+    String memberId, {
+    String? kind,
+    String? senderPhone,
+    String? senderName,
+    String? body,
+  }) {
+    final k = (kind ?? 'phishing').toLowerCase();
+    final defaultLevel = (k.contains('phish') || k == 'scam' || k == 'danger')
+        ? SmsRiskLevel.danger
+        : SmsRiskLevel.low;
+    final level = forceSmsLevel ?? defaultLevel;
+    final isDanger = level == SmsRiskLevel.danger;
+    final now = DateTime.now().toUtc();
+    final msgJson = defaultLevel == SmsRiskLevel.danger
+        ? scamSmsJson(
+            id: 'sms-${calls.length + 1}',
+            memberId: memberId,
+            senderName: senderName ?? '금융감독원 민원실(사칭)',
+            senderPhone: senderPhone ?? '02-0000-1332',
+            body:
+                body ??
+                '[금융감독원] 김순자님 명의 대포통장 개설 사건이 접수되었습니다. 즉시 본인 확인 바랍니다. 사건 확인 http://fss-verify.invalid/case/8821 담당 조사관 02-0000-1332',
+            now: now,
+          )
+        : normalSmsJson(
+            id: 'sms-${calls.length + 1}',
+            memberId: memberId,
+            senderName: senderName ?? '안심택배',
+            senderPhone: senderPhone ?? '1588-0000',
+            body: body ?? '[안심택배] 김순자님 주문하신 건강즙 상품이 오늘 오후 배송 완료되었습니다. 문 앞을 확인해 주세요.',
+            now: now,
+          );
+    msgJson['level'] = level.name;
+    if (level == SmsRiskLevel.low) {
+      msgJson['reasons'] = <String>[];
+      msgJson['explanation'] = '사기 의심 징후가 없는 일반 문자예요.';
+    } else if (level == SmsRiskLevel.caution) {
+      msgJson['explanation'] = '문자 안에 확인이 필요한 링크나 표현이 있어요.';
+    }
+    final members = snapshotJson['members'];
+    var caution = false;
+    DateTime? cautionUntil;
+    if (members is List) {
+      for (final m in members) {
+        if (m is Map<String, dynamic> && m['id'] == memberId) {
+          final existing = (m['sms_messages'] as List?)?.cast<Map<String, dynamic>>() ?? <Map<String, dynamic>>[];
+          m['sms_messages'] = [msgJson, ...existing];
+          m.remove('sms_conversations');
+          if (isDanger) {
+            m['caution_mode'] = true;
+            cautionUntil = now.add(const Duration(hours: 24));
+            m['caution_until'] = cautionUntil.toIso8601String();
+          }
+          caution = m['caution_mode'] == true;
+        }
+      }
+    }
+    return _call(
+      'receiveSms:$memberId:${kind ?? 'custom'}',
+      SmsReceiveResult(
+        status: 'received',
+        message: SmsMessage.fromJson(msgJson),
+        cautionMode: caution,
+        cautionUntil: cautionUntil?.toLocal(),
+      ),
+    );
+  }
 
   RiskAssessment _newAccountRisk(String memberId, int amount) {
     final caution = amount < 100000;

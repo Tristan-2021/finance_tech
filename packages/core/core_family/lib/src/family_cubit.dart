@@ -163,6 +163,23 @@ class FamilyCubit extends Cubit<FamilyState> {
   Future<void> releaseCautionMode(String memberId) =>
       _act(() => _repo.releaseCautionMode(memberId, state.data.guardian.id));
 
+  // ---------------------------------------------------------------- 문자 (기획서 5.2)
+  Future<SmsReceiveResult> receiveSms(
+    String memberId, {
+    String? kind,
+    String? senderPhone,
+    String? senderName,
+    String? body,
+  }) => _act(
+    () => _repo.receiveSms(
+      memberId,
+      kind: kind,
+      senderPhone: senderPhone,
+      senderName: senderName,
+      body: body,
+    ),
+  );
+
   // ---------------------------------------------------------------- 송금 · 결제
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) => _repo.assessTransfer(memberId, draft);
 

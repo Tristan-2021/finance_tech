@@ -21,7 +21,7 @@ from .config import Settings
 from .db import Base, make_engine, make_session_factory
 from .domain.fds import FdsEngine
 from .events import EventHub
-from .integrations import Gateways
+from .integrations import Gateways, make_gateways
 from .models import Guardian
 from .schemas import (
     ApprovalRequestBody,
@@ -35,6 +35,7 @@ from .schemas import (
     ModeBody,
     PaymentBody,
     SleepGuardBody,
+    SmsReceiveBody,
     SosFreezeRequest,
     TransferDraft,
     UnfreezeBody,
@@ -51,7 +52,7 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
     sessions = make_session_factory(engine)
     fds = FdsEngine()
     hub = EventHub()
-    gateways = gateways or Gateways()
+    gateways = gateways or make_gateways(settings)
 
     def ensure_seeded() -> None:
         if schema_outdated(engine):
@@ -165,6 +166,26 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
         check_guardian(svc, body.guardian_id)
         return done(svc, svc.release_caution_mode(body.member_id))
 
+    # ---------------- 문자 수신 · 판정 (기획서 5.2, 5.5)
+    @api.get("/sms")
+    def list_sms(member_id: str = "senior", svc: FamilyService = Depends(service)):
+        return svc.sms_list(member_id)
+
+    @api.post("/sms/receive")
+    @api.post("/sms/send", include_in_schema=False)
+    @api.post("/demo/sms", include_in_schema=False)
+    def receive_sms(body: SmsReceiveBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.receive_sms(
+                body.member_id,
+                kind=body.kind,
+                sender_phone=body.sender_phone,
+                sender_name=body.sender_name,
+                body=body.body,
+            ),
+        )
+
     # ---------------- 핵심 기능 2: AI FDS + 거래 30분 보류 (기획서 5.5, 5.7)
     @api.post("/transaction/assess")
     def assess(body: TransferDraft, svc: FamilyService = Depends(service)):
@@ -255,6 +276,7 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
     def demo_reset():
         reset_schema(engine)
         fds.reset()
+        gateways.llm.reset()
         with sessions() as s:
             seed(s)
         hub.publish([{"type": "reset", "message": "시연 데이터를 처음 상태로 되돌렸어요"}])

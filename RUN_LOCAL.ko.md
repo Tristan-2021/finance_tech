@@ -1,6 +1,6 @@
 # Windows에서 핑거벨 실행
 
-Flutter 앱 진입점은 `packages/app/lib/main.dart`, 백엔드는 `backend/`(FastAPI)입니다. 저장소 루트의 `pubspec.yaml`은 10개 Flutter 패키지를 관리하는 워크스페이스입니다.
+Flutter 앱 진입점은 `packages/app/lib/main.dart`, 백엔드는 `backend/`(FastAPI)입니다. 저장소 루트의 `pubspec.yaml`은 11개 Flutter 패키지를 관리하는 워크스페이스입니다.
 
 ## 1. 백엔드 먼저 실행
 

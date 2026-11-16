@@ -22,6 +22,7 @@ class SeniorHome extends StatelessWidget {
         if (r.isHold) MemberHoldCard(key: ValueKey('hold-${r.id}'), request: r, member: member, now: now),
     ];
     final account = AccountCard(member: member);
+    final sms = SmsEntryCard(member: member);
     final sos = SosSlot(member: member, data: data);
     final recent = RecentCard(member: member);
     return FbView(
@@ -29,9 +30,9 @@ class SeniorHome extends StatelessWidget {
       children: [
         Greeting('안녕하세요, ${member.name}님'),
         FbSplit(
-          main: [?caution, ...holds, account, recent],
+          main: [?caution, ...holds, account, sms, recent],
           side: [sos, GuardianCard(member: member, data: data)],
-          mobile: [?caution, ...holds, account, sos, recent],
+          mobile: [?caution, ...holds, account, sos, sms, recent],
         ),
       ],
     );

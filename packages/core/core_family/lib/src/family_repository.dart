@@ -17,6 +17,13 @@ abstract interface class FamilyRepository {
   Future<void> requestUnfreeze(String memberId);
   Future<void> unfreeze(String memberId, String guardianId);
   Future<void> releaseCautionMode(String memberId, String guardianId);
+  Future<SmsReceiveResult> receiveSms(
+    String memberId, {
+    String? kind,
+    String? senderPhone,
+    String? senderName,
+    String? body,
+  });
 
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft);
   Future<TransferResult> submitTransfer(String memberId, TransferDraft draft);
@@ -79,6 +86,23 @@ class ApiFamilyRepository implements FamilyRepository {
   @override
   Future<void> releaseCautionMode(String memberId, String guardianId) =>
       api.post('/security/caution-mode/release', {'member_id': memberId, 'guardian_id': guardianId});
+
+  @override
+  Future<SmsReceiveResult> receiveSms(
+    String memberId, {
+    String? kind,
+    String? senderPhone,
+    String? senderName,
+    String? body,
+  }) async => SmsReceiveResult.fromJson(
+    await api.post('/sms/receive', {
+      'member_id': memberId,
+      'kind': ?kind,
+      'sender_phone': ?senderPhone,
+      'sender_name': ?senderName,
+      'body': ?body,
+    }),
+  );
 
   @override
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) async =>

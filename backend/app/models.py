@@ -235,7 +235,7 @@ class Notice(Base):
 
 
 class IntegrationLog(Base):
-    """외부 연동(오픈뱅킹·FCM·SMS) 호출 기록. 모의 어댑터도 같은 형식으로 남깁니다."""
+    """외부 연동(오픈뱅킹·FCM·SMS·LLM) 호출 기록. 모의 어댑터도 같은 형식으로 남깁니다."""
 
     __tablename__ = "integration_logs"
 
@@ -246,3 +246,24 @@ class IntegrationLog(Base):
     target: Mapped[str] = mapped_column(String(60))
     message: Mapped[str] = mapped_column(String(200))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class SmsMessage(Base):
+    """수신 문자와 위험 판정 결과 (기획서 5.2, 5.5)."""
+
+    __tablename__ = "sms_messages"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("members.id"), index=True)
+    sender_name: Mapped[str] = mapped_column(String(60), default="")
+    sender_phone: Mapped[str] = mapped_column(String(30), index=True)
+    body: Mapped[str] = mapped_column(String(1000))
+    # low / caution / danger
+    level: Mapped[str] = mapped_column(String(12), index=True)
+    reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
+    explanation: Mapped[str] = mapped_column(String(300), default="")
+    rule_level: Mapped[str] = mapped_column(String(12), default="low")
+    source: Mapped[str] = mapped_column(String(20), default="rule")
+    links: Mapped[list[str]] = mapped_column(JSON, default=list)
+    phones: Mapped[list[str]] = mapped_column(JSON, default=list)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)

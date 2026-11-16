@@ -29,6 +29,7 @@ from . import clock
 from .config import Settings
 from .domain.catalog import BANKS, CATEGORIES, MERCHANTS, MODES, REQUEST_EMOJI, SOURCE_LABEL, Merchant, merchant
 from .domain.fds import FdsEngine, RiskResult, Sample, TransferContext
+from .domain.sms import SMS_PRESETS, assess_sms_rules, extract_links, extract_phones, resolve_preset
 from .events import EventHub
 from .integrations import Gateways, IntegrationRecord
 from .models import (
@@ -44,6 +45,7 @@ from .models import (
     Member,
     Notice,
     RiskAssessment,
+    SmsMessage,
 )
 
 MAX_LIST = 40
@@ -214,6 +216,7 @@ class FamilyService:
             .where(Incident.member_id == member_id, Incident.status == "open")
             .order_by(Incident.started_at.desc())
             .limit(1)
+            .execution_options(populate_existing=True)
         ).first()
 
     def pending(self, member_id: str | None = None) -> list[ApprovalRequest]:
@@ -343,17 +346,25 @@ class FamilyService:
         m = self.protected(member_id)
         now = clock.now()
         until = now + timedelta(hours=self.settings.caution_mode_hours)
-        already = self.is_caution_mode(m)
+        self.s.flush()
+        started = self.s.execute(
+            update(Member)
+            .where(Member.id == m.id, (Member.caution_until.is_(None)) | (Member.caution_until <= now))
+            .values(caution_until=until)
+        )
+        already = not bool(started.rowcount)
+        if already:
+            self.s.execute(update(Member).where(Member.id == m.id).values(caution_until=until))
+        self.s.refresh(m)
+
         inc = self.active_incident(m.id)
         if already and inc is not None:
-            m.caution_until = until
             inc.expires_at = until
         else:
             if inc is not None:
                 inc.status = "closed"
                 inc.ended_at = now
                 inc.ended_by = "system"
-            m.caution_until = until
             inc = Incident(id=uid("inc"), member_id=m.id, status="open", started_at=now, expires_at=until)
             self.s.add(inc)
             self.s.flush()
@@ -369,6 +380,7 @@ class FamilyService:
 
         item_summary = summary or ("새 위험 징후 감지 · 주의 모드 연장" if already else "위험 징후 감지 · 주의 모드 시작")
         self._add_incident_item(inc, kind, item_summary, detail)
+        self.s.refresh(inc)
         self._emit(
             "caution_mode",
             f"{self._who(m)} 주의 모드가 {'연장' if already else '시작'}됐어요",
@@ -440,6 +452,118 @@ class FamilyService:
         if alert:
             self._alert(m, "주의 모드 해제", "ok", "🔓")
         self._emit("caution_mode", f"{self._who(m)} 주의 모드를 해제했어요 ({reason})", member_id=m.id, active=False)
+
+    # ------------------------------------------------------------------ 문자 수신과 판정 (기획서 5.2, 5.5)
+    def receive_sms(
+        self,
+        member_id: str = "senior",
+        *,
+        kind: str | None = None,
+        sender_phone: str | None = None,
+        sender_name: str | None = None,
+        body: str | None = None,
+    ) -> dict[str, Any]:
+        m = self.member(member_id)
+        clean_body = (body or "").strip()
+        if not clean_body:
+            existing_normal = int(
+                self.s.scalar(
+                    select(func.count())
+                    .select_from(SmsMessage)
+                    .where(SmsMessage.member_id == m.id, SmsMessage.level == "low")
+                )
+                or 0
+            )
+            preset = resolve_preset(kind, existing_normal)
+            phone = (sender_phone or preset.sender_phone).strip()
+            name = (sender_name if sender_name is not None else preset.sender_name).strip()
+            clean_body = preset.body
+        else:
+            phone = (sender_phone or "010-0000-0000").strip()
+            name = (sender_name or "").strip()
+
+        first_pass = assess_sms_rules(phone, clean_body, sender_name=name)
+        verdict, rec = self.gw.llm.judge_sms(phone, clean_body, first_pass)
+        self._integrate(rec)
+
+        links = extract_links(clean_body)
+        phones = extract_phones(clean_body, phone)
+        msg = SmsMessage(
+            id=uid("sms"),
+            member_id=m.id,
+            sender_name=name,
+            sender_phone=phone,
+            body=clean_body,
+            level=verdict.level,
+            reasons=list(verdict.reasons),
+            explanation=verdict.explanation,
+            rule_level=verdict.rule_level,
+            source=verdict.source,
+            links=links,
+            phones=phones,
+            at=clock.now(),
+        )
+        self.s.add(msg)
+        self.s.flush()
+
+        sender_label = name or phone
+        if verdict.level == "danger" and m.supervised:
+            reason_summary = ", ".join(verdict.reasons[:2]) if verdict.reasons else verdict.explanation
+            summary = f"위험 문자 수신 ({sender_label}) · {reason_summary}"[:200]
+            self.start_caution_mode(
+                m.id,
+                kind="sms",
+                summary=summary,
+                detail={
+                    "sms_id": msg.id,
+                    "sender_phone": phone,
+                    "sender_name": name,
+                    "level": verdict.level,
+                    "reasons": list(verdict.reasons),
+                    "explanation": verdict.explanation,
+                },
+            )
+
+        if verdict.level == "danger":
+            toast_msg = f"위험 의심 문자가 도착했어요 ({sender_label})"
+        elif verdict.level == "caution":
+            toast_msg = f"확인이 필요한 문자가 도착했어요 ({sender_label})"
+        else:
+            toast_msg = f"{sender_label} 문자가 도착했어요"
+        self._emit(
+            "sms",
+            toast_msg,
+            member_id=m.id,
+            sms_id=msg.id,
+            level=verdict.level,
+            sender_phone=phone,
+            sender_name=name,
+        )
+
+        caution = self.is_caution_mode(m)
+        return {
+            "status": "received",
+            "message": self._sms_dict(msg),
+            "verdict": verdict.to_dict(),
+            "caution_mode": caution,
+            "caution_until": iso(m.caution_until) if caution else None,
+        }
+
+    def sms_list(self, member_id: str = "senior") -> dict[str, Any]:
+        m = self.member(member_id)
+        rows = list(
+            self.s.scalars(
+                select(SmsMessage)
+                .where(SmsMessage.member_id == m.id)
+                .order_by(SmsMessage.at.desc(), SmsMessage.id.desc())
+                .limit(MAX_LIST)
+            )
+        )
+        return {
+            "member_id": m.id,
+            "messages": [self._sms_dict(x) for x in rows],
+            "conversations": self._sms_conversations(rows),
+        }
 
     # ------------------------------------------------------------------ 송금 + AI FDS
     def resolve_recipient(self, m: Member, contact_id: str | None, new_account: dict[str, Any] | None) -> Recipient:
@@ -1251,6 +1375,16 @@ class FamilyService:
                 ],
                 "categories": {c.id: {"label": c.label, "mcc": list(c.mcc)} for c in CATEGORIES.values()},
                 "banks": BANKS,
+                "sms_presets": [
+                    {
+                        "id": p.id,
+                        "kind": p.kind,
+                        "category": p.category,
+                        "sender_name": p.sender_name,
+                        "sender_phone": p.sender_phone,
+                    }
+                    for p in SMS_PRESETS.values()
+                ],
             },
         }
 
@@ -1261,6 +1395,14 @@ class FamilyService:
             self.s.scalars(select(LedgerEntry).where(LedgerEntry.member_id == m.id).order_by(LedgerEntry.at.desc()).limit(MAX_LEDGER))
         )
         notices = list(self.s.scalars(select(Notice).where(Notice.member_id == m.id).order_by(Notice.created_at.desc())))
+        sms_rows = list(
+            self.s.scalars(
+                select(SmsMessage)
+                .where(SmsMessage.member_id == m.id)
+                .order_by(SmsMessage.at.desc(), SmsMessage.id.desc())
+                .limit(MAX_LIST)
+            )
+        )
         frozen = self.is_frozen(m)
         caution = self.is_caution_mode(m)
         inc = self.active_incident(m.id) if caution else None
@@ -1291,6 +1433,8 @@ class FamilyService:
             "caution_mode": caution,
             "caution_until": iso(m.caution_until) if caution else None,
             "active_incident": self._incident_dict(inc) if inc else None,
+            "sms_messages": [self._sms_dict(x) for x in sms_rows],
+            "sms_conversations": self._sms_conversations(sms_rows),
             "contacts": [
                 {"id": c.id, "name": c.name, "relation": c.relation, "bank": c.bank, "number": mask_account(c.account_digits)}
                 for c in m.contacts
@@ -1326,6 +1470,44 @@ class FamilyService:
                 {**self._merchant_dict(mc), "check": self.check_payment(m, mc, spent).to_dict()} for mc in MERCHANTS.get(m.id, [])
             ],
         }
+
+    @staticmethod
+    def _sms_dict(msg: SmsMessage) -> dict[str, Any]:
+        return {
+            "id": msg.id,
+            "member_id": msg.member_id,
+            "sender_name": msg.sender_name,
+            "sender_phone": msg.sender_phone,
+            "body": msg.body,
+            "level": msg.level,
+            "reasons": list(msg.reasons or []),
+            "explanation": msg.explanation,
+            "rule_level": msg.rule_level,
+            "source": msg.source,
+            "links": list(msg.links or []),
+            "phones": list(msg.phones or []),
+            "at": iso(msg.at),
+        }
+
+    @classmethod
+    def _sms_conversations(cls, rows_desc: list[SmsMessage]) -> list[dict[str, Any]]:
+        grouped: dict[str, list[SmsMessage]] = {}
+        for msg in rows_desc:
+            grouped.setdefault(msg.sender_phone, []).append(msg)
+        conversations: list[dict[str, Any]] = []
+        for phone, msgs in grouped.items():
+            latest = msgs[0]
+            chronological = [cls._sms_dict(x) for x in reversed(msgs)]
+            conversations.append(
+                {
+                    "sender_phone": phone,
+                    "sender_name": latest.sender_name,
+                    "last_message": cls._sms_dict(latest),
+                    "danger_count": sum(1 for x in msgs if x.level == "danger"),
+                    "messages": chronological,
+                }
+            )
+        return conversations
 
     @staticmethod
     def _account_dict(a: Account) -> dict[str, Any]:

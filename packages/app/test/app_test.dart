@@ -193,6 +193,73 @@ void main() {
     await settle(tester);
     expect(shell.state.prefs.highContrast, isTrue);
     expect(find.text('바로 시연해 보기'), findsOneWidget); // 모바일은 설정에 시나리오가 있음
+    expect(find.text('사칭 문자 받기'), findsOneWidget);
+    expect(find.text('정상 문자 받기'), findsOneWidget);
+  });
+
+  testWidgets('phishing sms scenario opens sms warning, starts caution mode, and blocks links', (tester) async {
+    final (repo, shell) = await pumpApp(tester, size: const Size(400, 860));
+    shell.switchTab(AppTab.settings);
+    await settle(tester);
+
+    await tester.tap(find.text('사칭 문자 받기'));
+    await settle(tester);
+
+    expect(repo.calls, contains('receiveSms:senior:phishing'));
+    expect(find.text('위험 문자 경고'), findsOneWidget);
+    const link = 'http://fss-verify.invalid/case/8821';
+    expect(find.text(link), findsOneWidget);
+
+    await tester.tap(find.text(link));
+    await settle(tester);
+    expect(find.text('이 링크를 열지 않았어요'), findsOneWidget);
+
+    // 시트를 닫으면 어르신 홈과 보호자 화면 모두에서 주의 모드가 작동 중입니다
+    shell.closeSheets();
+    await settle(tester);
+    expect(find.text('주의 모드 작동 중'), findsOneWidget);
+
+    shell.goto(Persona.guardian, AppTab.safety);
+    await settle(tester);
+    expect(find.textContaining('주의 모드'), findsWidgets);
+  });
+
+  testWidgets('normal sms scenario shows message without warning and keeps caution mode off', (tester) async {
+    final (repo, shell) = await pumpApp(tester, size: const Size(400, 860));
+    shell.switchTab(AppTab.settings);
+    await settle(tester);
+
+    await tester.tap(find.text('정상 문자 받기'));
+    await settle(tester);
+
+    expect(repo.calls, contains('receiveSms:senior:normal'));
+    expect(find.text('위험 문자 경고'), findsNothing);
+    expect(find.textContaining('주문하신 건강즙 상품이 오늘 오후 배송 완료되었습니다'), findsWidgets);
+
+    shell.closeSheets();
+    await settle(tester);
+    expect(find.text('주의 모드 작동 중'), findsNothing);
+  });
+
+  testWidgets('sms scenario notification and vibration follow server verdict level', (tester) async {
+    final (repo, shell) = await pumpApp(tester, size: const Size(400, 860));
+    final feedbacks = <FeedbackRequest>[];
+    final sub = shell.feedback.listen(feedbacks.add);
+    addTearDown(sub.cancel);
+
+    // 서버가 '사칭 문자 받기' 요청에 대해 낮음(low) 단계를 돌려주면 위험 문구·위험 진동을 띄우지 않습니다.
+    repo.forceSmsLevel = SmsRiskLevel.low;
+    shell.switchTab(AppTab.settings);
+    await settle(tester);
+
+    await tester.tap(find.text('사칭 문자 받기'));
+    await settle(tester);
+
+    expect(repo.calls, contains('receiveSms:senior:phishing'));
+    expect(feedbacks, isNotEmpty);
+    expect(feedbacks.last.message, '금융감독원 민원실(사칭) 문자가 도착했어요');
+    expect(feedbacks.last.vibrate, const [40]);
+    expect(find.text('위험 문자 경고'), findsNothing);
   });
 
   testWidgets('connection error screen offers a retry', (tester) async {

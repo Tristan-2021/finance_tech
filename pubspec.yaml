@@ -10,6 +10,7 @@ workspace:
   - packages/core/core_shell
   - packages/core/core_ui
   - packages/features/feature_sos
+  - packages/features/feature_sms
   - packages/features/feature_transfer
   - packages/features/feature_payment
   - packages/features/feature_guardian

@@ -233,6 +233,128 @@ class LimitRange {
   factory LimitRange.fromJson(Json j) => LimitRange(min: asInt(j['min']), max: asInt(j['max'], 1), step: asInt(j['step'], 1));
 }
 
+/// 문자 위험 판정 단계 (기획서 5.5: 낮음 / 주의 / 위험).
+enum SmsRiskLevel {
+  low('낮음'),
+  caution('주의'),
+  danger('위험');
+
+  final String label;
+  const SmsRiskLevel(this.label);
+
+  static SmsRiskLevel parse(Object? v) => switch (v) {
+    'danger' || 'high' => SmsRiskLevel.danger,
+    'caution' => SmsRiskLevel.caution,
+    _ => SmsRiskLevel.low,
+  };
+}
+
+/// 수신 문자 한 건과 서버 위험 판정 결과 (기획서 5.2, 5.5).
+class SmsMessage {
+  final String id;
+  final String memberId;
+  final String senderName;
+  final String senderPhone;
+  final String body;
+  final SmsRiskLevel level;
+  final List<String> reasons;
+  final String explanation;
+  final List<String> links;
+  final List<String> phones;
+  final DateTime at;
+
+  const SmsMessage({
+    required this.id,
+    required this.memberId,
+    required this.senderPhone,
+    required this.body,
+    required this.at,
+    this.senderName = '',
+    this.level = SmsRiskLevel.low,
+    this.reasons = const [],
+    this.explanation = '',
+    this.links = const [],
+    this.phones = const [],
+  });
+
+  bool get isDanger => level == SmsRiskLevel.danger;
+  bool get isCaution => level == SmsRiskLevel.caution;
+  bool get hasWarning => isDanger || isCaution;
+  String get displaySender => senderName.isNotEmpty ? senderName : senderPhone;
+
+  factory SmsMessage.fromJson(Json j) => SmsMessage(
+    id: asString(j['id']),
+    memberId: asString(j['member_id'], 'senior'),
+    senderName: asString(j['sender_name']),
+    senderPhone: asString(j['sender_phone']),
+    body: asString(j['body']),
+    level: SmsRiskLevel.parse(j['level']),
+    reasons: asStrings(j['reasons']),
+    explanation: asString(j['explanation']),
+    links: asStrings(j['links']),
+    phones: asStrings(j['phones']),
+    at: asDateOr(j['at'], DateTime.fromMillisecondsSinceEpoch(0)),
+  );
+}
+
+/// 발신 번호별 대화 목록 항목 (기획서 5.2).
+class SmsConversation {
+  final String senderPhone;
+  final String senderName;
+  final SmsMessage lastMessage;
+  final int dangerCount;
+  final List<SmsMessage> messages;
+
+  const SmsConversation({
+    required this.senderPhone,
+    required this.lastMessage,
+    required this.messages,
+    this.senderName = '',
+    this.dangerCount = 0,
+  });
+
+  bool get hasDanger => dangerCount > 0 || messages.any((m) => m.isDanger);
+  String get displaySender => senderName.isNotEmpty ? senderName : senderPhone;
+
+  factory SmsConversation.fromJson(Json j) {
+    final messages = asList(j['messages'], SmsMessage.fromJson);
+    final last = j['last_message'] is Map<String, dynamic>
+        ? SmsMessage.fromJson(j['last_message'] as Json)
+        : (messages.lastOrNull ??
+              SmsMessage(
+                id: '',
+                memberId: 'senior',
+                senderPhone: asString(j['sender_phone']),
+                body: '',
+                at: DateTime.fromMillisecondsSinceEpoch(0),
+              ));
+    return SmsConversation(
+      senderPhone: asString(j['sender_phone']),
+      senderName: asString(j['sender_name'], last.senderName),
+      lastMessage: last,
+      dangerCount: asInt(j['danger_count'], messages.where((m) => m.isDanger).length),
+      messages: messages,
+    );
+  }
+
+  static List<SmsConversation> groupFromMessages(List<SmsMessage> messagesDesc) {
+    final grouped = <String, List<SmsMessage>>{};
+    for (final m in messagesDesc) {
+      grouped.putIfAbsent(m.senderPhone, () => []).add(m);
+    }
+    return [
+      for (final entry in grouped.entries)
+        SmsConversation(
+          senderPhone: entry.key,
+          senderName: entry.value.first.senderName,
+          lastMessage: entry.value.first,
+          dangerCount: entry.value.where((m) => m.isDanger).length,
+          messages: entry.value.reversed.toList(growable: false),
+        ),
+    ];
+  }
+}
+
 /// 사건의 시간순 항목 (기획서 5.1).
 class IncidentItem {
   final String id;
@@ -312,6 +434,8 @@ class Member {
   final bool cautionMode;
   final DateTime? cautionUntil;
   final Incident? activeIncident;
+  final List<SmsMessage> smsMessages;
+  final List<SmsConversation> smsConversations;
   final List<Contact> contacts;
   final List<LedgerEntry> ledger;
   final List<Notice> notices;
@@ -344,6 +468,8 @@ class Member {
     this.cautionMode = false,
     this.cautionUntil,
     this.activeIncident,
+    this.smsMessages = const [],
+    this.smsConversations = const [],
     this.contacts = const [],
     this.ledger = const [],
     this.notices = const [],
@@ -359,11 +485,15 @@ class Member {
   /// "어머니 김순자"
   String get label => '$relationLabel $name';
 
+  int get dangerSmsCount => smsMessages.where((m) => m.isDanger).length;
+
   Merchant? merchant(String id) => merchants.where((m) => m.id == id).firstOrNull;
   Contact? contact(String id) => contacts.where((c) => c.id == id).firstOrNull;
 
   factory Member.fromJson(Json j) {
     final accounts = asList(j['accounts'], BankAccount.fromJson);
+    final smsMessages = asList(j['sms_messages'], SmsMessage.fromJson);
+    final rawConvs = asList(j['sms_conversations'], SmsConversation.fromJson);
     return Member(
       id: asString(j['id']),
       role: asString(j['role']),
@@ -393,6 +523,8 @@ class Member {
       cautionMode: asBool(j['caution_mode']),
       cautionUntil: asDate(j['caution_until']),
       activeIncident: j['active_incident'] is Map<String, dynamic> ? Incident.fromJson(j['active_incident'] as Json) : null,
+      smsMessages: smsMessages,
+      smsConversations: rawConvs.isNotEmpty ? rawConvs : SmsConversation.groupFromMessages(smsMessages),
       contacts: asList(j['contacts'], Contact.fromJson),
       ledger: asList(j['ledger'], LedgerEntry.fromJson),
       notices: asList(j['notices'], Notice.fromJson),

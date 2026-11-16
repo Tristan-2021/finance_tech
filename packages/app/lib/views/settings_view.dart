@@ -163,6 +163,7 @@ class _SettingsViewState extends State<SettingsView> {
     'OPEN_BANKING' => '은',
     'FCM' => '푸',
     'SMS' => '문',
+    'LLM' => 'AI',
     _ => '?',
   };
 
@@ -170,6 +171,7 @@ class _SettingsViewState extends State<SettingsView> {
     'OPEN_BANKING' => '오픈뱅킹',
     'FCM' => '푸시',
     'SMS' => '문자',
+    'LLM' => 'AI 판정',
     _ => ch,
   };
 }

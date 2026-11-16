@@ -54,10 +54,10 @@ flowchart LR
 
 | 기능 | 하는 일 | 상태 |
 | :--- | :--- | :--- |
-| **문자 감지** | 휴대폰 문자 앱을 재현한 화면에서 시연 문자의 내용과 링크를 분석합니다. 위험하면 경고와 쉬운 설명을 붙이고 링크를 차단합니다. | 구현 예정 |
+| **문자 감지** | 휴대폰 문자 앱을 재현한 화면에서 시연 문자의 내용과 링크를 분석합니다(규칙 1차 → OpenRouter LLM 최종). 위험하면 경고와 쉬운 설명을 붙이고 주의 모드를 시작하며 링크를 차단합니다. | 구현됨 (`backend/app/domain/sms.py` · `backend/app/integrations.py` · `feature_sms`) |
 | **통화 감지** | 앱 안 인터넷 음성 통화(WebRTC)의 음성을 글자로 바꿔 실시간으로 분석하고, 사기 징후가 잡히면 통화 중에 경고합니다. | 구현 예정 |
-| **주의 모드** | 위험 문자나 위험 통화가 감지되면 24시간 유지됩니다. 본인은 끌 수 없고 보호자는 끝낼 수 있습니다. | 일부 구현. 주의 모드 시작·연장·보호자 해제·사건 기록과 화면 표시(`backend/app/service.py`)는 구현됨. 문자·통화 감지 연결은 3·4단계 예정 |
-| **확인 질문과 종합 판정** | 주의 모드 중 적금·예금 해지, 큰 금액 송금, 대출 신청을 시도하면 AI가 앞선 연락에 맞춘 질문을 하고, 규칙·점수 1차와 LLM 최종으로 낮음 / 주의 / 위험을 정합니다. | 일부 구현. 주의 모드 밖 송금 판정(낮음 / 주의 / 위험)은 구현됨. 주의 모드 안 확인 질문과 LLM 판정은 구현 예정 |
+| **주의 모드** | 위험 문자나 위험 통화가 감지되면 24시간 유지됩니다. 본인은 끌 수 없고 보호자는 끝낼 수 있습니다. | 일부 구현. 위험 문자 감지 시 주의 모드 시작·연장·보호자 해제·사건 기록과 화면 표시(`backend/app/service.py`)는 구현됨. 통화 감지 연결은 4단계 예정 |
+| **확인 질문과 종합 판정** | 주의 모드 중 적금·예금 해지, 큰 금액 송금, 대출 신청을 시도하면 AI가 앞선 연락에 맞춘 질문을 하고, 규칙·점수 1차와 LLM 최종으로 낮음 / 주의 / 위험을 정합니다. | 일부 구현. 주의 모드 밖 송금 판정(낮음 / 주의 / 위험)과 문자 판정(규칙 1차 + LLM 최종)은 구현됨. 주의 모드 안 금융 행동 확인 질문과 종합 판정은 구현 예정 |
 | **거래 보류** | 위험 판정 거래를 30분 멈춥니다. 보호자는 해제·연장, 본인은 취소할 수 있고, 보호자 응답이 없으면 본인이 다시 확인해야 진행됩니다. | 구현됨 (`backend/app/service.py` · `feature_transfer` · `feature_guardian`) |
 | **보호자 모드** | 위험 근거 요약, 보류 해제·연장, 앱 안 통화, 주의 모드 해제, 위험 기록, 가족 상태·한도·모드 관리. | 일부 구현. 보류 해제·연장, 주의 모드 해제, 가족 상태·알림·한도·모드 관리와 결제·동결 승인은 구현됨. 근거 요약, 위험 기록, 앱 안 통화, QR 연결은 구현 예정 |
 | **가상 은행** | 계좌 조회, 송금, 결제, 거래 내역, 적금·예금 만기 전 해지, 대출 한도 조회·신청. | 일부 구현. 계좌 조회·송금·결제·거래 내역은 구현됨. 적금·예금, 대출은 구현 예정 |
@@ -107,20 +107,20 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph App["Android 기기 (Flutter 앱)"]
-        SMS["문자 화면 (예정)"]
+        SMS["문자 화면"]
         CALL["통화 화면 · WebRTC (예정)"]
         BANK["가상 은행 · SOS"]
         G["보호자 모드"]
     end
     subgraph Server["백엔드 (FastAPI)"]
         INC["사건 · 주의 모드"]
-        JUDGE["판정: 규칙 + FDS 1차, LLM 최종 (LLM은 예정)"]
+        JUDGE["판정: 규칙 + FDS 1차, LLM 최종 (문자 구현됨)"]
         HOLD["보류 · 타이머"]
         SOS["SOS 동결 제어"]
         MODE["안심 모드 필터 (MCC)"]
     end
     subgraph Ext["외부 연동"]
-        OR["OpenRouter: LLM · 음성인식 (예정)"]
+        OR["OpenRouter: LLM (구현됨) · 음성인식 (예정)"]
         OB["오픈뱅킹 (모의)"]
         PUSH["푸시 · SMS (모의)"]
     end
@@ -142,7 +142,7 @@ flowchart TD
 | 실시간 | `GET /api/v1/state` + `WS /api/v1/ws` | 구현됨 |
 | 통화 | WebRTC 직접 연결 | 구현 예정 |
 | 음성인식(STT) | 1순위 OpenRouter, 2순위 기기 내 음성인식 | 구현 예정 |
-| LLM | OpenRouter. 인터넷이 없으면 규칙·점수 판정만 | 구현 예정 |
+| LLM | OpenRouter. 인터넷이나 키가 없으면 규칙·점수 판정만 | 문자 판정 구현됨 (`backend/app/integrations.py`) |
 | 외부 연동 | 오픈뱅킹·푸시·SMS 모의 어댑터 | 구현됨 |
 
 앱은 서버의 가족 상태(`GET /api/v1/state`)를 그리고, 상태가 바뀌면 WebSocket(`/api/v1/ws`) 이벤트를 받아 다시 불러옵니다. 그래서 **휴대폰 여러 대**(어르신 폰·보호자 폰)로도, 한 화면에서 사용자를 바꿔 가며도 같은 흐름을 시연할 수 있습니다.
@@ -153,11 +153,12 @@ flowchart TD
 
 ```
 docs/Prescript/             기획서(AI 구현 프롬프트) · 지침 원문
-backend/                    FastAPI 서버 · SQLite(기본)/PostgreSQL · AI FDS · 테스트
+backend/                    FastAPI 서버 · SQLite(기본)/PostgreSQL · AI FDS · 문자 판정 · 테스트
   app/domain/fds.py         규칙 + Isolation Forest 위험도
+  app/domain/sms.py         문자 규칙 1차 판정 · 시연 문자 프리셋 · 가상 검증 모음
   app/domain/catalog.py     안심 모드 · 업종(MCC) · 시연 가맹점
-  app/service.py            사건·주의 모드 · 송금 판정·보류 · 결제 제어 · SOS 동결 · 타이머
-  app/integrations.py       오픈뱅킹 · FCM · SMS 어댑터 (모의)
+  app/service.py            사건·주의 모드 · 문자 수신/판정 · 송금 판정·보류 · 결제 제어 · SOS 동결 · 타이머
+  app/integrations.py       오픈뱅킹 · FCM · SMS (모의) · OpenRouter LLM 게이트웨이 (모의 + 실제)
 packages/
   app/                      셸: 웹(16:9 사이드바·2단)/모바일(하단 메뉴) 레이아웃, 화면 연결
   core/
@@ -167,6 +168,7 @@ packages/
     core_ui/                디자인 시스템 (파랑·빨강 토큰, 고대비, 공용 위젯)
     core_errors/            공통 Failure
   features/
+    feature_sms/            휴대폰 문자 화면 재현 (대화 목록·말풍선·위험 경고·외부 링크 차단 화면)
     feature_sos/            흔들기 감지 · SOS 버튼 · 동결 화면
     feature_transfer/       AI 안심 점검·주의 확인·거래 보류를 거치는 송금 시트
     feature_payment/        안심 모드를 따르는 결제 시트
@@ -215,18 +217,21 @@ Flutter 웹을 빌드해 같은 서버에서 제공합니다. <http://127.0.0.1:
 
 ## 지금 시연할 수 있는 시나리오
 
-설정 탭(웹은 사이드바 아래)의 **바로 시연해 보기**에서 바로 시작할 수 있습니다. 문자·통화에서 시작하는 대표 시나리오는 구현 뒤에 추가됩니다.
+설정 탭(웹은 사이드바 아래)의 **바로 시연해 보기**에서 바로 시작할 수 있습니다.
 
-1. **흔들어서 SOS 동결**: 어르신 화면이 흔들리고 → 전 계좌 출금 동결 → 빨간 동결 화면과 24시간 카운트다운 → 보호자 화면에 "동결 중".
-2. **낯선 계좌로 50만원 송금**: AI 안심 점검이 위험(80점대)으로 판정 → 거래 30분 보류 + 보호자 알림 → 보호자가 해제(즉시 실행)하거나 연장(30분 추가), 또는 30분 동안 응답이 없으면 어르신 본인 재확인 대기([그래도 진행] / [그만두기]).
-3. **등교 모드에서 게임 결제**: 게임 업종(MCC 5816)은 등교 모드 화이트리스트에 없어 차단 → 보호자에게 요청 → 승인되면 결제.
+1. **사칭 문자 받기**: 어르신 문자 화면에 금융감독원 사칭 문자가 도착 → 말풍선에 위험 경고와 쉬운 설명 표시, 24시간 주의 모드 시작(어르신 홈·보호자 화면에 표시) → 문자 속 가짜 링크를 누르면 외부로 열지 않고 `"이 링크를 열지 않았어요"` 차단 화면 표시.
+2. **정상 문자 받기**: 택배·가족·은행 알림 등 정상 문자 도착 → 경고 없이 일반 말풍선으로 표시되고 주의 모드는 켜지지 않음.
+3. **흔들어서 SOS 동결**: 어르신 화면이 흔들리고 → 전 계좌 출금 동결 → 빨간 동결 화면과 24시간 카운트다운 → 보호자 화면에 "동결 중".
+4. **낯선 계좌로 50만원 송금**: AI 안심 점검이 위험(80점대)으로 판정 → 거래 30분 보류 + 보호자 알림 → 보호자가 해제(즉시 실행)하거나 연장(30분 추가), 또는 30분 동안 응답이 없으면 어르신 본인 재확인 대기([그래도 진행] / [그만두기]).
+5. **등교 모드에서 게임 결제**: 게임 업종(MCC 5816)은 등교 모드 화이트리스트에 없어 차단 → 보호자에게 요청 → 승인되면 결제.
 
-**두 기기 시연**: 한 기기는 어르신, 다른 기기는 보호자로 고른 뒤 어르신 기기에서 송금하면 보호자 기기에 바로 보류 알림이 뜹니다.
+**두 기기 시연**: 한 기기는 어르신, 다른 기기는 보호자로 고른 뒤 어르신 기기에서 사칭 문자를 받거나 송금하면 보호자 기기에 바로 주의 모드·보류 알림이 뜹니다.
 
 ## 주요 API (지금 구현된 것)
 
 | 메서드 · 경로 | 설명 |
 | :--- | :--- |
+| `POST /api/v1/sms/receive` (`GET /api/v1/sms`) | 시연 문자 수신 및 위험 판정(규칙 1차 → LLM 최종). 위험이면 24시간 주의 모드 시작 및 사건 요약 기록 / 발신 번호별 대화·문자 목록 조회 |
 | `POST /api/v1/security/sos-freeze` (`/api/v1/emergency/freeze`) | SOS 동결. `user_id`, `trigger_type`(SHAKE_MOTION / LONG_PRESS / GUARDIAN_REMOTE), `sensor_intensity` → `status`, `frozen_accounts_count`, `freeze_expires_at`, `guardian_notified` |
 | `POST /api/v1/security/caution-mode/release` | 보호자의 가족 주의 모드(24시간) 해제 |
 | `POST /api/v1/transaction/assess` | 송금 전 AI 안심 점검 (저장하지 않음) |
@@ -236,7 +241,7 @@ Flutter 웹을 빌드해 같은 서버에서 제공합니다. <http://127.0.0.1:
 | `POST /api/v1/guardian/callback-decision` | 보호자 보류 해제·연장 및 요청 승인·거절. `transaction_id`, `guardian_id`, `decision`(RELEASE / EXTEND / APPROVE / REJECT), `reason` |
 | `POST /api/v1/payments/pay` · `/payments/request-approval` | 안심 모드를 따르는 결제 / 막힌 결제의 보호자 요청 |
 | `POST /api/v1/modes` · `/guardian/limits` · `/guardian/sleep-guard` | 안심 모드 · 하루 한도 · 수면 안심 모드 |
-| `GET /api/v1/state` · `WS /api/v1/ws` | 가족 전체 상태(주의 모드·보류·사건 포함) · 실시간 이벤트 |
+| `GET /api/v1/state` · `WS /api/v1/ws` | 가족 전체 상태(문자·주의 모드·보류·사건 포함) · 실시간 이벤트 |
 
 전체 목록과 요청 형식은 실행 중인 서버의 `/docs`(Swagger)에 있습니다.
 
@@ -244,6 +249,8 @@ Flutter 웹을 빌드해 같은 서버에서 제공합니다. <http://127.0.0.1:
 
 | 이름 | 기본값 | 설명 |
 | :--- | :--- | :--- |
+| `OPENROUTER_API_KEY` | 빈 값 (모의 동작) | OpenRouter API 비밀키. 설정하지 않으면 모의 LLM 게이트웨이로 뜨며 1차 규칙 판정만으로 동작합니다 |
+| `FINGERBELL_LLM_MODEL` | `anthropic/claude-haiku-5.5` | OpenRouter 채팅 완성 모델 (다른 후보: `google/gemini-3.8-flash`, `upstage/solar-mini4`. 최종 선택은 사람이 정합니다) |
 | `FINGERBELL_DATABASE_URL` | `sqlite:///backend/fingerbell.db` | PostgreSQL은 `postgresql+psycopg://...` (`psycopg[binary]` 설치) |
 | `FINGERBELL_HOLD_SECONDS` | `1800` | 거래 보류 유지 시간(초, 기본 30분) |
 | `FINGERBELL_RECONFIRM_SECONDS` | `86400` | 보류 후 본인 재확인 대기 만료 시간(초, 기본 24시간) |

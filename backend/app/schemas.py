@@ -111,3 +111,16 @@ class SleepGuardBody(BaseModel):
 class UnfreezeBody(BaseModel):
     member_id: str
     guardian_id: str
+
+
+class SmsReceiveBody(BaseModel):
+    """시연 문자 수신 요청. 위험 판정은 항상 서버가 계산합니다 (클라이언트 값은 무시)."""
+
+    member_id: str = "senior"
+    kind: str | None = None
+    sender_phone: str | None = Field(default=None, max_length=30)
+    sender_name: str | None = Field(default=None, max_length=60)
+    body: str | None = Field(default=None, max_length=1000)
+    level: str | None = None
+    reasons: list[str] | None = None
+    explanation: str | None = None

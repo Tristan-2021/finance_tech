@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from . import clock
 from .db import Base
-from .models import Account, Alert, ApprovalRequest, Contact, Guardian, LedgerEntry, Member, RiskAssessment
+from .domain.sms import SMS_PRESETS, extract_links, extract_phones
+from .models import Account, Alert, ApprovalRequest, Contact, Guardian, LedgerEntry, Member, RiskAssessment, SmsMessage
 from .service import uid
 
 # 핑거벨 안의 가족 계좌 (서로 보내면 받는 계좌에 바로 들어갑니다)
@@ -105,12 +106,14 @@ def reset_schema(engine) -> None:
 
 
 def schema_outdated(engine) -> bool:
-    """예전 버전이 만든 DB인지 (지금 테이블에 있어야 할 컬럼이 빠져 있으면). 시연 데이터라 새로 만들면 됩니다."""
+    """예전 버전이 만든 DB인지 (지금 테이블이나 컬럼이 빠져 있으면). 시연 데이터라 새로 만들면 됩니다."""
     db = inspect(engine)
     existing = set(db.get_table_names())
+    if not existing:
+        return False
     for table in Base.metadata.sorted_tables:
         if table.name not in existing:
-            continue
+            return True
         columns = {c["name"] for c in db.get_columns(table.name)}
         if any(c.name not in columns for c in table.columns):
             return True
@@ -289,4 +292,27 @@ def seed(session: Session) -> None:
             needs_approval=True,
         )
     )
+    for sid, preset_id, hours_ago in (
+        ("sms-seed-bank", "normal_bank", 26),
+        ("sms-seed-family", "normal_family", 18),
+        ("sms-seed-delivery", "normal_delivery", 5),
+    ):
+        preset = SMS_PRESETS[preset_id]
+        session.add(
+            SmsMessage(
+                id=sid,
+                member_id="senior",
+                sender_name=preset.sender_name,
+                sender_phone=preset.sender_phone,
+                body=preset.body,
+                level="low",
+                reasons=[],
+                explanation="사기 의심 징후가 없는 일반 문자예요.",
+                rule_level="low",
+                source="rule",
+                links=extract_links(preset.body),
+                phones=extract_phones(preset.body, preset.sender_phone),
+                at=ago(hours_ago),
+            )
+        )
     session.commit()
