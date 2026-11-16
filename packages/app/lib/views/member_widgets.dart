@@ -2,6 +2,7 @@ import 'package:core_api/core_api.dart';
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:feature_call/feature_call.dart';
 import 'package:feature_payment/feature_payment.dart';
 import 'package:feature_sms/feature_sms.dart';
 import 'package:feature_sos/feature_sos.dart';
@@ -146,14 +147,27 @@ class _MemberHoldCardState extends State<MemberHoldCard> {
             ),
           ],
           const SizedBox(height: 14),
-          if (reconfirm)
+          if (reconfirm) ...[
             FbButtonRow(
               children: [
                 FbButton.gray('그만두기', busy: _busy == 'stop', onPressed: _busy == null ? () => _reconfirm(false) : null),
                 FbButton.gray('그래도 진행', busy: _busy == 'proceed', onPressed: _busy == null ? () => _reconfirm(true) : null),
               ],
-            )
-          else
+            ),
+            const SizedBox(height: 8),
+            FbButton.gray(
+              '보호자에게 전화',
+              icon: FbIcons.phone,
+              onPressed: _busy == null
+                  ? () => openCallSheet(
+                        context,
+                        callerId: widget.member.id,
+                        calleeId: 'guardian',
+                        peerName: '보호자',
+                      )
+                  : null,
+            ),
+          ] else
             FbButton.gray('취소', busy: _busy == 'cancel', onPressed: _busy == null ? _cancel : null),
         ],
       ),
@@ -174,7 +188,20 @@ class AccountCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.fb;
     final m = member;
-    void send() => openTransferSheet(context, m.id);
+    void send() => openTransferSheet(
+      context,
+      m.id,
+      onCallGuardian: () {
+        final g = context.read<FamilyCubit>().state.snapshot?.guardian;
+        openCallSheet(
+          context,
+          callerId: m.id,
+          calleeId: 'guardian',
+          peerName: g != null ? '보호자 ${g.name}' : '보호자',
+          peerPhone: g?.phone,
+        );
+      },
+    );
     void pay() => openPaySheet(context, m.id);
     void history() => context.read<ShellCubit>().switchTab(AppTab.history);
     final buttons = m.isChild
@@ -308,7 +335,13 @@ class GuardianCard extends StatelessWidget {
               shape: const CircleBorder(),
               child: IconButton(
                 tooltip: '보호자에게 전화',
-                onPressed: () => context.read<ShellCubit>().say('(시연) 보호자 ${g.name}님께 전화를 연결해요'),
+                onPressed: () => openCallSheet(
+                  context,
+                  callerId: member.id,
+                  calleeId: 'guardian',
+                  peerName: '보호자 ${g.name}',
+                  peerPhone: g.phone,
+                ),
                 icon: Icon(FbIcons.phone, color: c.blue, size: 18),
               ),
             ),
@@ -372,7 +405,19 @@ class SmsEntryCard extends StatelessWidget {
       leading: TxLogo(icon: dangerCount > 0 ? FbIcons.alert : FbIcons.sms, blue: dangerCount == 0),
       title: '문자',
       subtitle: sub,
-      onTap: () => openSmsSheet(context, member.id),
+      onTap: () => openSmsSheet(
+        context,
+        member.id,
+        onTapPhone: (phone) {
+          Navigator.of(context).maybePop();
+          openCallSheet(
+            context,
+            callerId: member.id,
+            calleeId: 'counterpart',
+            peerPhone: phone,
+          );
+        },
+      ),
     );
   }
 }

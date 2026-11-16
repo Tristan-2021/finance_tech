@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from . import clock
 from .config import Settings
+from .domain.call import CALL_SCRIPTS, CallVerdict, assess_call_rules
 from .domain.catalog import BANKS, CATEGORIES, MERCHANTS, MODES, REQUEST_EMOJI, SOURCE_LABEL, Merchant, merchant
 from .domain.fds import FdsEngine, RiskResult, Sample, TransferContext
 from .domain.sms import SMS_PRESETS, assess_sms_rules, extract_links, extract_phones, resolve_preset
@@ -36,6 +37,7 @@ from .models import (
     Account,
     Alert,
     ApprovalRequest,
+    CallSession,
     Contact,
     Guardian,
     Incident,
@@ -57,6 +59,8 @@ SPLIT_WINDOW = timedelta(minutes=10)
 HOLD_TYPES = {"transfer"}
 EXPIRING_TYPES = {"payment", "mode"}
 ACTIVE_REQUEST_STATUSES = ("pending", "reconfirm")
+ACTIVE_CALL_STATUSES = ("ringing", "active")
+VALID_CALL_PARTICIPANTS = ("senior", "child", "guardian", "counterpart")
 DONE_ALERT = {"blocked", "rejected", "frozen", "cancelled", "expired"}
 
 
@@ -563,6 +567,375 @@ class FamilyService:
             "member_id": m.id,
             "messages": [self._sms_dict(x) for x in rows],
             "conversations": self._sms_conversations(rows),
+        }
+
+    # ------------------------------------------------------------------ 통화 세션 · 연결 신호 · 통화 분석 (기획서 5.3, 5.5)
+    def active_call(self) -> CallSession | None:
+        return self.s.scalars(
+            select(CallSession)
+            .where(CallSession.status.in_(ACTIVE_CALL_STATUSES))
+            .order_by(CallSession.created_at.desc())
+            .limit(1)
+            .execution_options(populate_existing=True)
+        ).first()
+
+    def call_scripts(self) -> dict[str, Any]:
+        return {"scripts": [script.to_dict() for script in CALL_SCRIPTS.values()]}
+
+    def call_state(self) -> dict[str, Any]:
+        active = self.active_call()
+        rows = list(self.s.scalars(select(CallSession).order_by(CallSession.created_at.desc()).limit(MAX_LIST)))
+        return {
+            "active_call": self._call_dict(active) if active else None,
+            "calls": [self._call_dict(c) for c in rows],
+            "scripts": [script.to_dict() for script in CALL_SCRIPTS.values()],
+        }
+
+    def _resolve_call_participants(self, caller_id: str | None, callee_id: str | None) -> tuple[str, str]:
+        caller = (caller_id or "senior").strip().lower()
+        if caller not in VALID_CALL_PARTICIPANTS:
+            raise DomainError("participant", f"알 수 없는 통화 참가자예요: {caller_id}", 400)
+        if callee_id and callee_id.strip():
+            callee = callee_id.strip().lower()
+        elif caller in ("guardian", "counterpart"):
+            callee = "senior"
+        else:
+            callee = "counterpart"
+        if callee not in VALID_CALL_PARTICIPANTS:
+            raise DomainError("participant", f"알 수 없는 통화 참가자예요: {callee_id}", 400)
+        if caller == callee:
+            raise DomainError("participant", "같은 참가자끼리는 통화할 수 없어요.", 400)
+        return caller, callee
+
+    def _resolve_peer_info(
+        self,
+        caller: str,
+        callee: str,
+        peer_phone: str | None,
+        peer_name: str | None,
+    ) -> tuple[str, str]:
+        phone = (peer_phone or "").strip()
+        name = (peer_name or "").strip()
+        participants = {caller, callee}
+        if "guardian" in participants:
+            g = self.guardian()
+            other_id = callee if caller == "guardian" else caller
+            if caller == "guardian" and other_id in ("senior", "child"):
+                m = self.member(other_id)
+                name = name or f"{m.relation_label} {m.name}"
+                phone = phone or "앱 안 통화"
+            else:
+                name = name or f"보호자 {g.name}"
+                phone = phone or g.phone
+            return phone, name
+
+        if phone and not name:
+            sms_match = self.s.scalars(
+                select(SmsMessage).where(SmsMessage.sender_phone == phone).order_by(SmsMessage.at.desc()).limit(1)
+            ).first()
+            if sms_match and sms_match.sender_name:
+                name = sms_match.sender_name
+            else:
+                for preset in SMS_PRESETS.values():
+                    if preset.sender_phone == phone:
+                        name = preset.sender_name
+                        break
+                if not name:
+                    for script in CALL_SCRIPTS.values():
+                        if script.caller_phone == phone:
+                            name = script.caller_name
+                            break
+        if not phone:
+            phone = CALL_SCRIPTS["phishing"].caller_phone
+        if not name:
+            name = "시연 상대"
+        return phone, name
+
+    def start_call(
+        self,
+        caller_id: str = "senior",
+        callee_id: str | None = None,
+        *,
+        peer_phone: str | None = None,
+        peer_name: str | None = None,
+    ) -> dict[str, Any]:
+        caller, callee = self._resolve_call_participants(caller_id, callee_id)
+        participants = {caller, callee}
+        # 분석 대상: 어르신·아이와 시연 상대의 통화만 분석합니다. 보호자와 가족의 통화는 분석하지 않습니다 (기획서 5.3, 지시서 4번).
+        analyzed = ("counterpart" in participants) and bool(participants & {"senior", "child"})
+        member_id = "senior" if "senior" in participants else ("child" if "child" in participants else None)
+        phone, name = self._resolve_peer_info(caller, callee, peer_phone, peer_name)
+
+        now = clock.now()
+        # 이미 열려 있던 통화 세션이 있으면 먼저 종료합니다
+        for open_call in self.s.scalars(select(CallSession).where(CallSession.status.in_(ACTIVE_CALL_STATUSES))):
+            open_call.status = "ended"
+            open_call.ended_at = now
+
+        call = CallSession(
+            id=uid("call"),
+            caller_id=caller,
+            callee_id=callee,
+            member_id=member_id,
+            peer_name=name,
+            peer_phone=phone,
+            status="ringing",
+            analyzed=analyzed,
+            warning_level="low",
+            warning_reasons=[],
+            warning_explanation="",
+            created_at=now,
+        )
+        self.s.add(call)
+        self.s.flush()
+
+        self._emit(
+            "call",
+            f"{name} ({phone}) 통화 발신 중",
+            call_id=call.id,
+            status=call.status,
+            caller_id=caller,
+            callee_id=callee,
+            member_id=member_id,
+            analyzed=analyzed,
+            peer_phone=phone,
+            peer_name=name,
+        )
+        return {"status": call.status, "call": self._call_dict(call)}
+
+    def _get_call(self, call_id: str | None = None, *, create_if_missing: bool = False) -> CallSession:
+        if call_id and call_id != "active":
+            call = self.s.get(CallSession, call_id)
+            if call is None:
+                raise DomainError("call-missing", f"통화를 찾을 수 없어요: {call_id}", 404)
+            return call
+        active = self.active_call()
+        if active is not None:
+            return active
+        if create_if_missing:
+            started = self.start_call("senior", "counterpart")
+            call = self.s.get(CallSession, started["call"]["id"])
+            assert call is not None
+            return call
+        raise DomainError("call-missing", "진행 중인 통화를 찾을 수 없어요.", 404)
+
+    def answer_call(self, call_id: str | None = None) -> dict[str, Any]:
+        call = self._get_call(call_id)
+        if call.status == "ended":
+            raise DomainError("call-ended", "이미 종료된 통화예요.", 409)
+        now = clock.now()
+        call.status = "active"
+        call.answered_at = call.answered_at or now
+        self.s.flush()
+        self._emit(
+            "call",
+            "",
+            call_id=call.id,
+            status=call.status,
+            caller_id=call.caller_id,
+            callee_id=call.callee_id,
+            member_id=call.member_id,
+            analyzed=call.analyzed,
+        )
+        return {"status": call.status, "call": self._call_dict(call)}
+
+    def end_call(self, call_id: str | None = None) -> dict[str, Any]:
+        call = self._get_call(call_id)
+        now = clock.now()
+        call.status = "ended"
+        call.ended_at = call.ended_at or now
+        self.s.flush()
+        self._emit(
+            "call",
+            "",
+            call_id=call.id,
+            status=call.status,
+            caller_id=call.caller_id,
+            callee_id=call.callee_id,
+            member_id=call.member_id,
+            analyzed=call.analyzed,
+        )
+        return {"status": call.status, "call": self._call_dict(call)}
+
+    def relay_call_signal(
+        self,
+        call_id: str | None,
+        *,
+        signal_type: str = "offer",
+        from_id: str | None = None,
+        to_id: str | None = None,
+        data: Any = None,
+        sdp: str | None = None,
+        candidate: Any = None,
+    ) -> dict[str, Any]:
+        """WebRTC ready / offer / answer / ICE 신호를 해석하지 않고 /api/v1/ws로 전달합니다 (기획서 5.3)."""
+        if signal_type not in ("ready", "offer", "answer", "ice"):
+            raise DomainError("signal-type", "허용되지 않는 통화 연결 신호예요.", 400)
+        active = self.active_call()
+        resolved_call_id = call_id or (active.id if active else "")
+        payload = data if data is not None else ({"sdp": sdp, "type": signal_type} if sdp is not None else candidate)
+        self._emit(
+            "rtc_signal",
+            "",
+            call_id=resolved_call_id,
+            signal_type=signal_type,
+            from_id=from_id,
+            to_id=to_id,
+            data=payload,
+        )
+        return {"status": "relayed", "call_id": resolved_call_id, "signal_type": signal_type}
+
+    def analyze_call_audio(
+        self,
+        call_id: str | None = None,
+        *,
+        audio_base64: str = "",
+        audio_format: str = "wav",
+    ) -> dict[str, Any]:
+        """4초 음성 조각을 받아 음성인식(STT) 게이트웨이로 전사한 뒤 분석합니다.
+
+        음성과 전사문 원문은 판정이 끝나면 저장하지 않으며, 음성인식이 실패하거나 빈 결과여도 멈추지 않습니다.
+        """
+        call = self._get_call(call_id, create_if_missing=True)
+        if call.status == "ended":
+            raise DomainError("call-ended", "이미 종료된 통화예요.", 409)
+        if call.status == "ringing":
+            call.status = "active"
+            call.answered_at = call.answered_at or clock.now()
+            self.s.flush()
+
+        # 보호자와 가족의 통화는 분석하지 않습니다 (음성인식도 호출하지 않음).
+        if not call.analyzed:
+            return self._ignored_call_result(call)
+
+        text, stt_rec = self.gw.stt.transcribe(audio_base64, audio_format)
+        self._integrate(stt_rec)
+        clean_text = (text or "").strip()
+        if not clean_text:
+            m = self.member(call.member_id) if call.member_id else None
+            caution = self.is_caution_mode(m) if m is not None else False
+            return {
+                "status": "empty",
+                "analyzed": True,
+                "transcribed": False,
+                "call": self._call_dict(call),
+                "verdict": CallVerdict(level="low", explanation="인식된 음성이 없어요.").to_dict(),
+                "caution_mode": caution,
+                "caution_until": iso(m.caution_until) if (m is not None and caution) else None,
+            }
+        return self._analyze_call_text(call, clean_text)
+
+    def analyze_call_transcript(
+        self,
+        call_id: str | None = None,
+        *,
+        text: str = "",
+    ) -> dict[str, Any]:
+        """대본 문장을 음성인식 없이 바로 통화 분석(규칙 1차 → LLM 최종)에 넣습니다.
+
+        전사문 원문은 판정이 끝나면 저장하지 않고 사건에는 위험 요약만 남깁니다 (기획서 5.1).
+        """
+        call = self._get_call(call_id, create_if_missing=True)
+        if call.status == "ended":
+            raise DomainError("call-ended", "이미 종료된 통화예요.", 409)
+        if call.status == "ringing":
+            call.status = "active"
+            call.answered_at = call.answered_at or clock.now()
+            self.s.flush()
+
+        if not call.analyzed:
+            return self._ignored_call_result(call)
+
+        clean_text = (text or "").strip()
+        if not clean_text:
+            m = self.member(call.member_id) if call.member_id else None
+            caution = self.is_caution_mode(m) if m is not None else False
+            return {
+                "status": "empty",
+                "analyzed": True,
+                "call": self._call_dict(call),
+                "verdict": CallVerdict(level="low", explanation="분석할 문장이 비어 있어요.").to_dict(),
+                "caution_mode": caution,
+                "caution_until": iso(m.caution_until) if (m is not None and caution) else None,
+            }
+        return self._analyze_call_text(call, clean_text)
+
+    def _ignored_call_result(self, call: CallSession) -> dict[str, Any]:
+        m = self.member(call.member_id) if call.member_id else None
+        caution = self.is_caution_mode(m) if m is not None else False
+        return {
+            "status": "ignored",
+            "analyzed": False,
+            "call": self._call_dict(call),
+            "verdict": CallVerdict(level="low", explanation="보호자·가족 통화는 분석하지 않아요.").to_dict(),
+            "caution_mode": caution,
+            "caution_until": iso(m.caution_until) if (m is not None and caution) else None,
+        }
+
+    def _analyze_call_text(self, call: CallSession, clean_text: str) -> dict[str, Any]:
+        first_pass = assess_call_rules(clean_text)
+        verdict, llm_rec = self.gw.llm.judge_call(clean_text, first_pass)
+        self._integrate(llm_rec)
+
+        m = self.member(call.member_id) if call.member_id else None
+        peer_label = call.peer_name or call.peer_phone or "시연 상대"
+
+        if verdict.level == "danger":
+            call.warning_level = "danger"
+            call.warning_reasons = list(verdict.reasons)
+            call.warning_explanation = verdict.explanation
+            self.s.flush()
+
+            if m is not None and m.supervised:
+                reason_summary = ", ".join(verdict.reasons[:2]) if verdict.reasons else verdict.explanation
+                summary = f"위험 통화 감지 ({peer_label}) · {reason_summary}"[:200]
+                self.start_caution_mode(
+                    m.id,
+                    kind="call",
+                    summary=summary,
+                    detail={
+                        "call_id": call.id,
+                        "peer_phone": call.peer_phone,
+                        "peer_name": call.peer_name,
+                        "level": verdict.level,
+                        "reasons": list(verdict.reasons),
+                        "explanation": verdict.explanation,
+                    },
+                )
+                self._alert(m, f"보이스피싱 의심 통화 경고 ({peer_label})", "danger", "🚨")
+                g = self.guardian()
+                self._integrate(
+                    self.gw.push.send(
+                        g.name,
+                        f"긴급 통화 경고 · {self._who(m)}",
+                        verdict.explanation,
+                        {"type": "call_warning", "member_id": m.id, "call_id": call.id, "level": verdict.level},
+                    )
+                )
+
+            self._emit(
+                "call_warning",
+                verdict.explanation,
+                member_id=m.id if m is not None else None,
+                call_id=call.id,
+                level=verdict.level,
+                reasons=list(verdict.reasons),
+                explanation=verdict.explanation,
+            )
+        elif verdict.level == "caution" and call.warning_level == "low":
+            call.warning_level = "caution"
+            call.warning_reasons = list(verdict.reasons)
+            call.warning_explanation = verdict.explanation
+            self.s.flush()
+
+        caution = self.is_caution_mode(m) if m is not None else False
+        return {
+            "status": "analyzed",
+            "analyzed": True,
+            "call": self._call_dict(call),
+            "verdict": verdict.to_dict(),
+            "caution_mode": caution,
+            "caution_until": iso(m.caution_until) if (m is not None and caution) else None,
         }
 
     # ------------------------------------------------------------------ 송금 + AI FDS
@@ -1299,6 +1672,8 @@ class FamilyService:
         requests = list(self.s.scalars(select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc()).limit(MAX_LIST)))
         alerts = list(self.s.scalars(select(Alert).order_by(Alert.at.desc()).limit(MAX_LIST)))
         incidents = list(self.s.scalars(select(Incident).order_by(Incident.started_at.desc()).limit(MAX_LIST)))
+        active_call = self.active_call()
+        calls = list(self.s.scalars(select(CallSession).order_by(CallSession.created_at.desc()).limit(MAX_LIST)))
         assessments = list(
             self.s.scalars(
                 select(RiskAssessment)
@@ -1328,6 +1703,8 @@ class FamilyService:
             "members": [self._member_dict(m) for m in members],
             "requests": [self._request_dict(r) for r in requests],
             "incidents": [self._incident_dict(i) for i in incidents],
+            "active_call": self._call_dict(active_call) if active_call else None,
+            "calls": [self._call_dict(c) for c in calls],
             "alerts": [
                 {
                     "id": a.id,
@@ -1385,6 +1762,7 @@ class FamilyService:
                     }
                     for p in SMS_PRESETS.values()
                 ],
+                "call_scripts": [script.to_dict() for script in CALL_SCRIPTS.values()],
             },
         }
 
@@ -1552,6 +1930,25 @@ class FamilyService:
             "decided_by": r.decided_by,
             "decision_reason": r.decision_reason,
             "fail_reason": r.fail_reason,
+        }
+
+    @staticmethod
+    def _call_dict(c: CallSession) -> dict[str, Any]:
+        return {
+            "id": c.id,
+            "caller_id": c.caller_id,
+            "callee_id": c.callee_id,
+            "member_id": c.member_id,
+            "peer_name": c.peer_name,
+            "peer_phone": c.peer_phone,
+            "status": c.status,
+            "analyzed": c.analyzed,
+            "warning_level": c.warning_level,
+            "warning_reasons": list(c.warning_reasons or []),
+            "warning_explanation": c.warning_explanation,
+            "created_at": iso(c.created_at),
+            "answered_at": iso(c.answered_at),
+            "ended_at": iso(c.ended_at),
         }
 
     @staticmethod

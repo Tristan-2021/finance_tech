@@ -25,7 +25,12 @@ from .integrations import Gateways, make_gateways
 from .models import Guardian
 from .schemas import (
     ApprovalRequestBody,
+    CallActionBody,
+    CallAudioBody,
     CallbackDecision,
+    CallSignalBody,
+    CallStartBody,
+    CallTranscriptBody,
     CautionReleaseBody,
     HoldCancelBody,
     HoldExtendBody,
@@ -186,6 +191,114 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
             ),
         )
 
+    # ---------------- 통화 세션 · 연결 신호 · 실시간 통화 분석 (기획서 5.3, 5.5)
+    @api.get("/calls/scripts")
+    def list_call_scripts(svc: FamilyService = Depends(service)):
+        return svc.call_scripts()
+
+    @api.get("/calls")
+    @api.get("/calls/active", include_in_schema=False)
+    def get_calls(svc: FamilyService = Depends(service)):
+        return svc.call_state()
+
+    @api.post("/calls/start")
+    @api.post("/calls/dial", include_in_schema=False)
+    @api.post("/calls", include_in_schema=False)
+    def start_call(body: CallStartBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.start_call(
+                body.caller_id,
+                body.callee_id,
+                peer_phone=body.peer_phone,
+                peer_name=body.peer_name,
+            ),
+        )
+
+    @api.post("/calls/{call_id}/answer")
+    def answer_call_by_id(call_id: str, svc: FamilyService = Depends(service)):
+        return done(svc, svc.answer_call(call_id))
+
+    @api.post("/calls/answer", include_in_schema=False)
+    def answer_call(body: CallActionBody, svc: FamilyService = Depends(service)):
+        return done(svc, svc.answer_call(body.call_id))
+
+    @api.post("/calls/{call_id}/end")
+    @api.post("/calls/{call_id}/hangup", include_in_schema=False)
+    def end_call_by_id(call_id: str, svc: FamilyService = Depends(service)):
+        return done(svc, svc.end_call(call_id))
+
+    @api.post("/calls/end", include_in_schema=False)
+    @api.post("/calls/hangup", include_in_schema=False)
+    def end_call(body: CallActionBody, svc: FamilyService = Depends(service)):
+        return done(svc, svc.end_call(body.call_id))
+
+    @api.post("/calls/{call_id}/signal")
+    def signal_call_by_id(call_id: str, body: CallSignalBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.relay_call_signal(
+                call_id,
+                signal_type=body.signal_type,
+                from_id=body.from_id,
+                to_id=body.to_id,
+                data=body.data,
+                sdp=body.sdp,
+                candidate=body.candidate,
+            ),
+        )
+
+    @api.post("/calls/signal", include_in_schema=False)
+    def signal_call(body: CallSignalBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.relay_call_signal(
+                body.call_id,
+                signal_type=body.signal_type,
+                from_id=body.from_id,
+                to_id=body.to_id,
+                data=body.data,
+                sdp=body.sdp,
+                candidate=body.candidate,
+            ),
+        )
+
+    @api.post("/calls/{call_id}/audio")
+    def analyze_call_audio_by_id(call_id: str, body: CallAudioBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.analyze_call_audio(
+                call_id,
+                audio_base64=body.audio_base64,
+                audio_format=body.audio_format,
+            ),
+        )
+
+    @api.post("/calls/audio", include_in_schema=False)
+    def analyze_call_audio(body: CallAudioBody, svc: FamilyService = Depends(service)):
+        return done(
+            svc,
+            svc.analyze_call_audio(
+                body.call_id,
+                audio_base64=body.audio_base64,
+                audio_format=body.audio_format,
+            ),
+        )
+
+    @api.post("/calls/{call_id}/transcript")
+    @api.post("/calls/{call_id}/text", include_in_schema=False)
+    @api.post("/calls/{call_id}/analyze", include_in_schema=False)
+    def analyze_call_transcript_by_id(call_id: str, body: CallTranscriptBody, svc: FamilyService = Depends(service)):
+        sentence = body.text or body.transcript or body.sentence or ""
+        return done(svc, svc.analyze_call_transcript(call_id, text=sentence))
+
+    @api.post("/calls/transcript", include_in_schema=False)
+    @api.post("/calls/text", include_in_schema=False)
+    @api.post("/calls/analyze", include_in_schema=False)
+    def analyze_call_transcript(body: CallTranscriptBody, svc: FamilyService = Depends(service)):
+        sentence = body.text or body.transcript or body.sentence or ""
+        return done(svc, svc.analyze_call_transcript(body.call_id, text=sentence))
+
     # ---------------- 핵심 기능 2: AI FDS + 거래 30분 보류 (기획서 5.5, 5.7)
     @api.post("/transaction/assess")
     def assess(body: TransferDraft, svc: FamilyService = Depends(service)):
@@ -277,6 +390,7 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
         reset_schema(engine)
         fds.reset()
         gateways.llm.reset()
+        gateways.stt.reset()
         with sessions() as s:
             seed(s)
         hub.publish([{"type": "reset", "message": "시연 데이터를 처음 상태로 되돌렸어요"}])
@@ -288,8 +402,10 @@ def create_app(settings: Settings | None = None, gateways: Gateways | None = Non
         try:
             await ws.send_json({"type": "hello", "message": ""})
             while True:
-                # 앱이 보내는 ping을 받아 연결이 살아 있는지 확인만 합니다
-                await ws.receive_text()
+                # 앱이 보내는 ping 또는 WebRTC 연결 신호(offer / answer / ICE)를 받아 상대 기기에 전달합니다.
+                raw = await ws.receive_text()
+                if raw and raw != "ping":
+                    await hub.relay(ws, raw)
         except WebSocketDisconnect:
             pass
         finally:

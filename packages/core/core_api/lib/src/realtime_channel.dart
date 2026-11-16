@@ -64,6 +64,8 @@ class RealtimeChannel {
     );
   }
 
+  void sendJson(Map<String, dynamic> message) => _safeSend(jsonEncode(message));
+
   void _safeSend(String text) {
     try {
       _channel?.sink.add(text);

@@ -267,3 +267,29 @@ class SmsMessage(Base):
     links: Mapped[list[str]] = mapped_column(JSON, default=list)
     phones: Mapped[list[str]] = mapped_column(JSON, default=list)
     at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
+
+
+class CallSession(Base):
+    """앱 안 통화 세션과 위험 판정 요약 (기획서 5.1, 5.3).
+
+    음성과 전사문 원문은 저장하지 않고, 통화 참가자·상태와 위험 경고 요약만 남깁니다.
+    """
+
+    __tablename__ = "call_sessions"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    caller_id: Mapped[str] = mapped_column(String(32), index=True)
+    callee_id: Mapped[str] = mapped_column(String(32), index=True)
+    member_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    peer_name: Mapped[str] = mapped_column(String(60), default="")
+    peer_phone: Mapped[str] = mapped_column(String(30), default="")
+    # ringing / active / ended
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    analyzed: Mapped[bool] = mapped_column(Boolean, default=True)
+    # low / caution / danger
+    warning_level: Mapped[str] = mapped_column(String(12), default="low")
+    warning_reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
+    warning_explanation: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
+    answered_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

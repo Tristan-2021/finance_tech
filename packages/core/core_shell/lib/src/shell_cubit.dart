@@ -83,6 +83,7 @@ class ShellState {
 
 class ShellCubit extends Cubit<ShellState> {
   final _feedback = StreamController<FeedbackRequest>.broadcast();
+  final Set<String> _announcedCallWarnings = <String>{};
 
   ShellCubit([super.initial = const ShellState()]);
 
@@ -118,8 +119,25 @@ class ShellCubit extends Cubit<ShellState> {
     if (!_feedback.isClosed) _feedback.add(FeedbackRequest(message, toast: toast, vibrate: vibrate, speak: speak));
   }
 
+  /// 통화 중 위험 경고 피드백(진동·경고음·음성 안내)을 통화 ID별로 앱 전체에서 한 번만 실행합니다 (기획서 5.3).
+  bool announceCallWarningOnce(
+    String callId,
+    String message, {
+    bool toast = false,
+    List<int> vibrate = const [200, 100, 200],
+    bool speak = true,
+  }) {
+    final key = callId.trim().isEmpty ? '_active_' : callId.trim();
+    if (!_announcedCallWarnings.add(key)) return false;
+    say(message, toast: toast, vibrate: vibrate, speak: speak);
+    return true;
+  }
+
   /// 처음 상태(어르신 홈, 기본 설정)로 돌아갑니다.
-  void reset() => emit(ShellState(shakeTick: state.shakeTick, closeSheetsTick: state.closeSheetsTick + 1));
+  void reset() {
+    _announcedCallWarnings.clear();
+    emit(ShellState(shakeTick: state.shakeTick, closeSheetsTick: state.closeSheetsTick + 1));
+  }
 
   @override
   Future<void> close() async {

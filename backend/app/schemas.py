@@ -124,3 +124,53 @@ class SmsReceiveBody(BaseModel):
     level: str | None = None
     reasons: list[str] | None = None
     explanation: str | None = None
+
+
+class CallStartBody(BaseModel):
+    """통화 발신 요청. 분석 대상 여부(analyzed)는 항상 서버가 참가자를 보고 계산합니다."""
+
+    caller_id: str = "senior"
+    callee_id: str | None = None
+    peer_phone: str | None = Field(default=None, max_length=30)
+    peer_name: str | None = Field(default=None, max_length=60)
+    analyzed: bool | None = None
+
+
+class CallActionBody(BaseModel):
+    call_id: str | None = None
+    participant_id: str | None = None
+
+
+class CallAudioBody(BaseModel):
+    """통화 음성 4초 조각 업로드 요청. 음성인식 후 분석하며 원문은 저장하지 않습니다."""
+
+    call_id: str | None = None
+    audio_base64: str = ""
+    audio_format: str = "wav"
+    speaker_id: str | None = None
+    level: str | None = None
+
+
+class CallTranscriptBody(BaseModel):
+    """시연 상대 대본 문장 보내기 요청 (음성인식 없이 통화 분석으로 바로 입력)."""
+
+    call_id: str | None = None
+    text: str | None = Field(default=None, max_length=1000)
+    transcript: str | None = Field(default=None, max_length=1000)
+    sentence: str | None = Field(default=None, max_length=1000)
+    speaker_id: str | None = None
+    level: str | None = None
+    reasons: list[str] | None = None
+    explanation: str | None = None
+
+
+class CallSignalBody(BaseModel):
+    """WebRTC 연결 신호(offer / answer / ice). 서버는 내용을 해석하지 않고 전달만 합니다."""
+
+    call_id: str | None = None
+    signal_type: str = "offer"
+    from_id: str | None = None
+    to_id: str | None = None
+    data: dict | str | None = None
+    sdp: str | None = None
+    candidate: dict | str | None = None

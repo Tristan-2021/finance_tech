@@ -1,6 +1,7 @@
 import 'package:core_api/core_api.dart';
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
+import 'package:feature_call/feature_call.dart';
 import 'package:feature_payment/feature_payment.dart';
 import 'package:feature_sms/feature_sms.dart';
 import 'package:feature_sos/feature_sos.dart';
@@ -14,6 +15,7 @@ import 'app_shell.dart';
 enum Scenario {
   phishingSms('사칭 문자 받기'),
   normalSms('정상 문자 받기'),
+  counterpart('시연 상대 화면 열기'),
   shake('흔들어서 SOS 동결'),
   phishing('낯선 계좌로 50만원 송금'),
   game('등교 모드에서 게임 결제');
@@ -57,7 +59,25 @@ Future<void> runScenario(BuildContext context, Scenario s) async {
         _announceSms(shell, res.message);
         final ctx = nav();
         if (ctx.mounted) {
-          await openSmsSheet(ctx, 'senior', initialSenderPhone: res.message.senderPhone);
+          await openSmsSheet(
+            ctx,
+            'senior',
+            initialSenderPhone: res.message.senderPhone,
+            onTapPhone: (phone) {
+              Navigator.of(ctx).maybePop();
+              openCallSheet(
+                ctx,
+                callerId: 'senior',
+                calleeId: 'counterpart',
+                peerPhone: phone,
+              );
+            },
+          );
+        }
+      case Scenario.counterpart:
+        final ctx = nav();
+        if (ctx.mounted) {
+          await openCounterpartSheet(ctx);
         }
       case Scenario.shake:
         shell.goto(Persona.senior, AppTab.home);
@@ -74,7 +94,22 @@ Future<void> runScenario(BuildContext context, Scenario s) async {
         const draft = TransferDraft(newAccount: phishingAccount, amount: 500000);
         final preview = await family.assessTransfer('senior', draft);
         final ctx = nav();
-        if (ctx.mounted) await openTransferSheet(ctx, 'senior', draft: draft, preview: preview);
+        if (ctx.mounted) {
+          final g = family.state.snapshot?.guardian;
+          await openTransferSheet(
+            ctx,
+            'senior',
+            draft: draft,
+            preview: preview,
+            onCallGuardian: () => openCallSheet(
+              ctx,
+              callerId: 'senior',
+              calleeId: 'guardian',
+              peerName: g != null ? '보호자 ${g.name}' : '보호자',
+              peerPhone: g?.phone,
+            ),
+          );
+        }
       case Scenario.game:
         shell.goto(Persona.child, AppTab.home);
         if (family.state.data.member('child').mode != 'school') {

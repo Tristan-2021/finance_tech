@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:feature_call/feature_call.dart';
 import 'package:feature_sos/feature_sos.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -31,6 +32,7 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
   final _toast = GlobalKey<ToastHostState>();
   late final _shake = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
   final List<StreamSubscription<dynamic>> _subs = [];
+  String? _shownIncomingCallKey;
 
   @override
   void initState() {
@@ -39,6 +41,7 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
     _subs
       ..add(shell.feedback.listen(_onFeedback))
       ..add(context.read<FamilyCubit>().events.listen(_onEvent));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowIncomingCall());
   }
 
   @override
@@ -54,8 +57,49 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
     final prefs = context.read<ShellCubit>().state.prefs;
     final out = context.read<FeedbackOutput>();
     if (f.toast) _toast.currentState?.show(f.message);
-    if (prefs.haptics && f.vibrate.isNotEmpty) out.vibrate(f.vibrate);
+    if (prefs.haptics && f.vibrate.isNotEmpty) {
+      out.vibrate(f.vibrate, playSound: prefs.sound);
+    }
     if (prefs.voice && f.speak) out.speak(f.message);
+  }
+
+  void _maybeShowIncomingCall() {
+    if (!mounted) return;
+    final familyCubit = context.read<FamilyCubit>();
+    final activeCall = familyCubit.state.snapshot?.activeCall;
+    if (activeCall == null || !activeCall.isRinging || familyCubit.isCallEnding(activeCall.id)) {
+      _shownIncomingCallKey = null;
+      return;
+    }
+    final persona = context.read<ShellCubit>().state.persona;
+    final myId = persona.name;
+    if (activeCall.calleeId != myId) return;
+    final key = '${activeCall.id}:$myId';
+    if (_shownIncomingCallKey == key) return;
+    _shownIncomingCallKey = key;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final currentCall = familyCubit.state.snapshot?.activeCall;
+      final currentPersona = context.read<ShellCubit>().state.persona;
+      if (currentCall == null ||
+          currentCall.id != activeCall.id ||
+          !currentCall.isRinging ||
+          familyCubit.isCallEnding(currentCall.id) ||
+          currentCall.calleeId != currentPersona.name) {
+        return;
+      }
+      final navCtx = AppShell.navigatorKey.currentContext;
+      if (navCtx == null || !navCtx.mounted) return;
+      openCallSheet(
+        navCtx,
+        localParticipantId: currentPersona.name,
+        callerId: currentCall.callerId,
+        calleeId: currentCall.calleeId,
+        peerPhone: currentCall.peerPhone,
+        peerName: currentCall.peerName,
+        initialCallId: currentCall.id,
+      );
+    });
   }
 
   /// 서버 이벤트에 반응합니다. 이 기기에서 한 일은 이미 안내했으므로 건너뜁니다.
@@ -69,14 +113,56 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
           shell.reset();
           shell.say(e.message);
         }
+      case 'call_warning':
+        if (e.fromThisDevice || e.message.isEmpty) return;
+        final family = context.read<FamilyCubit>().state;
+        final mine = family.isReady ? family.data.accountOf(persona)?.id : persona.memberId;
+        if (persona == Persona.guardian) {
+          shell.announceCallWarningOnce(
+            'guardian:${e.callId ?? ''}',
+            e.message,
+            toast: true,
+            vibrate: callWarningVibration,
+          );
+        } else if (mine != null && mine == e.memberId) {
+          final exp = (e.explanation?.isNotEmpty ?? false) ? e.explanation! : e.message;
+          shell.announceCallWarningOnce(
+            e.callId ?? '',
+            '보이스피싱 위험 경고 · $exp',
+            toast: false,
+            vibrate: callWarningVibration,
+          );
+        }
       default:
         if (e.fromThisDevice || e.message.isEmpty) return;
-        const forGuardian = {'request', 'caution_mode', 'cancelled', 'freeze', 'blocked', 'expired', 'transfer', 'payment', 'mode'};
-        const forMember = {'sms', 'decision', 'extend', 'reconfirm', 'caution_mode', 'freeze', 'unfreeze', 'mode', 'limit', 'deposit'};
+        const forGuardian = {
+          'request',
+          'caution_mode',
+          'cancelled',
+          'freeze',
+          'blocked',
+          'expired',
+          'transfer',
+          'payment',
+          'mode',
+        };
+        const forMember = {
+          'sms',
+          'decision',
+          'extend',
+          'reconfirm',
+          'caution_mode',
+          'freeze',
+          'unfreeze',
+          'mode',
+          'limit',
+          'deposit',
+        };
         final family = context.read<FamilyCubit>().state;
         final mine = family.isReady ? family.data.accountOf(persona)?.id : persona.memberId;
         if (persona == Persona.guardian && (forGuardian.contains(e.type) || (e.type == 'sms' && e.level == 'danger'))) {
-          shell.say(e.message, vibrate: e.type == 'freeze' ? sosVibration : const [60]);
+          final vib = e.type == 'freeze' ? sosVibration : const [60];
+          shell.say(e.message, vibrate: vib);
         } else if (mine != null && mine == e.memberId && forMember.contains(e.type)) {
           final vib = (e.type == 'sms' && e.level == 'danger') ? const [80, 40, 80] : const [60];
           shell.say(e.message, vibrate: vib);
@@ -94,11 +180,24 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
       listeners: [
         BlocListener<ShellCubit, ShellState>(
           listenWhen: (a, b) => a.closeSheetsTick != b.closeSheetsTick,
-          listener: (_, _) => _closeSheets(),
+          listener: (_, _) {
+            _closeSheets();
+            _maybeShowIncomingCall();
+          },
+        ),
+        BlocListener<ShellCubit, ShellState>(
+          listenWhen: (a, b) => a.persona != b.persona && a.closeSheetsTick == b.closeSheetsTick,
+          listener: (_, _) => _maybeShowIncomingCall(),
         ),
         BlocListener<ShellCubit, ShellState>(
           listenWhen: (a, b) => a.shakeTick != b.shakeTick,
           listener: (_, _) => _shake.forward(from: 0),
+        ),
+        BlocListener<FamilyCubit, FamilyState>(
+          listenWhen: (a, b) =>
+              a.snapshot?.activeCall?.id != b.snapshot?.activeCall?.id ||
+              a.snapshot?.activeCall?.status != b.snapshot?.activeCall?.status,
+          listener: (_, _) => _maybeShowIncomingCall(),
         ),
       ],
       child: BlocBuilder<FamilyCubit, FamilyState>(
@@ -171,7 +270,16 @@ class SosLayer extends StatelessWidget {
             member: m,
             guardianName: state.data.guardian.name,
             now: context.read<FamilyCubit>().now,
-            onCallGuardian: () => shell.say('(시연) 보호자 ${state.data.guardian.name}님께 전화를 연결해요'),
+            onCallGuardian: () {
+              shell.closeSos();
+              openCallSheet(
+                context,
+                callerId: m.id,
+                calleeId: 'guardian',
+                peerName: '보호자 ${state.data.guardian.name}',
+                peerPhone: state.data.guardian.phone,
+              );
+            },
             onClose: shell.closeSos,
           ),
         );

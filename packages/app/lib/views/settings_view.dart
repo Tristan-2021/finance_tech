@@ -164,6 +164,7 @@ class _SettingsViewState extends State<SettingsView> {
     'FCM' => '푸',
     'SMS' => '문',
     'LLM' => 'AI',
+    'STT' => '음',
     _ => '?',
   };
 
@@ -172,6 +173,7 @@ class _SettingsViewState extends State<SettingsView> {
     'FCM' => '푸시',
     'SMS' => '문자',
     'LLM' => 'AI 판정',
+    'STT' => '음성인식',
     _ => ch,
   };
 }

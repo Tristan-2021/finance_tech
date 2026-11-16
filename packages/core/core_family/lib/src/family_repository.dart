@@ -10,8 +10,10 @@ abstract interface class FamilyRepository {
 
   /// 실시간 이벤트와 연결 상태. 실시간 연결이 없는 구현은 빈 스트림을 돌려줍니다.
   Stream<FamilyEvent> get events;
+  Stream<Map<String, dynamic>> get rtcSignals;
   Stream<bool> get connection;
   void connect();
+  void sendRtcSignal(Map<String, dynamic> signal);
 
   Future<FreezeResult> freeze(String memberId, SosTrigger trigger, {double? intensity});
   Future<void> requestUnfreeze(String memberId);
@@ -24,6 +26,21 @@ abstract interface class FamilyRepository {
     String? senderName,
     String? body,
   });
+
+  Future<CallSession> startCall({
+    required String callerId,
+    required String calleeId,
+    String? peerPhone,
+    String? peerName,
+  });
+  Future<CallSession> answerCall(String callId);
+  Future<CallSession> endCall(String callId);
+  Future<CallAnalysisResult> sendCallAudio(
+    String callId, {
+    required String audioBase64,
+    String audioFormat = 'wav',
+  });
+  Future<CallAnalysisResult> sendCallTranscript(String callId, {required String text});
 
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft);
   Future<TransferResult> submitTransfer(String memberId, TransferDraft draft);
@@ -48,6 +65,8 @@ abstract interface class FamilyRepository {
 }
 
 class ApiFamilyRepository implements FamilyRepository {
+  static const _signalTypes = {'rtc_signal', 'signal', 'ready', 'offer', 'answer', 'ice'};
+
   final FingerBellApi api;
   final RealtimeChannel realtime;
 
@@ -55,14 +74,22 @@ class ApiFamilyRepository implements FamilyRepository {
     : realtime = realtime ?? RealtimeChannel(api.config.websocket);
 
   @override
-  Stream<FamilyEvent> get events =>
-      realtime.events.map((e) => FamilyEvent.fromJson(e, clientId: api.clientId)).where((e) => e.type != 'hello');
+  Stream<FamilyEvent> get events => realtime.events
+      .where((e) => e['type'] != 'hello' && !_signalTypes.contains(e['type']))
+      .map((e) => FamilyEvent.fromJson(e, clientId: api.clientId));
+
+  @override
+  Stream<Map<String, dynamic>> get rtcSignals =>
+      realtime.events.where((e) => _signalTypes.contains(e['type']));
 
   @override
   Stream<bool> get connection => realtime.connection;
 
   @override
   void connect() => realtime.connect();
+
+  @override
+  void sendRtcSignal(Map<String, dynamic> signal) => realtime.sendJson(signal);
 
   @override
   Future<FamilySnapshot> fetchState() async => FamilySnapshot.fromJson(await api.get('/state'));
@@ -103,6 +130,50 @@ class ApiFamilyRepository implements FamilyRepository {
       'body': ?body,
     }),
   );
+
+  @override
+  Future<CallSession> startCall({
+    required String callerId,
+    required String calleeId,
+    String? peerPhone,
+    String? peerName,
+  }) async {
+    final res = await api.post('/calls/start', {
+      'caller_id': callerId,
+      'callee_id': calleeId,
+      'peer_phone': ?peerPhone,
+      'peer_name': ?peerName,
+    });
+    return CallSession.fromJson(asJson(res['call']));
+  }
+
+  @override
+  Future<CallSession> answerCall(String callId) async {
+    final res = await api.post('/calls/$callId/answer');
+    return CallSession.fromJson(asJson(res['call']));
+  }
+
+  @override
+  Future<CallSession> endCall(String callId) async {
+    final res = await api.post('/calls/$callId/end');
+    return CallSession.fromJson(asJson(res['call']));
+  }
+
+  @override
+  Future<CallAnalysisResult> sendCallAudio(
+    String callId, {
+    required String audioBase64,
+    String audioFormat = 'wav',
+  }) async => CallAnalysisResult.fromJson(
+    await api.post('/calls/$callId/audio', {
+      'audio_base64': audioBase64,
+      'audio_format': audioFormat,
+    }),
+  );
+
+  @override
+  Future<CallAnalysisResult> sendCallTranscript(String callId, {required String text}) async =>
+      CallAnalysisResult.fromJson(await api.post('/calls/$callId/transcript', {'text': text}));
 
   @override
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) async =>

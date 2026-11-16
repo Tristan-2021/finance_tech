@@ -205,6 +205,45 @@ class SmsReceiveResult {
   );
 }
 
+/// 통화 음성 조각·대본 문장 분석 결과 (기획서 5.3, 5.5).
+class CallAnalysisResult {
+  final String status; // analyzed / empty / ignored
+  final bool analyzed;
+  final CallSession? call;
+  final SmsRiskLevel level;
+  final List<String> reasons;
+  final String explanation;
+  final bool cautionMode;
+  final DateTime? cautionUntil;
+
+  const CallAnalysisResult({
+    required this.status,
+    this.analyzed = true,
+    this.call,
+    this.level = SmsRiskLevel.low,
+    this.reasons = const [],
+    this.explanation = '',
+    this.cautionMode = false,
+    this.cautionUntil,
+  });
+
+  bool get isDanger => level == SmsRiskLevel.danger;
+
+  factory CallAnalysisResult.fromJson(Json j) {
+    final verdict = asJson(j['verdict']);
+    return CallAnalysisResult(
+      status: asString(j['status'], 'analyzed'),
+      analyzed: asBool(j['analyzed'], true),
+      call: j['call'] is Map<String, dynamic> ? CallSession.fromJson(j['call'] as Json) : null,
+      level: SmsRiskLevel.parse(verdict['level']),
+      reasons: asStrings(verdict['reasons']),
+      explanation: asString(verdict['explanation']),
+      cautionMode: asBool(j['caution_mode']),
+      cautionUntil: asDate(j['caution_until']),
+    );
+  }
+}
+
 /// 서버 실시간 이벤트. [fromThisDevice]이면 이 기기의 요청으로 생긴 이벤트입니다.
 class FamilyEvent {
   final String type;
@@ -212,7 +251,10 @@ class FamilyEvent {
   final String? memberId;
   final String? requestId;
   final String? smsId;
+  final String? callId;
   final String? level;
+  final String? explanation;
+  final List<String> reasons;
   final bool fromThisDevice;
 
   const FamilyEvent({
@@ -221,7 +263,10 @@ class FamilyEvent {
     this.memberId,
     this.requestId,
     this.smsId,
+    this.callId,
     this.level,
+    this.explanation,
+    this.reasons = const [],
     this.fromThisDevice = false,
   });
 
@@ -231,7 +276,10 @@ class FamilyEvent {
     memberId: asStringOrNull(j['member_id']),
     requestId: asStringOrNull(j['request_id']),
     smsId: asStringOrNull(j['sms_id']),
+    callId: asStringOrNull(j['call_id']),
     level: asStringOrNull(j['level']),
+    explanation: asStringOrNull(j['explanation']),
+    reasons: asStrings(j['reasons']),
     fromThisDevice: j['origin'] == clientId,
   );
 }

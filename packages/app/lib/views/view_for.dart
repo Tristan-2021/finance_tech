@@ -1,5 +1,6 @@
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
+import 'package:feature_call/feature_call.dart';
 import 'package:feature_guardian/feature_guardian.dart';
 import 'package:flutter/widgets.dart';
 
@@ -14,11 +15,22 @@ Widget viewFor(BuildContext context, ShellState shell, FamilySnapshot data, {req
   if (shell.tab == AppTab.settings) return SettingsView(serverAddress: serverAddress);
   if (memberId == null) {
     final me = data.guardian.banking;
+    void callMember(Member m) => openCallSheet(
+      context,
+      callerId: 'guardian',
+      calleeId: m.id,
+      peerName: m.label,
+      peerPhone: '앱 안 통화',
+    );
     return switch (shell.tab) {
-      AppTab.home => GuardianHomeView(data: data, banking: me == null ? const [] : guardianBanking(me)),
+      AppTab.home => GuardianHomeView(
+        data: data,
+        banking: me == null ? const [] : guardianBanking(me),
+        onCallMember: callMember,
+      ),
       AppTab.history when me != null => MemberHistory(member: me),
       AppTab.history || AppTab.alerts => GuardianAlertsView(data: data),
-      _ => GuardianManageView(data: data),
+      _ => GuardianManageView(data: data, onCallMember: callMember),
     };
   }
   final member = data.member(memberId);

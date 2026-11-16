@@ -1,0 +1,25 @@
+name: feature_call
+resolution: workspace
+description: "휴대폰 통화 화면 재현: WebRTC 기기 간 음성 통화, 4초 조각 녹음, 통화 중 보이스피싱 실시간 경고, 시연 상대 화면."
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.13.5
+  flutter: ">=1.17.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  core_api: ^0.0.1
+  core_family: ^0.0.1
+  core_shell: ^0.0.1
+  core_ui: ^0.0.1
+  flutter_bloc: ^9.1.1
+  flutter_webrtc: ">=0.12.0 <2.0.0"
+  record: ">=5.2.0 <7.0.0"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

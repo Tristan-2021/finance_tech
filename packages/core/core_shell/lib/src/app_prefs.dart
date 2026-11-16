@@ -1,11 +1,12 @@
 /// 설정 화면의 켜고 끄는 항목.
-enum PrefKey { largeText, highContrast, voice, haptics, shake, hideBalance }
+enum PrefKey { largeText, highContrast, voice, sound, haptics, shake, hideBalance }
 
-/// 취약계층 맞춤 화면 설정 (기획서 3.4).
+/// 취약계층 맞춤 화면 설정 (기획서 5.10, 7.3).
 class AppPrefs {
   final bool largeText;
   final bool highContrast;
   final bool voice;
+  final bool sound;
   final bool haptics;
   final bool shake;
   final bool hideBalance;
@@ -14,6 +15,7 @@ class AppPrefs {
     this.largeText = false,
     this.highContrast = false,
     this.voice = false,
+    this.sound = true,
     this.haptics = true,
     this.shake = true,
     this.hideBalance = false,
@@ -23,6 +25,7 @@ class AppPrefs {
     PrefKey.largeText => largeText,
     PrefKey.highContrast => highContrast,
     PrefKey.voice => voice,
+    PrefKey.sound => sound,
     PrefKey.haptics => haptics,
     PrefKey.shake => shake,
     PrefKey.hideBalance => hideBalance,
@@ -32,6 +35,7 @@ class AppPrefs {
     largeText: key == PrefKey.largeText ? value : largeText,
     highContrast: key == PrefKey.highContrast ? value : highContrast,
     voice: key == PrefKey.voice ? value : voice,
+    sound: key == PrefKey.sound ? value : sound,
     haptics: key == PrefKey.haptics ? value : haptics,
     shake: key == PrefKey.shake ? value : shake,
     hideBalance: key == PrefKey.hideBalance ? value : hideBalance,

@@ -63,14 +63,21 @@ class FamilyCubit extends Cubit<FamilyState> {
 
   final _events = StreamController<FamilyEvent>.broadcast();
   final List<StreamSubscription<dynamic>> _subs = [];
+  final Set<String> _endingCallIds = <String>{};
   Timer? _poll;
   Future<void>? _refreshing;
   bool _refreshAgain = false;
 
   FamilyCubit(this._repo, {this.pollInterval = const Duration(seconds: 3)}) : super(const FamilyState());
 
+  bool isCallEnding(String callId) => _endingCallIds.contains(callId);
+
   /// 서버에서 일어난 일 (다른 기기에서 생긴 일 포함). 토스트·알림 같은 일회성 반응에 씁니다.
   Stream<FamilyEvent> get events => _events.stream;
+
+  /// WebRTC 연결 신호(offer / answer / ICE) 스트림과 전송 함수 (기획서 5.3).
+  Stream<Map<String, dynamic>> get rtcSignals => _repo.rtcSignals;
+  void sendRtcSignal(Map<String, dynamic> signal) => _repo.sendRtcSignal(signal);
 
   /// 서버 기준 현재 시각.
   DateTime now() => DateTime.now().add(state.skew);
@@ -179,6 +186,43 @@ class FamilyCubit extends Cubit<FamilyState> {
       body: body,
     ),
   );
+
+  // ---------------------------------------------------------------- 통화 (기획서 5.3)
+  Future<CallSession> startCall({
+    required String callerId,
+    required String calleeId,
+    String? peerPhone,
+    String? peerName,
+  }) => _act(
+    () => _repo.startCall(
+      callerId: callerId,
+      calleeId: calleeId,
+      peerPhone: peerPhone,
+      peerName: peerName,
+    ),
+  );
+
+  Future<CallSession> answerCall(String callId) => _act(() => _repo.answerCall(callId));
+
+  Future<CallSession> endCall(String callId) {
+    _endingCallIds.add(callId);
+    return _act(() => _repo.endCall(callId));
+  }
+
+  Future<CallAnalysisResult> sendCallAudio(
+    String callId, {
+    required String audioBase64,
+    String audioFormat = 'wav',
+  }) => _act(
+    () => _repo.sendCallAudio(
+      callId,
+      audioBase64: audioBase64,
+      audioFormat: audioFormat,
+    ),
+  );
+
+  Future<CallAnalysisResult> sendCallTranscript(String callId, {required String text}) =>
+      _act(() => _repo.sendCallTranscript(callId, text: text));
 
   // ---------------------------------------------------------------- 송금 · 결제
   Future<TransferPreview> assessTransfer(String memberId, TransferDraft draft) => _repo.assessTransfer(memberId, draft);

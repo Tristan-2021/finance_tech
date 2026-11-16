@@ -61,12 +61,40 @@ Map<String, dynamic> normalSmsJson({
   };
 }
 
+List<Map<String, dynamic>> defaultCallScriptsJson() => [
+  {
+    'id': 'phishing',
+    'kind': 'phishing',
+    'title': '사기 대본 (금융감독원 사칭 → 적금 해지 요구)',
+    'caller_name': '금융감독원 민원실(사칭)',
+    'caller_phone': '02-0000-1332',
+    'lines': [
+      '여기는 금융감독원 민원실 김철수 조사관입니다. 어르신 명의 대포통장이 개설되어 사건이 접수되었습니다.',
+      '지금 당장 노후 적금을 만기 전 해지하시고 금융감독원 안전계좌로 전액 이체하셔야 자금을 보호할 수 있습니다.',
+      '수사 기밀이니 가족이나 은행 직원에게는 절대 비밀로 하시고 지금 바로 처리해 주세요.',
+    ],
+  },
+  {
+    'id': 'normal',
+    'kind': 'normal',
+    'title': '정상 대본 (가족 안부)',
+    'caller_name': '김사랑 (딸)',
+    'caller_phone': '010-0000-1024',
+    'lines': [
+      '엄마, 오늘 점심 식사는 맛있게 챙겨 드셨어요?',
+      '이번 주말에 민준이랑 좋아하는 반찬 가지고 집에 들를게요.',
+      '날씨가 쌀쌀하니까 외출하실 때 따뜻한 옷 챙겨 입으세요.',
+    ],
+  },
+];
+
 Map<String, dynamic> demoSnapshotJson({
   DateTime? now,
   bool seniorFrozen = false,
   bool seniorCautionMode = false,
   List<Map<String, dynamic>> requests = const [],
   List<Map<String, dynamic>>? seniorSmsMessages,
+  Map<String, dynamic>? activeCall,
   String childMode = 'school',
 }) {
   final t = (now ?? DateTime.now()).toUtc();
@@ -220,6 +248,8 @@ Map<String, dynamic> demoSnapshotJson({
       },
     ],
     'requests': requests,
+    'active_call': activeCall,
+    'calls': activeCall != null ? [activeCall] : <Map<String, dynamic>>[],
     'alerts': [
       {'id': 'al1', 'member_id': 'child', 'title': '우리동네 편의점 결제', 'amount': 3550, 'status': 'ok', 'at': ago(const Duration(hours: 1))},
     ],
@@ -232,6 +262,7 @@ Map<String, dynamic> demoSnapshotJson({
         {'id': 'hospital', 'label': '병원 모드', 'short': '병원', 'icon': '', 'desc': '병원·약국·교통·마트만 결제돼요', 'allow': ['hospital']},
       ],
       'banks': ['핑거벨', '국민', '신한'],
+      'call_scripts': defaultCallScriptsJson(),
     },
   };
 }
@@ -272,7 +303,9 @@ Map<String, dynamic> pendingTransferJson({
 class FakeFamilyRepository implements FamilyRepository {
   Map<String, dynamic> snapshotJson;
   final List<String> calls = [];
+  final List<Map<String, dynamic>> sentSignals = [];
   final _events = StreamController<FamilyEvent>.broadcast();
+  final _rtcSignals = StreamController<Map<String, dynamic>>.broadcast();
   final _connection = StreamController<bool>.broadcast();
   bool failNetwork = false;
   String? failDecisionReason;
@@ -281,6 +314,7 @@ class FakeFamilyRepository implements FamilyRepository {
   FakeFamilyRepository([Map<String, dynamic>? snapshot]) : snapshotJson = snapshot ?? demoSnapshotJson();
 
   void emitEvent(FamilyEvent e) => _events.add(e);
+  void emitRtcSignal(Map<String, dynamic> signal) => _rtcSignals.add(signal);
 
   Future<T> _call<T>(String name, T value) async {
     calls.add(name);
@@ -292,10 +326,21 @@ class FakeFamilyRepository implements FamilyRepository {
   Stream<FamilyEvent> get events => _events.stream;
 
   @override
+  Stream<Map<String, dynamic>> get rtcSignals => _rtcSignals.stream;
+
+  @override
   Stream<bool> get connection => _connection.stream;
 
   @override
   void connect() => _connection.add(true);
+
+  @override
+  void sendRtcSignal(Map<String, dynamic> signal) {
+    sentSignals.add(signal);
+    if (!_rtcSignals.isClosed) {
+      _rtcSignals.add(signal);
+    }
+  }
 
   @override
   Future<FamilySnapshot> fetchState() => _call('fetchState', FamilySnapshot.fromJson(snapshotJson));
@@ -379,6 +424,220 @@ class FakeFamilyRepository implements FamilyRepository {
       SmsReceiveResult(
         status: 'received',
         message: SmsMessage.fromJson(msgJson),
+        cautionMode: caution,
+        cautionUntil: cautionUntil?.toLocal(),
+      ),
+    );
+  }
+
+  static const _scamCallKeywords = <String>[
+    '금융감독원',
+    '금감원',
+    '검찰',
+    '수사관',
+    '조사관',
+    '대포통장',
+    '명의도용',
+    '안전계좌',
+    '안전 계좌',
+    '보호계좌',
+    '적금 해지',
+    '만기 전 해지',
+    '적금을 만기 전 해지',
+    '비밀로',
+    '지금 당장',
+    '지급정지',
+    '구속영장',
+  ];
+
+  @override
+  Future<CallSession> startCall({
+    required String callerId,
+    required String calleeId,
+    String? peerPhone,
+    String? peerName,
+  }) {
+    final now = DateTime.now().toUtc();
+    final participants = {callerId, calleeId};
+    final analyzed = participants.contains('counterpart') &&
+        (participants.contains('senior') || participants.contains('child'));
+    final memberId = participants.contains('senior')
+        ? 'senior'
+        : (participants.contains('child') ? 'child' : null);
+    final phone = peerPhone ?? (participants.contains('guardian') ? '010-••••-1024' : '02-0000-1332');
+    final name = peerName ??
+        (participants.contains('guardian')
+            ? (callerId == 'guardian' ? '어머니 김순자' : '보호자 김사랑')
+            : (phone == '02-0000-1332' ? '금융감독원 민원실(사칭)' : '시연 상대'));
+    final callJson = <String, dynamic>{
+      'id': 'call-${calls.length + 1}',
+      'caller_id': callerId,
+      'callee_id': calleeId,
+      'member_id': memberId,
+      'peer_name': name,
+      'peer_phone': phone,
+      'status': 'ringing',
+      'analyzed': analyzed,
+      'warning_level': 'low',
+      'warning_reasons': <String>[],
+      'warning_explanation': '',
+      'created_at': now.toIso8601String(),
+    };
+    snapshotJson['active_call'] = callJson;
+    snapshotJson['calls'] = [callJson];
+    return _call('startCall:$callerId:$calleeId:$phone', CallSession.fromJson(callJson));
+  }
+
+  @override
+  Future<CallSession> answerCall(String callId) {
+    final now = DateTime.now().toUtc();
+    final callJson = (snapshotJson['active_call'] as Map<String, dynamic>?) ??
+        <String, dynamic>{
+          'id': callId,
+          'caller_id': 'senior',
+          'callee_id': 'counterpart',
+          'member_id': 'senior',
+          'peer_name': '금융감독원 민원실(사칭)',
+          'peer_phone': '02-0000-1332',
+          'status': 'active',
+          'analyzed': true,
+          'warning_level': 'low',
+          'warning_reasons': <String>[],
+          'warning_explanation': '',
+          'created_at': now.toIso8601String(),
+        };
+    callJson['status'] = 'active';
+    callJson['answered_at'] = now.toIso8601String();
+    snapshotJson['active_call'] = callJson;
+    snapshotJson['calls'] = [callJson];
+    return _call('answerCall:$callId', CallSession.fromJson(callJson));
+  }
+
+  @override
+  Future<CallSession> endCall(String callId) {
+    final now = DateTime.now().toUtc();
+    final callJson = (snapshotJson['active_call'] as Map<String, dynamic>?) ??
+        <String, dynamic>{
+          'id': callId,
+          'caller_id': 'senior',
+          'callee_id': 'counterpart',
+          'member_id': 'senior',
+          'peer_name': '시연 상대',
+          'peer_phone': '02-0000-1332',
+          'status': 'ended',
+          'analyzed': true,
+          'warning_level': 'low',
+          'warning_reasons': <String>[],
+          'warning_explanation': '',
+          'created_at': now.toIso8601String(),
+        };
+    callJson['status'] = 'ended';
+    callJson['ended_at'] = now.toIso8601String();
+    snapshotJson['active_call'] = null;
+    snapshotJson['calls'] = [callJson];
+    return _call('endCall:$callId', CallSession.fromJson(callJson));
+  }
+
+  @override
+  Future<CallAnalysisResult> sendCallAudio(
+    String callId, {
+    required String audioBase64,
+    String audioFormat = 'wav',
+  }) {
+    final callJson = snapshotJson['active_call'] as Map<String, dynamic>?;
+    final analyzed = callJson == null ? true : (callJson['analyzed'] as bool? ?? true);
+    return _call(
+      'sendCallAudio:$callId:$audioFormat',
+      CallAnalysisResult(
+        status: analyzed ? 'empty' : 'ignored',
+        analyzed: analyzed,
+        call: callJson != null ? CallSession.fromJson(callJson) : null,
+        level: SmsRiskLevel.low,
+      ),
+    );
+  }
+
+  @override
+  Future<CallAnalysisResult> sendCallTranscript(String callId, {required String text}) {
+    final now = DateTime.now().toUtc();
+    final callJson = (snapshotJson['active_call'] as Map<String, dynamic>?) ??
+        <String, dynamic>{
+          'id': callId,
+          'caller_id': 'senior',
+          'callee_id': 'counterpart',
+          'member_id': 'senior',
+          'peer_name': '금융감독원 민원실(사칭)',
+          'peer_phone': '02-0000-1332',
+          'status': 'active',
+          'analyzed': true,
+          'warning_level': 'low',
+          'warning_reasons': <String>[],
+          'warning_explanation': '',
+          'created_at': now.toIso8601String(),
+        };
+    callJson['status'] = 'active';
+    final analyzed = callJson['analyzed'] as bool? ?? true;
+    if (!analyzed) {
+      return _call(
+        'sendCallTranscript:$callId:ignored',
+        CallAnalysisResult(
+          status: 'ignored',
+          analyzed: false,
+          call: CallSession.fromJson(callJson),
+          level: SmsRiskLevel.low,
+        ),
+      );
+    }
+    final isDanger = _scamCallKeywords.any((kw) => text.contains(kw));
+    const explanation = '기관을 사칭하거나 적금 해지·안전계좌 이체를 요구하는 보이스피싱 의심 통화예요. 지금 바로 통화를 끊으세요.';
+    final reasons = isDanger
+        ? const <String>[
+            '공공·금융기관 사칭 의심 표현이 나왔어요',
+            '적금·예금 해지나 안전 계좌 이체를 요구하는 표현이 나왔어요',
+          ]
+        : const <String>[];
+    var caution = false;
+    DateTime? cautionUntil;
+    if (isDanger) {
+      callJson['warning_level'] = 'danger';
+      callJson['warning_reasons'] = reasons;
+      callJson['warning_explanation'] = explanation;
+      snapshotJson['active_call'] = callJson;
+      snapshotJson['calls'] = [callJson];
+      final memberId = (callJson['member_id'] as String?) ?? 'senior';
+      final members = snapshotJson['members'];
+      if (members is List) {
+        for (final m in members) {
+          if (m is Map<String, dynamic> && m['id'] == memberId) {
+            m['caution_mode'] = true;
+            cautionUntil = now.add(const Duration(hours: 24));
+            m['caution_until'] = cautionUntil.toIso8601String();
+            caution = true;
+          }
+        }
+      }
+      final alerts = (snapshotJson['alerts'] as List?)?.cast<Map<String, dynamic>>() ?? <Map<String, dynamic>>[];
+      snapshotJson['alerts'] = [
+        {
+          'id': 'al-call-${calls.length + 1}',
+          'member_id': memberId,
+          'title': '보이스피싱 의심 통화 경고 (${callJson['peer_name'] ?? '시연 상대'})',
+          'amount': 0,
+          'status': 'danger',
+          'at': now.toIso8601String(),
+        },
+        ...alerts,
+      ];
+    }
+    return _call(
+      'sendCallTranscript:$callId:${isDanger ? 'danger' : 'low'}',
+      CallAnalysisResult(
+        status: 'analyzed',
+        analyzed: true,
+        call: CallSession.fromJson(callJson),
+        level: isDanger ? SmsRiskLevel.danger : SmsRiskLevel.low,
+        reasons: reasons,
+        explanation: isDanger ? explanation : '사기 의심 징후가 없는 일반 통화예요.',
         cautionMode: caution,
         cautionUntil: cautionUntil?.toLocal(),
       ),
@@ -517,11 +776,16 @@ class FakeFamilyRepository implements FamilyRepository {
   Future<List<IntegrationLogEntry>> integrationLogs({int limit = 30}) => _call('logs', const <IntegrationLogEntry>[]);
 
   @override
-  Future<void> resetDemo() => _call('reset', null);
+  Future<void> resetDemo() {
+    snapshotJson['active_call'] = null;
+    snapshotJson['calls'] = <Map<String, dynamic>>[];
+    return _call('reset', null);
+  }
 
   @override
   Future<void> dispose() async {
     await _events.close();
+    await _rtcSignals.close();
     await _connection.close();
   }
 }

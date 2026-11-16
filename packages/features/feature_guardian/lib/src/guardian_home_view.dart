@@ -15,7 +15,10 @@ class GuardianHomeView extends StatelessWidget {
   /// 보호자 본인 계좌 카드들 (잔액·송금·결제·최근 거래). 송금·결제 기능은 앱이 연결합니다.
   final List<Widget> banking;
 
-  const GuardianHomeView({super.key, required this.data, this.banking = const []});
+  /// 앱 안 통화로 가족에게 전화하기 콜백 (기획서 5.3, 5.8).
+  final ValueChanged<Member>? onCallMember;
+
+  const GuardianHomeView({super.key, required this.data, this.banking = const [], this.onCallMember});
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +28,13 @@ class GuardianHomeView extends StatelessWidget {
 
     final cautionCards = [
       for (final m in data.members)
-        if (m.cautionMode) _GuardianCautionCard(key: ValueKey('caution-${m.id}'), member: m, now: family.now),
+        if (m.cautionMode)
+          _GuardianCautionCard(
+            key: ValueKey('caution-${m.id}'),
+            member: m,
+            now: family.now,
+            onCallMember: onCallMember,
+          ),
     ];
     final requests = [for (final r in pending) RequestCard(key: ValueKey(r.id), request: r, data: data, now: family.now)];
     final alerts = FbCard(
@@ -48,7 +57,7 @@ class GuardianHomeView extends StatelessWidget {
         children: [
           const ListHead('가족'),
           Text('오늘 차단 ${data.blockedToday}건 · AI 위험 판정 ${data.riskyTransfers}건', style: FbText.small(context.fb)),
-          for (final m in data.members) _FamilyRow(member: m, data: data),
+          for (final m in data.members) _FamilyRow(member: m, data: data, onCallMember: onCallMember),
         ],
       ),
     );
@@ -74,8 +83,9 @@ class GuardianHomeView extends StatelessWidget {
 class _GuardianCautionCard extends StatelessWidget {
   final Member member;
   final DateTime Function() now;
+  final ValueChanged<Member>? onCallMember;
 
-  const _GuardianCautionCard({super.key, required this.member, required this.now});
+  const _GuardianCautionCard({super.key, required this.member, required this.now, this.onCallMember});
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +120,14 @@ class _GuardianCautionCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12.8),
+          if (onCallMember != null) ...[
+            FbButton(
+              '${member.relationLabel}에게 전화하기',
+              icon: FbIcons.phone,
+              onPressed: () => onCallMember!(member),
+            ),
+            const SizedBox(height: 8),
+          ],
           FbButton(
             '주의 모드 해제',
             variant: FbButtonVariant.white,
@@ -124,8 +142,9 @@ class _GuardianCautionCard extends StatelessWidget {
 class _FamilyRow extends StatelessWidget {
   final Member member;
   final FamilySnapshot data;
+  final ValueChanged<Member>? onCallMember;
 
-  const _FamilyRow({required this.member, required this.data});
+  const _FamilyRow({required this.member, required this.data, this.onCallMember});
 
   @override
   Widget build(BuildContext context) {

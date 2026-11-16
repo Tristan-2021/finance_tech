@@ -16,6 +16,8 @@ from fastapi import WebSocket
 
 log = logging.getLogger("fingerbell.events")
 
+ALLOWED_RTC_SIGNAL_TYPES: frozenset[str] = frozenset({"ready", "offer", "answer", "ice"})
+
 
 class EventHub:
     def __init__(self) -> None:
@@ -63,6 +65,30 @@ class EventHub:
                 for e in batch:
                     await ws.send_text(json.dumps(e, ensure_ascii=False))
             except Exception:  # 끊긴 연결은 정리만 하고 넘어갑니다
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+    async def relay(self, sender: WebSocket, raw: str) -> None:
+        """클라이언트가 보낸 통화 연결 신호(type='rtc_signal', signal_type='ready'|'offer'|'answer'|'ice')만 상대 기기에 전달합니다 (기획서 5.3)."""
+        text = (raw or "").strip()
+        if not text or text == "ping":
+            return
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return
+        if not isinstance(parsed, dict):
+            return
+        if parsed.get("type") != "rtc_signal" or parsed.get("signal_type") not in ALLOWED_RTC_SIGNAL_TYPES:
+            return
+        dead = []
+        for ws in list(self._clients):
+            if ws is sender:
+                continue
+            try:
+                await ws.send_text(text)
+            except Exception:
                 dead.append(ws)
         for ws in dead:
             self.disconnect(ws)

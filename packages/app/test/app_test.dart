@@ -2,9 +2,11 @@ import 'package:core_family/core_family.dart';
 import 'package:core_family/testing.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:feature_call/feature_call.dart';
 import 'package:fingerbell_app/app.dart';
 import 'package:fingerbell_app/shell/feedback_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<(FakeFamilyRepository, ShellCubit)> pumpApp(WidgetTester tester, {required Size size, Map<String, dynamic>? snapshot}) async {
@@ -195,6 +197,64 @@ void main() {
     expect(find.text('바로 시연해 보기'), findsOneWidget); // 모바일은 설정에 시나리오가 있음
     expect(find.text('사칭 문자 받기'), findsOneWidget);
     expect(find.text('정상 문자 받기'), findsOneWidget);
+    expect(find.text('시연 상대 화면 열기'), findsOneWidget);
+  });
+
+  testWidgets('tapping phishing sms phone number dials counterpart, receives script warning, and alerts guardian', (tester) async {
+    final (repo, shell) = await pumpApp(tester, size: const Size(400, 860));
+    shell.switchTab(AppTab.settings);
+    await settle(tester);
+
+    await tester.tap(find.text('사칭 문자 받기'));
+    await settle(tester);
+    expect(find.text('02-0000-1332'), findsOneWidget);
+
+    await tester.tap(find.text('02-0000-1332'));
+    await settle(tester);
+    expect(repo.calls, contains('startCall:senior:counterpart:02-0000-1332'));
+    expect(find.text('발신 중...'), findsOneWidget);
+
+    await tester.tap(find.text('시연 상대 화면 열기'));
+    await settle(tester);
+    expect(find.text('음성인식 없이 문장을 보냅니다'), findsOneWidget);
+    await tester.tap(find.text('전화 받기'));
+    await settle(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('script-phishing-0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('script-phishing-0')));
+    await settle(tester);
+
+    // 시연 상대 화면을 닫으면 어르신 통화 화면에 경고와 [통화 끊기]가 표시됩니다
+    await tester.tap(find.byTooltip('닫기').last);
+    await settle(tester);
+    expect(find.text('보이스피싱 위험 경고'), findsOneWidget);
+    expect(find.text('통화 끊기'), findsWidgets);
+
+    shell.goto(Persona.guardian, AppTab.alerts);
+    await settle(tester);
+    expect(find.textContaining('보이스피싱 의심 통화 경고'), findsOneWidget);
+  });
+
+  testWidgets('reconfirm hold call guardian button and guardian call family button open non-analyzed call', (tester) async {
+    final (repo, shell) = await pumpApp(
+      tester,
+      size: const Size(400, 860),
+      snapshot: demoSnapshotJson(requests: [pendingTransferJson(status: 'reconfirm')]),
+    );
+    expect(find.text('보호자에게 전화'), findsOneWidget);
+    await tester.tap(find.text('보호자에게 전화'));
+    await settle(tester);
+    expect(repo.calls, contains('startCall:senior:guardian:010-••••-1024'));
+    expect(find.text('가족 안심 통화 · 통화 내용을 분석하지 않아요'), findsOneWidget);
+    await tester.tap(find.text('통화 끊기').last);
+    await settle(tester);
+
+    shell.goto(Persona.guardian, AppTab.safety);
+    await settle(tester);
+    expect(find.text('어머니에게 전화하기'), findsOneWidget);
+    await tester.tap(find.text('어머니에게 전화하기'));
+    await settle(tester);
+    expect(repo.calls, contains('startCall:guardian:senior:앱 안 통화'));
   });
 
   testWidgets('phishing sms scenario opens sms warning, starts caution mode, and blocks links', (tester) async {
@@ -279,5 +339,167 @@ void main() {
     await tester.tap(find.text('다시 시도'));
     await settle(tester);
     expect(find.text('안녕하세요, 김순자님'), findsOneWidget);
+  });
+
+  testWidgets('guardian and family devices automatically show incoming call screen and answer', (tester) async {
+    final (repo, shell) = await pumpApp(tester, size: const Size(400, 860));
+
+    // 1. 보호자 → 어르신 수신 통화
+    final callToSenior = await repo.startCall(
+      callerId: 'guardian',
+      calleeId: 'senior',
+      peerPhone: '앱 안 통화',
+      peerName: '어머니 김순자',
+    );
+    repo.emitEvent(FamilyEvent(type: 'call', callId: callToSenior.id, memberId: 'senior'));
+    await settle(tester);
+
+    expect(find.text('전화가 걸려 왔어요'), findsOneWidget);
+    expect(find.text('보호자 김사랑'), findsOneWidget);
+    expect(find.text('전화 받기'), findsOneWidget);
+
+    await tester.tap(find.text('전화 받기'));
+    await settle(tester);
+    expect(repo.calls, contains('answerCall:${callToSenior.id}'));
+    expect(find.text('통화 중'), findsOneWidget);
+
+    await tester.tap(find.text('통화 끊기'));
+    await settle(tester);
+
+    // 2. 어르신 → 보호자 수신 통화
+    shell.goto(Persona.guardian, AppTab.home);
+    await settle(tester);
+    final callToGuardian = await repo.startCall(
+      callerId: 'senior',
+      calleeId: 'guardian',
+      peerPhone: '010-••••-1024',
+      peerName: '보호자 김사랑',
+    );
+    repo.emitEvent(FamilyEvent(type: 'call', callId: callToGuardian.id, memberId: 'senior'));
+    await settle(tester);
+
+    expect(find.text('전화가 걸려 왔어요'), findsOneWidget);
+    expect(find.text('어머니 김순자'), findsWidgets);
+    expect(find.text('전화 받기'), findsOneWidget);
+
+    await tester.tap(find.text('전화 받기'));
+    await settle(tester);
+    expect(repo.calls, contains('answerCall:${callToGuardian.id}'));
+    expect(find.text('통화 중'), findsOneWidget);
+  });
+
+  testWidgets('call warning feedback runs only once per call id across CallSheet, AppShell, and repeated chunks', (tester) async {
+    final (repo, shell) = await pumpApp(tester, size: const Size(400, 860));
+    final warningFeedbacks = <FeedbackRequest>[];
+    final sub = shell.feedback.listen((f) {
+      if (f.vibrate == callWarningVibration) warningFeedbacks.add(f);
+    });
+    addTearDown(sub.cancel);
+
+    shell.switchTab(AppTab.settings);
+    await settle(tester);
+    await tester.tap(find.text('사칭 문자 받기'));
+    await settle(tester);
+    await tester.tap(find.text('02-0000-1332'));
+    await settle(tester);
+
+    final callId = (repo.snapshotJson['active_call'] as Map<String, dynamic>)['id'] as String;
+    const exp = '기관을 사칭하거나 적금 해지·안전계좌 이체를 요구하는 보이스피싱 의심 통화예요. 지금 바로 통화를 끊으세요.';
+
+    // 첫 번째 위험 이벤트(AppShell과 CallSheet 모두 수신) + 이어지는 두 번째 위험 조각 이벤트
+    repo.emitEvent(
+      FamilyEvent(
+        type: 'call_warning',
+        message: exp,
+        memberId: 'senior',
+        callId: callId,
+        level: 'danger',
+        explanation: exp,
+      ),
+    );
+    await settle(tester);
+    repo.emitEvent(
+      FamilyEvent(
+        type: 'call_warning',
+        message: exp,
+        memberId: 'senior',
+        callId: callId,
+        level: 'danger',
+        explanation: exp,
+      ),
+    );
+    await settle(tester);
+
+    expect(warningFeedbacks, hasLength(1));
+  });
+
+  testWidgets('DeviceFeedback invokes Android alert tone channel once and respects sound setting', (tester) async {
+    tester.view.physicalSize = const Size(400, 860);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final toneCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      alertToneChannel,
+      (call) async {
+        toneCalls.add(call);
+        return true;
+      },
+    );
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(alertToneChannel, null);
+    });
+
+    final repo = FakeFamilyRepository();
+    final family = FamilyCubit(repo, pollInterval: null);
+    await family.start();
+    final shell = ShellCubit();
+    addTearDown(family.close);
+    addTearDown(shell.close);
+
+    await tester.pumpWidget(
+      FingerBellApp(
+        family: family,
+        shell: shell,
+        feedback: DeviceFeedback(),
+        serverAddress: 'http://127.0.0.1:8765',
+      ),
+    );
+    await settle(tester);
+
+    shell.say('경고음 테스트', toast: false, vibrate: callWarningVibration, speak: false);
+    await settle(tester);
+    expect(toneCalls, hasLength(1));
+    expect(toneCalls.single.method, 'playAlertTone');
+    final duration = (toneCalls.single.arguments as Map)['durationMs'] as int;
+    expect(duration, lessThan(3000));
+
+    // 소리 설정을 끄면 경고음을 내지 않습니다.
+    shell.setPref(PrefKey.sound, false);
+    await tester.pump();
+    shell.say('무음 테스트', toast: false, vibrate: callWarningVibration, speak: false);
+    await settle(tester);
+    expect(toneCalls, hasLength(1));
+  });
+
+  testWidgets('phishing transfer scenario reconfirm screen connects call to guardian', (tester) async {
+    final (repo, shell) = await pumpApp(tester, size: const Size(400, 860));
+    shell.switchTab(AppTab.settings);
+    await settle(tester);
+
+    await tester.ensureVisible(find.text('낯선 계좌로 50만원 송금'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('낯선 계좌로 50만원 송금'));
+    await settle(tester);
+
+    repo.snapshotJson = demoSnapshotJson(requests: [pendingTransferJson(status: 'reconfirm')]);
+    await tester.tap(find.text('보호자에게 확인 요청'));
+    await settle(tester);
+
+    expect(find.text('본인 재확인 대기'), findsWidgets);
+    await tester.tap(find.text('보호자에게 전화').last);
+    await settle(tester);
+    expect(repo.calls, contains('startCall:senior:guardian:010-••••-1024'));
+    expect(find.text('가족 안심 통화 · 통화 내용을 분석하지 않아요'), findsOneWidget);
   });
 }

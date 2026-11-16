@@ -14,6 +14,7 @@ Future<void> openTransferSheet(
   String memberId, {
   TransferDraft draft = const TransferDraft(),
   TransferPreview? preview,
+  VoidCallback? onCallGuardian,
 }) async {
   final family = context.read<FamilyCubit>();
   if (family.state.isReady && family.state.data.member(memberId).isFrozen) {
@@ -22,7 +23,12 @@ Future<void> openTransferSheet(
   }
   await showFbSheet<void>(
     context,
-    builder: (_) => TransferSheet(memberId: memberId, initialDraft: draft, initialPreview: preview),
+    builder: (_) => TransferSheet(
+      memberId: memberId,
+      initialDraft: draft,
+      initialPreview: preview,
+      onCallGuardian: onCallGuardian,
+    ),
   );
 }
 
@@ -37,8 +43,15 @@ class TransferSheet extends StatefulWidget {
   final String memberId;
   final TransferDraft initialDraft;
   final TransferPreview? initialPreview;
+  final VoidCallback? onCallGuardian;
 
-  const TransferSheet({super.key, required this.memberId, this.initialDraft = const TransferDraft(), this.initialPreview});
+  const TransferSheet({
+    super.key,
+    required this.memberId,
+    this.initialDraft = const TransferDraft(),
+    this.initialPreview,
+    this.onCallGuardian,
+  });
 
   @override
   State<TransferSheet> createState() => _TransferSheetState();
@@ -552,6 +565,12 @@ class _TransferSheetState extends State<TransferSheet> {
               FbButton.gray('그만두기', busy: _busy, onPressed: () => _reconfirmHold(req.id, confirm: false)),
               FbButton.gray('그래도 진행', busy: _busy, onPressed: () => _reconfirmHold(req.id, confirm: true)),
             ],
+          ),
+          const SizedBox(height: 8),
+          FbButton.gray(
+            '보호자에게 전화',
+            icon: FbIcons.phone,
+            onPressed: widget.onCallGuardian ?? () => _shell.say('(시연) 보호자 ${data.guardian.name}님께 전화를 연결해요'),
           ),
         ],
       );

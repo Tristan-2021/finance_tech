@@ -406,6 +406,114 @@ class Incident {
   );
 }
 
+/// 통화 세션 상태 (기획서 5.3: 발신/수신 대기, 통화 중, 종료).
+enum CallStatus {
+  ringing('발신 중'),
+  active('통화 중'),
+  ended('통화 종료');
+
+  final String label;
+  const CallStatus(this.label);
+
+  static CallStatus parse(Object? v) => switch (v) {
+    'active' => CallStatus.active,
+    'ended' => CallStatus.ended,
+    _ => CallStatus.ringing,
+  };
+}
+
+/// 앱 안 통화 세션과 실시간 위험 경고 요약 (기획서 5.3, 5.5).
+class CallSession {
+  final String id;
+  final String callerId;
+  final String calleeId;
+  final String? memberId;
+  final String peerName;
+  final String peerPhone;
+  final CallStatus status;
+  final bool analyzed;
+  final SmsRiskLevel warningLevel;
+  final List<String> warningReasons;
+  final String warningExplanation;
+  final DateTime createdAt;
+  final DateTime? answeredAt;
+  final DateTime? endedAt;
+
+  const CallSession({
+    required this.id,
+    required this.callerId,
+    required this.calleeId,
+    required this.status,
+    required this.createdAt,
+    this.memberId,
+    this.peerName = '',
+    this.peerPhone = '',
+    this.analyzed = true,
+    this.warningLevel = SmsRiskLevel.low,
+    this.warningReasons = const [],
+    this.warningExplanation = '',
+    this.answeredAt,
+    this.endedAt,
+  });
+
+  bool get isRinging => status == CallStatus.ringing;
+  bool get isActive => status == CallStatus.active;
+  bool get isEnded => status == CallStatus.ended;
+  bool get isDanger => warningLevel == SmsRiskLevel.danger;
+  bool get isCaution => warningLevel == SmsRiskLevel.caution;
+  bool get hasWarning => isDanger || isCaution;
+  String get displayPeer => peerName.isNotEmpty ? peerName : (peerPhone.isNotEmpty ? peerPhone : '시연 상대');
+
+  bool involves(String participantId) => callerId == participantId || calleeId == participantId;
+
+  factory CallSession.fromJson(Json j) => CallSession(
+    id: asString(j['id']),
+    callerId: asString(j['caller_id'], 'senior'),
+    calleeId: asString(j['callee_id'], 'counterpart'),
+    memberId: asStringOrNull(j['member_id']),
+    peerName: asString(j['peer_name']),
+    peerPhone: asString(j['peer_phone']),
+    status: CallStatus.parse(j['status']),
+    analyzed: asBool(j['analyzed'], true),
+    warningLevel: SmsRiskLevel.parse(j['warning_level']),
+    warningReasons: asStrings(j['warning_reasons']),
+    warningExplanation: asString(j['warning_explanation']),
+    createdAt: asDateOr(j['created_at'], DateTime.now()),
+    answeredAt: asDate(j['answered_at']),
+    endedAt: asDate(j['ended_at']),
+  );
+}
+
+/// 시연용 통화 대본 (기획서 8절).
+class CallScript {
+  final String id;
+  final String kind;
+  final String title;
+  final String callerName;
+  final String callerPhone;
+  final List<String> lines;
+
+  const CallScript({
+    required this.id,
+    required this.kind,
+    required this.title,
+    required this.callerName,
+    required this.callerPhone,
+    this.lines = const [],
+  });
+
+  bool get isPhishing => kind == 'phishing' || kind == 'scam' || id == 'phishing';
+
+  factory CallScript.fromJson(Json j) => CallScript(
+    id: asString(j['id']),
+    kind: asString(j['kind']),
+    title: asString(j['title']),
+    callerName: asString(j['caller_name']),
+    callerPhone: asString(j['caller_phone']),
+    lines: asStrings(j['lines']),
+  );
+}
+
 /// 계좌를 가진 사용자: 보호 대상 가족(어르신·아이) 또는 보호자 본인([Guardian.banking]).
 class Member {
   final String id;
@@ -758,9 +866,12 @@ class FamilySnapshot {
   final List<Member> members;
   final List<ApprovalRequest> requests;
   final List<Incident> incidents;
+  final CallSession? activeCall;
+  final List<CallSession> calls;
   final List<FamilyAlert> alerts;
   final List<ModeInfo> modes;
   final List<String> banks;
+  final List<CallScript> callScripts;
   final int blockedToday;
   final int riskyTransfers;
 
@@ -771,9 +882,12 @@ class FamilySnapshot {
     this.config = const ApprovalConfig(),
     this.requests = const [],
     this.incidents = const [],
+    this.activeCall,
+    this.calls = const [],
     this.alerts = const [],
     this.modes = const [],
     this.banks = const [],
+    this.callScripts = const [],
     this.blockedToday = 0,
     this.riskyTransfers = 0,
   });
@@ -781,6 +895,10 @@ class FamilySnapshot {
   factory FamilySnapshot.fromJson(Json j) {
     final catalog = asJson(j['catalog']);
     final stats = asJson(j['stats']);
+    final calls = asList(j['calls'], CallSession.fromJson);
+    final activeCall = j['active_call'] is Map<String, dynamic>
+        ? CallSession.fromJson(j['active_call'] as Json)
+        : calls.where((c) => !c.isEnded).firstOrNull;
     return FamilySnapshot(
       serverTime: asDateOr(j['server_time'], DateTime.now()),
       config: ApprovalConfig.fromJson(asJson(j['config'])),
@@ -788,12 +906,21 @@ class FamilySnapshot {
       members: asList(j['members'], Member.fromJson),
       requests: asList(j['requests'], ApprovalRequest.fromJson),
       incidents: asList(j['incidents'], Incident.fromJson),
+      activeCall: activeCall,
+      calls: calls,
       alerts: asList(j['alerts'], FamilyAlert.fromJson),
       modes: asList(catalog['modes'], ModeInfo.fromJson),
       banks: asStrings(catalog['banks']),
+      callScripts: asList(catalog['call_scripts'], CallScript.fromJson),
       blockedToday: asInt(stats['blocked_today']),
       riskyTransfers: asInt(stats['risky_transfers']),
     );
+  }
+
+  CallSession? callOrNull(String? id) {
+    if (id == null || id.isEmpty) return activeCall;
+    if (activeCall?.id == id) return activeCall;
+    return calls.where((c) => c.id == id).firstOrNull;
   }
 
   /// 계좌 주인 (보호 대상 가족 또는 보호자 본인).

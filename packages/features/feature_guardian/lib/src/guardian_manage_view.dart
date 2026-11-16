@@ -5,15 +5,19 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'guardian_actions.dart';
 
-/// 가족 관리: 동결 해제·원격 동결, 안심 모드, 하루 한도, 수면 안심 모드.
+/// 가족 관리: 동결 해제·원격 동결, 안심 모드, 하루 한도, 수면 안심 모드, 가족에게 전화하기.
 class GuardianManageView extends StatelessWidget {
   final FamilySnapshot data;
+  final ValueChanged<Member>? onCallMember;
 
-  const GuardianManageView({super.key, required this.data});
+  const GuardianManageView({super.key, required this.data, this.onCallMember});
 
   @override
   Widget build(BuildContext context) {
-    final cards = [for (final m in data.members) ManageCard(key: ValueKey(m.id), member: m, data: data)];
+    final cards = [
+      for (final m in data.members)
+        ManageCard(key: ValueKey(m.id), member: m, data: data, onCallMember: onCallMember),
+    ];
     return FbView(
       wide: true,
       children: [
@@ -27,8 +31,9 @@ class GuardianManageView extends StatelessWidget {
 class ManageCard extends StatefulWidget {
   final Member member;
   final FamilySnapshot data;
+  final ValueChanged<Member>? onCallMember;
 
-  const ManageCard({super.key, required this.member, required this.data});
+  const ManageCard({super.key, required this.member, required this.data, this.onCallMember});
 
   @override
   State<ManageCard> createState() => _ManageCardState();
@@ -62,6 +67,14 @@ class _ManageCardState extends State<ManageCard> {
                 : '정상 이용 중',
             subtitleStyle: FbText.rowSub(c).copyWith(color: (m.isFrozen || m.cautionMode) ? c.redStrong : c.muted),
           ),
+          if (widget.onCallMember != null) ...[
+            const SizedBox(height: 6),
+            FbButton.gray(
+              '${m.relationLabel}에게 전화하기',
+              icon: FbIcons.phone,
+              onPressed: () => widget.onCallMember!(m),
+            ),
+          ],
           if (m.cautionMode)
             Container(
               margin: const EdgeInsets.only(top: 6.4),
