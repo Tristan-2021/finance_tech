@@ -54,7 +54,7 @@ try {
         & $adbExe -s $Device reverse "tcp:$ApiPort" "tcp:$ApiPort"
         if ($LASTEXITCODE -ne 0) { throw 'adb reverse failed.' }
 
-        $runArguments = @('run', '-d', $Device, '--no-pub')
+        $defineArguments = @()
         # .env.local.json에 FINGERBELL_API_URL이 있으면 그 값을, 없으면 기본 주소를 씁니다.
         $useConfig = $false
         if (Test-Path -LiteralPath $configPath) {
@@ -65,13 +65,34 @@ try {
             }
         }
         if ($useConfig) {
-            $runArguments += "--dart-define-from-file=$configPath"
+            $defineArguments += "--dart-define-from-file=$configPath"
         } else {
-            $runArguments += "--dart-define=FINGERBELL_API_URL=http://127.0.0.1:$ApiPort"
+            $defineArguments += "--dart-define=FINGERBELL_API_URL=http://127.0.0.1:$ApiPort"
         }
-        if ($NoResident) { $runArguments += '--no-resident' }
-        & $flutterExe @runArguments
-        if ($LASTEXITCODE -ne 0) { throw 'Flutter app launch failed.' }
+        $total = [Diagnostics.Stopwatch]::StartNew()
+        foreach ($app in @(
+            @{ Flavor = 'fingerbell'; Target = 'lib/main.dart'; Package = 'kr.fingersnap.fingerbell' },
+            @{ Flavor = 'sms'; Target = 'lib/main_sms.dart'; Package = 'kr.fingersnap.fingerbell.sms' },
+            @{ Flavor = 'call'; Target = 'lib/main_call.dart'; Package = 'kr.fingersnap.fingerbell.call' }
+        )) {
+            $build = [Diagnostics.Stopwatch]::StartNew()
+            # Windows PowerShell 5 treats redirected native stderr warnings as errors.
+            $ErrorActionPreference = 'Continue'
+            & $flutterExe build apk --debug --no-pub --flavor $app.Flavor -t $app.Target @defineArguments 2>&1 | ForEach-Object { Write-Host "$_" }
+            $ErrorActionPreference = 'Stop'
+            if ($LASTEXITCODE -ne 0) { throw "Build failed: $($app.Flavor)" }
+            Write-Host ('BUILD {0}: {1:N2}s' -f $app.Flavor, $build.Elapsed.TotalSeconds)
+            $apk = Join-Path $appDirectory "build\app\outputs\flutter-apk\app-$($app.Flavor)-debug.apk"
+            & $adbExe -s $Device install -r $apk
+            if ($LASTEXITCODE -ne 0) { throw "Install failed: $($app.Package)" }
+        }
+        Write-Host ('BUILD+INSTALL total: {0:N2}s' -f $total.Elapsed.TotalSeconds)
+        & $adbExe -s $Device shell am start -n 'kr.fingersnap.fingerbell/kr.fingersnap.fingerbell.MainActivity'
+        if ($LASTEXITCODE -ne 0) { throw 'FingerBell launch failed.' }
+        if (-not $NoResident) {
+            & $flutterExe attach -d $Device --app-id kr.fingersnap.fingerbell
+            if ($LASTEXITCODE -ne 0) { throw 'Flutter attach failed.' }
+        }
     } finally {
         Pop-Location
     }

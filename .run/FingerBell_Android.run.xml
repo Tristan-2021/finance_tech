@@ -1,13 +1,17 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="FingerBell (Android)" type="FlutterRunConfigurationType" factoryName="Flutter">
-    <option name="filePath" value="$PROJECT_DIR$/packages/app/lib/main.dart" />
-    <option name="additionalArgs" value="--dart-define=FINGERBELL_API_URL=http://127.0.0.1:8765 --no-pub" />
-    <option name="envs">
-      <entry key="FLUTTER_WINDOWS" value="false" />
-      <entry key="FLUTTER_LINUX" value="false" />
-    </option>
-    <method v="2">
-      <option name="RunConfigurationTask" enabled="true" run_configuration_name="adb reverse (8765)" run_configuration_type="ShConfigurationType" />
-    </method>
+  <configuration default="false" name="FingerBell (Android)" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="" />
+    <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+    <option name="SCRIPT_PATH" value="$PROJECT_DIR$/run-android.ps1" />
+    <option name="SCRIPT_OPTIONS" value="-NoResident" />
+    <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+    <option name="INTERPRETER_PATH" value="C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" />
+    <option name="INTERPRETER_OPTIONS" value="-NoProfile -ExecutionPolicy Bypass -File" />
+    <option name="EXECUTE_IN_TERMINAL" value="false" />
+    <option name="EXECUTE_SCRIPT_FILE" value="true" />
+    <envs />
+    <method v="2" />
   </configuration>
 </component>

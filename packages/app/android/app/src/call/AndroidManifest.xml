@@ -1,0 +1,3 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="kr.fingersnap.fingerbell.permission.READ_PREFS" />
+</manifest>

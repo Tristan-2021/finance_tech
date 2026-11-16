@@ -89,6 +89,11 @@ class ShellState {
   );
 }
 
+const personaPrefKey = 'persona';
+
+/// 통화 중 위험 경고 진동 패턴 (총 0.5초, 3초 미만으로 한 번만 울립니다: 기획서 5.3, 7.3).
+const List<int> callWarningVibration = [200, 100, 200];
+
 class ShellCubit extends Cubit<ShellState> {
   final _feedback = StreamController<FeedbackRequest>.broadcast();
   final Set<String> _announcedCallWarnings = <String>{};
@@ -99,30 +104,42 @@ class ShellCubit extends Cubit<ShellState> {
 
   Stream<FeedbackRequest> get feedback => _feedback.stream;
 
-  /// 기기에 저장된 화면 설정(쉬운 화면, 큰 글씨, 고대비 등)을 불러옵니다.
+  /// 기기에 저장된 화면 설정(쉬운 화면, 큰 글씨, 고대비 등)과 역할을 불러옵니다.
   Future<void> loadPrefs() async {
-    final saved = await _store.load();
-    if (isClosed || saved.isEmpty) return;
-    var next = state.prefs;
-    for (final key in PrefKey.values) {
-      final v = saved[key.name];
-      if (v != null) next = next.set(key, v);
+    Map<String, Object?> saved;
+    try {
+      saved = await _store.load();
+    } catch (_) {
+      saved = const {};
     }
-    emit(state.copyWith(prefs: next));
+    if (isClosed) return;
+    final nextPrefs = AppPrefs.fromMap(saved);
+    final nextPersona = Persona.parse(saved[personaPrefKey]);
+    if (nextPersona == state.persona && nextPrefs == state.prefs) return;
+    emit(
+      state.copyWith(
+        persona: nextPersona,
+        tab: state.tab.availableFor(nextPersona),
+        prefs: nextPrefs,
+      ),
+    );
   }
 
   void switchTab(AppTab tab) => emit(state.copyWith(tab: tab));
 
   /// 사용자를 바꿉니다 (시연용 역할 전환). 열린 시트와 SOS 화면은 닫습니다.
-  void goto(Persona persona, [AppTab? tab]) => emit(
-    ShellState(
-      persona: persona,
-      tab: (tab ?? state.tab).availableFor(persona),
-      prefs: state.prefs,
-      shakeTick: state.shakeTick,
-      closeSheetsTick: state.closeSheetsTick + 1,
-    ),
-  );
+  void goto(Persona persona, [AppTab? tab]) {
+    emit(
+      ShellState(
+        persona: persona,
+        tab: (tab ?? state.tab).availableFor(persona),
+        prefs: state.prefs,
+        shakeTick: state.shakeTick,
+        closeSheetsTick: state.closeSheetsTick + 1,
+      ),
+    );
+    unawaited(_store.saveString(personaPrefKey, persona.name));
+  }
 
   void setTxFilter(String filter) => emit(state.copyWith(txFilter: filter));
   void setAlertFilter(String filter) => emit(state.copyWith(alertFilter: filter));
@@ -177,7 +194,7 @@ class ShellCubit extends Cubit<ShellState> {
     String callId,
     String message, {
     bool toast = false,
-    List<int> vibrate = const [200, 100, 200],
+    List<int> vibrate = callWarningVibration,
     bool speak = true,
     bool alertSound = true,
   }) {

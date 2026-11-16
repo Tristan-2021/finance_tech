@@ -2,6 +2,7 @@ import 'package:core_family/core_family.dart';
 import 'package:core_family/testing.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:fingerbell_app/app.dart';
+import 'package:fingerbell_app/app_links.dart';
 import 'package:fingerbell_app/shell/feedback_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,10 +10,27 @@ import 'package:flutter_test/flutter_test.dart';
 Future<(FakeFamilyRepository, ShellCubit)> _pumpApp(
   WidgetTester tester, {
   Map<String, dynamic>? snapshot,
+  List<Uri>? openedLinks,
 }) async {
   tester.view.physicalSize = const Size(420, 920);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+    AppLinks.channel,
+    (call) async {
+      if (call.method == 'open') {
+        final raw = (call.arguments as Map?)?['uri'] as String?;
+        if (raw != null) openedLinks?.add(Uri.parse(raw));
+      }
+      return null;
+    },
+  );
+  addTearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      AppLinks.channel,
+      null,
+    );
+  });
 
   final repo = FakeFamilyRepository(snapshot);
   final family = FamilyCubit(repo, pollInterval: null);
@@ -47,6 +65,7 @@ void main() {
     final activeInc = incidentJson(id: 'inc-live-1', status: 'open', now: now);
     final holdReq = pendingTransferJson(id: 'req-live-1', incidentId: 'inc-live-1', now: now);
 
+    final opened = <Uri>[];
     final (repo, shell) = await _pumpApp(
       tester,
       snapshot: demoSnapshotJson(
@@ -55,6 +74,7 @@ void main() {
         seniorActiveIncident: activeInc,
         requests: [holdReq],
       ),
+      openedLinks: opened,
     );
 
     shell.goto(Persona.guardian, AppTab.home);
@@ -83,18 +103,12 @@ void main() {
     await _settle(tester);
     expect(repo.calls, contains('decide:req-live-1:approve'));
 
-    // 3. 가족에게 전화하기
+    // 3. 가족에게 전화하기 (전화 앱 열기)
     await tester.ensureVisible(find.text('어머니에게 전화하기'));
     await tester.pump();
     await tester.tap(find.text('어머니에게 전화하기'));
     await _settle(tester);
-    expect(repo.calls, contains('startCall:guardian:senior:앱 안 통화'));
-    await tester.tap(find.text('통화 끊기'));
-    await _settle(tester);
-    await tester.ensureVisible(find.text('닫기').last);
-    await tester.pump();
-    await tester.tap(find.text('닫기').last);
-    await _settle(tester);
+    expect(opened, [Uri.parse('fingerbell://call/dial?peer=senior')]);
 
     // 4. 주의 모드 해제
     await tester.ensureVisible(find.text('주의 모드 해제'));

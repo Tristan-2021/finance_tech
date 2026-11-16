@@ -54,6 +54,7 @@ flowchart LR
 
 | 기능 | 하는 일 | 상태 |
 | :--- | :--- | :--- |
+| **앱 3개 · 역할·설정 공유 (9단계 S1)** | `fingerbell`·`sms`·`call` flavor를 한 명령으로 빌드·설치합니다. 핑거벨에서 바꾼 역할(`Persona`)과 5개 기기 설정(큰 글씨·고대비·음성 안내·경고음·진동)을 기기에 저장하고, 서명 권한 `ContentProvider`로 문자·전화 앱이 시작·resume 때 읽어 반영합니다. | S1 구현됨 (`core_shell` · `SharedPrefsProvider` · `CompanionApp`). 기존 문자·통화 기능은 아직 핑거벨 안의 시트에 있으며 기능 이동·수신 정책은 후속 단계 |
 | **문자 감지** | 휴대폰 문자 앱을 재현한 화면에서 시연 문자의 내용과 링크를 분석합니다(규칙 1차 → OpenRouter LLM 최종). 위험하면 경고와 쉬운 설명을 붙이고 주의 모드를 시작하며 링크를 차단합니다. | 구현됨 (`backend/app/domain/sms.py` · `backend/app/integrations.py` · `feature_sms`) |
 | **통화 감지** | 앱 안 인터넷 음성 통화(WebRTC)의 음성을 글자로 바꿔 실시간으로 분석하고(규칙 1차 → OpenRouter LLM 최종), 사기 징후가 잡히면 통화 중에 큰 경고·진동·경고음·`[통화 끊기]`를 띄우고 보호자에게 알립니다. 시연 상대 화면의 대본 문장 보내기도 지원합니다. | 구현됨 (`backend/app/domain/call.py` · `backend/app/integrations.py` · `feature_call`) |
 | **주의 모드** | 위험 문자나 위험 통화가 감지되면 24시간 유지됩니다. 본인은 끌 수 없고 보호자는 끝낼 수 있습니다. | 구현됨 (`backend/app/service.py` · `feature_guardian`) |
@@ -185,7 +186,7 @@ packages/
   core/
     core_api/               HTTP · WebSocket 클라이언트 (실시간 이벤트 + WebRTC 신호 전달)
     core_family/            가족 상태 모델 · 저장소 · FamilyCubit (서버와 실시간 동기화)
-    core_shell/             지금 사용자·탭·화면 설정 · 피드백 요청 (ShellCubit)
+    core_shell/             지금 사용자(기기 저장)·탭·화면 설정 · 공유 Provider 읽기 · 피드백 요청 (ShellCubit)
     core_ui/                디자인 시스템 (파랑·빨강 토큰, 고대비, 공용 위젯)
     core_errors/            공통 Failure
   features/
@@ -217,13 +218,15 @@ packages/
 .\run-android.ps1
 ```
 
-에뮬레이터를 켜고 `adb reverse tcp:8765 tcp:8765`로 기기의 `127.0.0.1:8765`를 이 PC의 백엔드에 연결한 뒤 앱을 실행합니다. USB로 연결한 실제 휴대폰도 `-Device <기기 ID>`로 같게 쓰면 됩니다.
+에뮬레이터를 켜고 `flutter pub get`과 `adb reverse tcp:8765 tcp:8765`를 설정한 뒤 세 debug APK를 `--no-pub`로 빌드하고 `adb install -r`로 모두 설치해 핑거벨을 엽니다. USB 실기기에서는 `./run-android.ps1 -Device R3CX10T957B -NoResident`를 씁니다. `-NoResident`를 빼면 설치 뒤 핑거벨에 Flutter 디버거를 연결합니다.
 
-IntelliJ / Cursor / VS Code에는 **FingerBell (Android)** 실행 구성이 있습니다.
+IntelliJ의 `.run/FingerBell_Android.run.xml`도 같은 스크립트를 실행합니다. 기본 기기는 에뮬레이터이며 실기기는 실행 구성의 Script options에 `-Device R3CX10T957B -NoResident`를 넣습니다. 기존 Cursor / VS Code의 로컬 Flutter 실행 구성은 세 앱 설치 스크립트로 아직 전환하지 않았습니다.
 
 자세한 실행 옵션은 [RUN_LOCAL.ko.md](RUN_LOCAL.ko.md)에 있습니다.
 
 ## 지금 시연할 수 있는 시나리오
+
+아래 기능 시나리오는 현재 핑거벨 안의 기존 화면 기준입니다. 별도 문자·전화 앱에는 역할·설정 공유까지 반영했고, 기능 화면 이동과 세 앱을 오가는 9절 전체 시연은 후속 단계에서 검증합니다.
 
 설정 탭의 **바로 시연해 보기**에서 바로 시작할 수 있습니다.
 

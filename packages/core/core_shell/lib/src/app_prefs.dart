@@ -49,11 +49,11 @@ class AppPrefs {
     easyModePrompted: key == PrefKey.easyModePrompted ? value : easyModePrompted,
   );
 
-  static AppPrefs fromMap(Map<String, bool> map) {
+  static AppPrefs fromMap(Map<String, Object?> map) {
     var next = const AppPrefs();
     for (final key in PrefKey.values) {
       final v = map[key.name];
-      if (v != null) next = next.set(key, v);
+      if (v is bool) next = next.set(key, v);
     }
     return next;
   }

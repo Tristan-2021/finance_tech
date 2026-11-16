@@ -1,6 +1,6 @@
 # Windows에서 핑거벨 실행
 
-Flutter 앱 진입점은 `packages/app/lib/main.dart`, 백엔드는 `backend/`(FastAPI)입니다. 저장소 루트의 `pubspec.yaml`은 11개 Flutter 패키지를 관리하는 워크스페이스입니다.
+Flutter 진입점은 `packages/app/lib/main.dart`, `main_sms.dart`, `main_call.dart`이며 백엔드는 `backend/`(FastAPI)입니다. 문자·전화 앱은 핑거벨과 역할·화면 설정(고대비·큰 글씨 등)을 공유하는 셸 상태이며 기능 화면은 아직 기존 핑거벨 안에 있습니다.
 
 ## 1. 백엔드 먼저 실행
 
@@ -22,10 +22,11 @@ Flutter 앱 진입점은 `packages/app/lib/main.dart`, 백엔드는 `backend/`(F
 .\run-android.ps1
 ```
 
-`Medium_Phone_API_37.0` 에뮬레이터를 켜고, `adb reverse tcp:8765 tcp:8765`로 기기의 `127.0.0.1:8765`를 이 PC의 백엔드에 연결한 뒤 앱을 실행합니다. 실행 중 `r`은 핫 리로드, `R`은 핫 리스타트, `q`는 종료입니다.
+실행 스크립트는 `flutter pub get`으로 의존성을 맞춘 뒤 `Medium_Phone_API_37.0` 에뮬레이터를 켜고 `adb reverse tcp:8765 tcp:8765`를 설정하며, flavor `fingerbell`·`sms`·`call`의 debug APK를 차례로 빌드(`--no-pub`)하고 `adb install -r`로 설치합니다. 빌드별 시간과 설치 포함 총 시간을 출력하고 핑거벨을 엽니다. 이어서 `flutter attach`로 연결하므로 `r`은 핫 리로드, `R`은 핫 리스타트, `q`는 디버거 종료입니다. `-NoResident`는 설치·실행 뒤 스크립트를 끝냅니다.
 
 ```powershell
 .\run-android.ps1 -Device emulator-5556 -Emulator '다른_AVD_이름'
+.\run-android.ps1 -Device R3CX10T957B -NoResident
 ```
 
 ## 서버 주소 바꾸기
@@ -34,7 +35,7 @@ Flutter 앱 진입점은 `packages/app/lib/main.dart`, 백엔드는 `backend/`(F
 
 ## IntelliJ IDEA · Cursor / VS Code
 
-실행 구성 **FingerBell (Android)** 를 고르면 됩니다. 백엔드는 따로 `run-backend.ps1`로 켜 두세요.
+IntelliJ의 실행 구성 **FingerBell (Android)** 는 `.run/FingerBell_Android.run.xml`에서 `run-android.ps1 -NoResident`를 실행합니다. `adb reverse`도 이 스크립트가 설정합니다. 실기기는 Script options를 `-Device R3CX10T957B -NoResident`로 바꿉니다. IDE 버튼 실행 자체는 아직 검증하지 않았습니다. Cursor / VS Code의 무시된 로컬 `.vscode` 구성은 변경하지 않았으므로 터미널에서 위 스크립트를 사용합니다. 백엔드는 따로 `run-backend.ps1`로 켜 두세요.
 
 ## 참고
 

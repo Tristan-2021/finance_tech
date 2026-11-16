@@ -1,14 +1,13 @@
 import 'package:core_api/core_api.dart';
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
-import 'package:feature_call/feature_call.dart';
 import 'package:feature_payment/feature_payment.dart';
-import 'package:feature_sms/feature_sms.dart';
 import 'package:feature_sos/feature_sos.dart';
 import 'package:feature_transfer/feature_transfer.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../app_links.dart';
 import 'app_shell.dart';
 
 /// 발표용 바로 시연 시나리오 (시안의 "바로 시연해 보기", 기획서 8절).
@@ -58,36 +57,9 @@ Future<void> runScenario(BuildContext context, Scenario s) async {
         final kind = s == Scenario.phishingSms ? 'phishing' : 'normal';
         final res = await family.receiveSms('senior', kind: kind);
         _announceSms(shell, res.message);
-        final ctx = nav();
-        if (ctx.mounted) {
-          final g = family.state.snapshot?.guardian;
-          await openSmsSheet(
-            ctx,
-            'senior',
-            initialSenderPhone: res.message.senderPhone,
-            onTapPhone: (phone) {
-              Navigator.of(ctx).maybePop();
-              openCallSheet(
-                ctx,
-                callerId: 'senior',
-                calleeId: 'counterpart',
-                peerPhone: phone,
-              );
-            },
-            onCallGuardian: () => openCallSheet(
-              ctx,
-              callerId: 'senior',
-              calleeId: 'guardian',
-              peerName: g != null ? '보호자 ${g.name}' : '보호자',
-              peerPhone: g?.phone,
-            ),
-          );
-        }
+        await AppLinks.openSms(shell, senderPhone: res.message.senderPhone);
       case Scenario.counterpart:
-        final ctx = nav();
-        if (ctx.mounted) {
-          await openCounterpartSheet(ctx);
-        }
+        await AppLinks.openCounterpart(shell);
       case Scenario.shake:
         shell.goto(Persona.senior, AppTab.home);
         if (family.state.data.member('senior').isFrozen) {
@@ -104,19 +76,12 @@ Future<void> runScenario(BuildContext context, Scenario s) async {
         final preview = await family.assessTransfer('senior', draft);
         final ctx = nav();
         if (ctx.mounted) {
-          final g = family.state.snapshot?.guardian;
           await openTransferSheet(
             ctx,
             'senior',
             draft: draft,
             preview: preview,
-            onCallGuardian: () => openCallSheet(
-              ctx,
-              callerId: 'senior',
-              calleeId: 'guardian',
-              peerName: g != null ? '보호자 ${g.name}' : '보호자',
-              peerPhone: g?.phone,
-            ),
+            onCallGuardian: () => AppLinks.openCall(shell, peer: 'guardian'),
           );
         }
       case Scenario.game:

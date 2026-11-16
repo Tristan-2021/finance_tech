@@ -128,4 +128,40 @@ void main() {
     await settle(tester);
     expect(dialed, '02-0000-1332');
   });
+
+  testWidgets('SmsSheet asScreen mode renders Greeting without sheet close button and hides close in blocked link view', (tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final repo = FakeFamilyRepository(demoSnapshotJson(seniorSmsMessages: [scamSmsJson()]));
+    final family = FamilyCubit(repo, pollInterval: null);
+    await family.start();
+    final shell = ShellCubit();
+    addTearDown(family.close);
+    addTearDown(shell.close);
+
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [BlocProvider.value(value: family), BlocProvider.value(value: shell)],
+        child: MaterialApp(
+          theme: FbTheme.build(),
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: SmsSheet(memberId: 'senior', asScreen: true),
+            ),
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+
+    expect(find.byTooltip('닫기'), findsNothing);
+    expect(find.text('김순자님 · 사기 문자를 자동으로 살펴봐요'), findsOneWidget);
+
+    await tester.tap(find.text('http://fss-verify.invalid/case/8821'));
+    await settle(tester);
+    expect(find.text('이 링크를 열지 않았어요'), findsOneWidget);
+    expect(find.byTooltip('닫기'), findsNothing);
+  });
 }

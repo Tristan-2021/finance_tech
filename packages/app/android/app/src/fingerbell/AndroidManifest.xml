@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="kr.fingersnap.fingerbell.permission.READ_PREFS"
+        android:protectionLevel="signature" />
+
+    <application>
+        <provider
+            android:name="kr.fingersnap.fingerbell.SharedPrefsProvider"
+            android:authorities="kr.fingersnap.fingerbell.prefs"
+            android:exported="true"
+            android:permission="kr.fingersnap.fingerbell.permission.READ_PREFS" />
+    </application>
+</manifest>

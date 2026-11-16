@@ -1,10 +1,11 @@
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:feature_call/feature_call.dart';
 import 'package:feature_guardian/feature_guardian.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../app_links.dart';
 import 'easy_home.dart';
 import 'member_history.dart';
 import 'member_home.dart';
@@ -27,13 +28,8 @@ Widget viewFor(BuildContext context, ShellState shell, FamilySnapshot data, {req
 
   if (memberId == null) {
     final me = data.guardian.banking;
-    void callMember(Member m) => openCallSheet(
-      context,
-      callerId: 'guardian',
-      calleeId: m.id,
-      peerName: m.label,
-      peerPhone: '앱 안 통화',
-    );
+    void callMember(Member m) =>
+        AppLinks.openCall(context.read<ShellCubit>(), peer: m.id);
     return switch (shell.tab) {
       AppTab.home => wrapHome(
         shell.prefs.easyMode

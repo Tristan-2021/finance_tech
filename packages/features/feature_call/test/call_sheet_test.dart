@@ -509,4 +509,47 @@ void main() {
     expect(find.text('보이스피싱 위험 경고'), findsNothing);
     expect(find.text('가족 안심 통화 · 통화 내용을 분석하지 않아요'), findsOneWidget);
   });
+
+  testWidgets('CallSheet uses onSwitchCall and onOpenCounterpart callbacks when provided', (tester) async {
+    String? switchedTarget;
+    var openedCounterpart = false;
+    final (_, family, _) = await pumpCallWidget(
+      tester,
+      CallSheet(
+        localParticipantId: 'senior',
+        callerId: 'senior',
+        calleeId: 'counterpart',
+        peerPhone: '02-0000-1332',
+        rtcSession: NoopRtcPeerSession(),
+        chunkRecorder: NoopChunkRecorder(),
+        onOpenCounterpart: () async => openedCounterpart = true,
+        onSwitchCall: ({required callerId, required calleeId, peerName, peerPhone}) async {
+          switchedTarget = '$callerId->$calleeId';
+        },
+      ),
+    );
+    await settle(tester);
+
+    final callId = family.state.data.activeCall!.id;
+    await family.answerCall(callId);
+    await settle(tester);
+
+    await tester.ensureVisible(find.text('시연 상대 화면 열기'));
+    await settle(tester);
+    await tester.tap(find.text('시연 상대 화면 열기'));
+    await settle(tester);
+    expect(openedCounterpart, isTrue);
+
+    await family.sendCallTranscript(callId, text: '금융감독원 적금 해지');
+    await settle(tester);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('fraud-help-button')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('fraud-help-button')));
+    await settle(tester);
+    await tester.tap(find.textContaining('보호자에게 전화'));
+    await settle(tester);
+
+    expect(switchedTarget, 'senior->guardian');
+  });
 }

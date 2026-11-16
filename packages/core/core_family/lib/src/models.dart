@@ -11,6 +11,9 @@ enum Persona {
 
   /// 보호 대상 사용자 id (보호자는 null).
   String? get memberId => this == Persona.guardian ? null : name;
+
+  static Persona parse(Object? v) =>
+      Persona.values.firstWhere((p) => p.name == v, orElse: () => Persona.senior);
 }
 
 enum RiskLevel {

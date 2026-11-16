@@ -4,8 +4,8 @@ import 'package:core_family/core_family.dart';
 import 'package:core_family/testing.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:feature_sms/feature_sms.dart';
 import 'package:fingerbell_app/app.dart';
+import 'package:fingerbell_app/app_links.dart';
 import 'package:fingerbell_app/shell/feedback_service.dart';
 import 'package:fingerbell_app/views/banking_sheets.dart';
 import 'package:fingerbell_app/views/member_widgets.dart';
@@ -49,12 +49,29 @@ Future<(FakeFamilyRepository, FamilyCubit, ShellCubit)> _pumpStage7App(
   Map<String, dynamic>? snapshot,
   double textScale = 1.0,
   FeedbackOutput feedback = const SilentFeedback(),
+  List<Uri>? openedLinks,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   tester.platformDispatcher.textScaleFactorTestValue = textScale;
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+    AppLinks.channel,
+    (call) async {
+      if (call.method == 'open') {
+        final raw = (call.arguments as Map?)?['uri'] as String?;
+        if (raw != null) openedLinks?.add(Uri.parse(raw));
+      }
+      return null;
+    },
+  );
+  addTearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      AppLinks.channel,
+      null,
+    );
+  });
 
   final repo = FakeFamilyRepository(snapshot);
   final family = FamilyCubit(repo, pollInterval: null);
@@ -106,7 +123,8 @@ void main() {
 
   testWidgets('top toggle switches easy mode for all personas, persists across restart, and keeps easy home layout', (tester) async {
     final store = MemoryPrefsStore();
-    final (repo, _, shell) = await _pumpStage7App(tester, store: store);
+    final opened = <Uri>[];
+    final (_, _, shell) = await _pumpStage7App(tester, store: store, openedLinks: opened);
 
     // 홈 상단 토글로 한 번에 쉬운 화면을 켭니다.
     await tester.tap(find.byKey(const ValueKey('easy-mode-top-toggle')));
@@ -136,19 +154,23 @@ void main() {
     expect(find.text('어머니 전화'), findsOneWidget);
     expect(find.text('사기 신고·도움'), findsOneWidget);
 
-    // 앱을 다시 켜도 쉬운 화면 선택이 유지됩니다.
+    // 어르신으로 되돌린 뒤 앱을 다시 켜도 쉬운 화면 선택이 유지됩니다.
+    shell.goto(Persona.senior, AppTab.home);
+    await _settle(tester);
     await tester.pumpWidget(const SizedBox.shrink());
-    final (restartedRepo, _, restarted) = await _pumpStage7App(tester, store: store);
+    final (_, _, restarted) = await _pumpStage7App(tester, store: store, openedLinks: opened);
     expect(restarted.state.prefs.easyMode, isTrue);
     expect(find.text('최근 거래'), findsNothing);
     expect(find.text('전화'), findsOneWidget);
 
-    // 쉬운 화면 홈의 [전화]로 한 번에 보호자 통화 연결
+    // 쉬운 화면 홈의 [문자]·[전화]로 각각 문자 앱·전화 앱 열기
+    await tester.tap(find.text('문자'));
+    await _settle(tester);
+    expect(opened.last, Uri.parse('fingerbell://sms'));
+
     await tester.tap(find.text('전화'));
     await _settle(tester);
-    expect(restartedRepo.calls, contains('startCall:senior:guardian:010-••••-1024'));
-    await tester.tap(find.byTooltip('닫기'));
-    await _settle(tester);
+    expect(opened.last, Uri.parse('fingerbell://call/dial?peer=guardian'));
 
     // 다시 토글해 일반 화면으로 돌아옵니다.
     await tester.tap(find.byKey(const ValueKey('easy-mode-top-toggle')));
@@ -158,7 +180,8 @@ void main() {
   });
 
   testWidgets('fraud help button appears on home and warning screens and shows 112, 1332, demo notice, and guardian call', (tester) async {
-    final (repo, _, _) = await _pumpStage7App(tester);
+    final opened = <Uri>[];
+    await _pumpStage7App(tester, openedLinks: opened);
 
     expect(find.byKey(const ValueKey('fraud-help-button')), findsOneWidget);
     await tester.ensureVisible(find.byKey(const ValueKey('fraud-help-button')));
@@ -173,7 +196,7 @@ void main() {
 
     await tester.tap(find.textContaining('보호자에게 전화').last);
     await _settle(tester);
-    expect(repo.calls, contains('startCall:senior:guardian:010-••••-1024'));
+    expect(opened, [Uri.parse('fingerbell://call/dial?peer=guardian')]);
   });
 
   testWidgets('SOS button can freeze via single tap confirmation dialog', (tester) async {
@@ -288,27 +311,7 @@ void main() {
     expect(find.text('본인 재확인 대기'), findsOneWidget);
     expect(find.text('주의 모드 작동 중'), findsOneWidget);
 
-    // 2. 문자 경고 화면
-    await tester.pumpWidget(const SizedBox.shrink());
-    final repoSms = FakeFamilyRepository(demoSnapshotJson(seniorSmsMessages: [scamSmsJson()]));
-    final famSms = FamilyCubit(repoSms, pollInterval: null);
-    await famSms.start();
-    addTearDown(famSms.close);
-    await tester.pumpWidget(
-      MultiBlocProvider(
-        providers: [BlocProvider.value(value: famSms), BlocProvider.value(value: shell)],
-        child: MaterialApp(
-          theme: FbTheme.build(),
-          home: const Scaffold(body: SingleChildScrollView(child: SmsSheet(memberId: 'senior'))),
-        ),
-      ),
-    );
-    await _settle(tester);
-    expect(tester.takeException(), isNull);
-    expect(find.text('위험 문자 경고'), findsOneWidget);
-    expect(find.text('사기 신고·도움'), findsOneWidget);
-
-    // 3. 확인 질문 화면
+    // 2. 확인 질문 화면
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(
       MaterialApp(

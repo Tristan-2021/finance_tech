@@ -1,11 +1,10 @@
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:feature_call/feature_call.dart';
-import 'package:feature_sms/feature_sms.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../app_links.dart';
 import 'member_widgets.dart';
 
 /// 홈 상단에 놓는 쉬운 화면 토글 (메인 화면에서 1터치로 켜고 끕니다: 기획서 7.1 Ⅰ-②, Ⅰ-③).
@@ -130,27 +129,9 @@ class EasyMemberHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final g = data.guardian;
-    void callGuardian() => openCallSheet(
-      context,
-      callerId: member.id,
-      calleeId: 'guardian',
-      peerName: '보호자 ${g.name}',
-      peerPhone: g.phone,
-    );
-    void openSms() => openSmsSheet(
-      context,
-      member.id,
-      onTapPhone: (phone) {
-        Navigator.of(context).maybePop();
-        openCallSheet(
-          context,
-          callerId: member.id,
-          calleeId: 'counterpart',
-          peerPhone: phone,
-        );
-      },
-      onCallGuardian: callGuardian,
-    );
+    final shell = context.read<ShellCubit>();
+    void callGuardian() => AppLinks.openCall(shell, peer: 'guardian');
+    void openSms() => AppLinks.openSms(shell);
 
     final holds = [
       for (final r in data.pending(member.id))

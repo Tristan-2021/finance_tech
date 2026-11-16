@@ -3,11 +3,11 @@ import 'dart:math' as math;
 
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
-import 'package:feature_call/feature_call.dart';
 import 'package:feature_sos/feature_sos.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../app_links.dart';
 import 'feedback_service.dart';
 import 'layouts.dart';
 import 'shake_watcher.dart';
@@ -27,15 +27,22 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin {
+class _AppShellState extends State<AppShell>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _toast = GlobalKey<ToastHostState>();
   late final _shake = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
   final List<StreamSubscription<dynamic>> _subs = [];
+  AppLifecycleState? _lifecycleState;
   String? _shownIncomingCallKey;
+
+  bool get _isForeground =>
+      (_lifecycleState ?? AppLifecycleState.resumed) == AppLifecycleState.resumed;
 
   @override
   void initState() {
     super.initState();
+    _lifecycleState = WidgetsBinding.instance.lifecycleState;
+    WidgetsBinding.instance.addObserver(this);
     final shell = context.read<ShellCubit>();
     _subs
       ..add(shell.feedback.listen(_onFeedback))
@@ -44,7 +51,25 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    if (state == AppLifecycleState.resumed) {
+      final family = context.read<FamilyCubit>();
+      if (family.state.status != FamilyStatus.loading && !family.isClosed) {
+        unawaited(
+          family.refresh().then((_) {
+            if (mounted) _maybeShowIncomingCall();
+          }),
+        );
+      } else {
+        _maybeShowIncomingCall();
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     for (final s in _subs) {
       s.cancel();
     }
@@ -53,6 +78,7 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
   }
 
   void _onFeedback(FeedbackRequest f) {
+    if (!mounted || !_isForeground) return;
     final prefs = context.read<ShellCubit>().state.prefs;
     final out = context.read<FeedbackOutput>();
     if (f.toast) _toast.currentState?.show(f.message);
@@ -64,7 +90,7 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
   }
 
   void _maybeShowIncomingCall() {
-    if (!mounted) return;
+    if (!mounted || !_isForeground) return;
     final familyCubit = context.read<FamilyCubit>();
     final activeCall = familyCubit.state.snapshot?.activeCall;
     if (activeCall == null || !activeCall.isRinging || familyCubit.isCallEnding(activeCall.id)) {
@@ -78,9 +104,10 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
     if (_shownIncomingCallKey == key) return;
     _shownIncomingCallKey = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !_isForeground) return;
       final currentCall = familyCubit.state.snapshot?.activeCall;
-      final currentPersona = context.read<ShellCubit>().state.persona;
+      final shell = context.read<ShellCubit>();
+      final currentPersona = shell.state.persona;
       if (currentCall == null ||
           currentCall.id != activeCall.id ||
           !currentCall.isRinging ||
@@ -88,18 +115,9 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
           currentCall.calleeId != currentPersona.name) {
         return;
       }
-      final navCtx = AppShell.navigatorKey.currentContext;
-      if (navCtx == null || !navCtx.mounted) return;
-      openCallSheet(
-        navCtx,
-        localParticipantId: currentPersona.name,
-        callerId: currentCall.callerId,
-        calleeId: currentCall.calleeId,
-        peerPhone: currentCall.peerPhone,
-        peerName: currentCall.peerName,
-        initialCallId: currentCall.id,
-      );
+      unawaited(AppLinks.openIncomingCall(shell, callId: currentCall.id));
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   /// 서버 이벤트에 반응합니다. 이 기기에서 한 일은 이미 안내했으므로 건너뜁니다.
@@ -111,10 +129,10 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
       case 'reset':
         if (!e.fromThisDevice) {
           shell.reset();
-          shell.say(e.message);
+          if (_isForeground) shell.say(e.message);
         }
       case 'call_warning':
-        if (e.fromThisDevice || e.message.isEmpty) return;
+        if (!_isForeground || e.fromThisDevice || e.message.isEmpty) return;
         final family = context.read<FamilyCubit>().state;
         final mine = family.isReady ? family.data.accountOf(persona)?.id : persona.memberId;
         if (persona == Persona.guardian) {
@@ -134,7 +152,7 @@ class _AppShellState extends State<AppShell> with SingleTickerProviderStateMixin
           );
         }
       default:
-        if (e.fromThisDevice || e.message.isEmpty) return;
+        if (!_isForeground || e.fromThisDevice || e.message.isEmpty) return;
         const forGuardian = {
           'request',
           'reconfirm',
@@ -278,13 +296,7 @@ class SosLayer extends StatelessWidget {
             now: context.read<FamilyCubit>().now,
             onCallGuardian: () {
               shell.closeSos();
-              openCallSheet(
-                context,
-                callerId: m.id,
-                calleeId: 'guardian',
-                peerName: '보호자 ${state.data.guardian.name}',
-                peerPhone: state.data.guardian.phone,
-              );
+              AppLinks.openCall(shell, peer: 'guardian');
             },
             onClose: shell.closeSos,
           ),

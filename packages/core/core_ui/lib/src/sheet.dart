@@ -44,8 +44,9 @@ class SheetHead extends StatelessWidget {
   final String title;
   final VoidCallback? onBack;
   final VoidCallback? onClose;
+  final bool showClose;
 
-  const SheetHead({super.key, this.title = '', this.onBack, this.onClose});
+  const SheetHead({super.key, this.title = '', this.onBack, this.onClose, this.showClose = true});
 
   @override
   Widget build(BuildContext context) {
@@ -88,34 +89,35 @@ class SheetHead extends StatelessWidget {
             Expanded(
               child: Semantics(header: true, child: Text(title, style: FbText.sheetTitle(c))),
             ),
-            Tooltip(
-              message: '닫기',
-              child: Semantics(
-                button: true,
-                label: '닫기',
-                onTap: closeAction,
-                excludeSemantics: true,
-                child: InkWell(
+            if (showClose)
+              Tooltip(
+                message: '닫기',
+                child: Semantics(
+                  button: true,
+                  label: '닫기',
                   onTap: closeAction,
-                  borderRadius: BorderRadius.circular(12),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(FbIcons.close, color: c.ink2, size: 18),
-                          const SizedBox(width: 4),
-                          Text('닫기', style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w700, color: c.ink2)),
-                        ],
+                  excludeSemantics: true,
+                  child: InkWell(
+                    onTap: closeAction,
+                    borderRadius: BorderRadius.circular(12),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(FbIcons.close, color: c.ink2, size: 18),
+                            const SizedBox(width: 4),
+                            Text('닫기', style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w700, color: c.ink2)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),

@@ -25,6 +25,8 @@ Future<void> openSmsSheet(
 class SmsSheet extends StatefulWidget {
   final String memberId;
   final String? initialSenderPhone;
+  final int selectionTick;
+  final bool asScreen;
   final ValueChanged<String>? onTapPhone;
   final VoidCallback? onCallGuardian;
 
@@ -32,6 +34,8 @@ class SmsSheet extends StatefulWidget {
     super.key,
     required this.memberId,
     this.initialSenderPhone,
+    this.selectionTick = 0,
+    this.asScreen = false,
     this.onTapPhone,
     this.onCallGuardian,
   });
@@ -53,7 +57,7 @@ class _SmsSheetState extends State<SmsSheet> {
   @override
   void didUpdateWidget(SmsSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initialSenderPhone != null && widget.initialSenderPhone != oldWidget.initialSenderPhone) {
+    if (widget.initialSenderPhone != oldWidget.initialSenderPhone || widget.selectionTick != oldWidget.selectionTick) {
       _selectedPhone = widget.initialSenderPhone;
       _blocked = null;
     }
@@ -86,22 +90,31 @@ class _SmsSheetState extends State<SmsSheet> {
         if (member == null) return const EmptyText('사용자를 찾을 수 없어요');
         final now = context.read<FamilyCubit>().now();
         final blocked = _blocked;
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          child: blocked != null
-              ? KeyedSubtree(
-                  key: ValueKey('blocked-${blocked.url}'),
-                  child: BlockedLinkView(
-                    url: blocked.url,
-                    message: blocked.message,
-                    onBack: _closeBlockedLink,
-                    onCallGuardian: widget.onCallGuardian,
+        return PopScope(
+          canPop: !widget.asScreen || blocked == null,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && blocked != null) {
+              _closeBlockedLink();
+            }
+          },
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: blocked != null
+                ? KeyedSubtree(
+                    key: ValueKey('blocked-${blocked.url}'),
+                    child: BlockedLinkView(
+                      url: blocked.url,
+                      message: blocked.message,
+                      onBack: _closeBlockedLink,
+                      onCallGuardian: widget.onCallGuardian,
+                      showClose: !widget.asScreen,
+                    ),
+                  )
+                : KeyedSubtree(
+                    key: const ValueKey('conversations'),
+                    child: _conversationAndMessages(context, member, now),
                   ),
-                )
-              : KeyedSubtree(
-                  key: const ValueKey('conversations'),
-                  child: _conversationAndMessages(context, member, now),
-                ),
+          ),
         );
       },
     );
@@ -111,11 +124,14 @@ class _SmsSheetState extends State<SmsSheet> {
     final c = context.fb;
     final conversations = member.smsConversations;
     if (conversations.isEmpty) {
-      return const Column(
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SheetHead(title: '문자'),
-          EmptyText('아직 받은 문자가 없어요'),
+          if (widget.asScreen)
+            const Greeting('문자')
+          else
+            const SheetHead(title: '문자'),
+          const EmptyText('아직 받은 문자가 없어요'),
         ],
       );
     }
@@ -125,7 +141,11 @@ class _SmsSheetState extends State<SmsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SheetHead(title: '문자'),
+        if (widget.asScreen) ...[
+          Greeting('문자', sub: '${member.name}님 · 사기 문자를 자동으로 살펴봐요'),
+          const SizedBox(height: 12),
+        ] else
+          const SheetHead(title: '문자'),
         Text('대화 목록', style: FbText.label(c)),
         const SizedBox(height: 8),
         for (final conv in conversations)
@@ -516,9 +536,13 @@ class _SmsPhoneDisplay extends StatelessWidget {
               children: [
                 Icon(FbIcons.phone, size: 15, color: c.blueStrong),
                 const SizedBox(width: 5),
-                Text(
-                  phone,
-                  style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w700, color: c.blueStrong),
+                Flexible(
+                  child: Text(
+                    phone,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w700, color: c.blueStrong),
+                  ),
                 ),
               ],
             ),
@@ -536,6 +560,7 @@ class BlockedLinkView extends StatefulWidget {
   final SmsMessage message;
   final VoidCallback onBack;
   final VoidCallback? onCallGuardian;
+  final bool showClose;
 
   const BlockedLinkView({
     super.key,
@@ -543,6 +568,7 @@ class BlockedLinkView extends StatefulWidget {
     required this.message,
     required this.onBack,
     this.onCallGuardian,
+    this.showClose = true,
   });
 
   @override
@@ -578,7 +604,7 @@ class _BlockedLinkViewState extends State<BlockedLinkView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SheetHead(title: '링크 차단 안내', onBack: widget.onBack),
+        SheetHead(title: '링크 차단 안내', onBack: widget.onBack, showClose: widget.showClose),
         Focus(
           focusNode: _focus,
           child: const CenterBlock(

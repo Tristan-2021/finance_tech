@@ -11,9 +11,6 @@ import 'chunk_recorder.dart';
 import 'counterpart_sheet.dart';
 import 'rtc_session.dart';
 
-/// 통화 중 위험 경고 진동 패턴 (총 0.5초, 3초 미만으로 한 번만 울립니다: 기획서 5.3, 7.3).
-const List<int> callWarningVibration = [200, 100, 200];
-
 /// 휴대폰 통화 화면 시트를 엽니다 (기획서 5.3).
 Future<void> openCallSheet(
   BuildContext context, {
@@ -48,6 +45,13 @@ class CallSheet extends StatefulWidget {
   final String? initialCallId;
   final RtcPeerSession? rtcSession;
   final CallChunkRecorder? chunkRecorder;
+  final Future<void> Function()? onOpenCounterpart;
+  final Future<void> Function({
+    required String callerId,
+    required String calleeId,
+    String? peerName,
+    String? peerPhone,
+  })? onSwitchCall;
 
   const CallSheet({
     super.key,
@@ -59,6 +63,8 @@ class CallSheet extends StatefulWidget {
     this.initialCallId,
     this.rtcSession,
     this.chunkRecorder,
+    this.onOpenCounterpart,
+    this.onSwitchCall,
   });
 
   @override
@@ -343,6 +349,16 @@ class _CallSheetState extends State<CallSheet> {
       }
     }
     await nav.maybePop();
+    final switchCall = widget.onSwitchCall;
+    if (switchCall != null) {
+      await switchCall(
+        callerId: memberId == 'guardian' ? 'senior' : memberId,
+        calleeId: 'guardian',
+        peerName: guardian != null && guardian.name.isNotEmpty ? '보호자 ${guardian.name}' : '보호자',
+        peerPhone: guardian?.phone,
+      );
+      return;
+    }
     final navContext = nav.context;
     if (!navContext.mounted) return;
     await openCallSheet(
@@ -566,11 +582,17 @@ class _CallSheetState extends State<CallSheet> {
                 const SizedBox(height: 8),
                 FbButton.gray(
                   '시연 상대 화면 열기',
-                  onPressed: () => openCounterpartSheet(
-                    context,
-                    rtcSession: NoopRtcPeerSession(),
-                    chunkRecorder: NoopChunkRecorder(),
-                  ),
+                  onPressed: () {
+                    if (widget.onOpenCounterpart != null) {
+                      widget.onOpenCounterpart!();
+                    } else {
+                      openCounterpartSheet(
+                        context,
+                        rtcSession: NoopRtcPeerSession(),
+                        chunkRecorder: NoopChunkRecorder(),
+                      );
+                    }
+                  },
                 ),
               ],
             ] else

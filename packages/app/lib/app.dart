@@ -28,6 +28,16 @@ class FingerBellApp extends StatelessWidget {
   static double textFactor(ShellState s) =>
       (s.persona == Persona.senior ? 17 / 16 : 1.0) * (s.prefs.largeText ? 1.12 : 1.0);
 
+  /// 핑거벨·문자·전화 앱에 같은 글자 배율 규칙을 적용합니다.
+  static Widget applyTextScale(BuildContext context, ShellState s, Widget? child) {
+    final mq = MediaQuery.of(context);
+    final scale = mq.textScaler.scale(1) * textFactor(s);
+    return MediaQuery(
+      data: mq.copyWith(textScaler: TextScaler.linear(scale)),
+      child: child ?? const SizedBox.shrink(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
@@ -44,14 +54,7 @@ class FingerBellApp extends StatelessWidget {
             supportedLocales: const [Locale('ko', 'KR')],
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
             navigatorKey: AppShell.navigatorKey,
-            builder: (context, child) {
-              final mq = MediaQuery.of(context);
-              final scale = mq.textScaler.scale(1) * textFactor(s);
-              return MediaQuery(
-                data: mq.copyWith(textScaler: TextScaler.linear(scale)),
-                child: child ?? const SizedBox.shrink(),
-              );
-            },
+            builder: (context, child) => applyTextScale(context, s, child),
             home: AppShell(serverAddress: serverAddress),
           ),
         ),

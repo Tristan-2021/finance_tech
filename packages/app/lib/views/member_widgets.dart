@@ -2,14 +2,13 @@ import 'package:core_api/core_api.dart';
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:feature_call/feature_call.dart';
 import 'package:feature_payment/feature_payment.dart';
-import 'package:feature_sms/feature_sms.dart';
 import 'package:feature_sos/feature_sos.dart';
 import 'package:feature_transfer/feature_transfer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../app_links.dart';
 import 'banking_sheets.dart';
 
 /// 본인 홈에 보이는 주의 모드 카드 (기획서 5.1: 상태와 남은 시간 표시, 본인은 끌 수 없음).
@@ -163,23 +162,13 @@ class _MemberHoldCardState extends State<MemberHoldCard> {
               '보호자에게 전화',
               icon: FbIcons.phone,
               onPressed: _busy == null
-                  ? () => openCallSheet(
-                        context,
-                        callerId: widget.member.id,
-                        calleeId: 'guardian',
-                        peerName: '보호자',
-                      )
+                  ? () => AppLinks.openCall(context.read<ShellCubit>(), peer: 'guardian')
                   : null,
             ),
             const SizedBox(height: 8),
             FraudHelpButton(
               onCallGuardian: _busy == null
-                  ? () => openCallSheet(
-                        context,
-                        callerId: widget.member.id,
-                        calleeId: 'guardian',
-                        peerName: '보호자',
-                      )
+                  ? () => AppLinks.openCall(context.read<ShellCubit>(), peer: 'guardian')
                   : null,
             ),
           ] else ...[
@@ -187,12 +176,7 @@ class _MemberHoldCardState extends State<MemberHoldCard> {
             const SizedBox(height: 8),
             FraudHelpButton(
               onCallGuardian: _busy == null
-                  ? () => openCallSheet(
-                        context,
-                        callerId: widget.member.id,
-                        calleeId: 'guardian',
-                        peerName: '보호자',
-                      )
+                  ? () => AppLinks.openCall(context.read<ShellCubit>(), peer: 'guardian')
                   : null,
             ),
           ],
@@ -218,16 +202,7 @@ class AccountCard extends StatelessWidget {
     void send() => openTransferSheet(
       context,
       m.id,
-      onCallGuardian: () {
-        final g = context.read<FamilyCubit>().state.snapshot?.guardian;
-        openCallSheet(
-          context,
-          callerId: m.id,
-          calleeId: 'guardian',
-          peerName: g != null ? '보호자 ${g.name}' : '보호자',
-          peerPhone: g?.phone,
-        );
-      },
+      onCallGuardian: () => AppLinks.openCall(context.read<ShellCubit>(), peer: 'guardian'),
     );
     void pay() => openPaySheet(context, m.id);
     void history() => context.read<ShellCubit>().switchTab(AppTab.history);
@@ -389,13 +364,7 @@ class GuardianCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.fb;
     final g = data.guardian;
-    void callGuardian() => openCallSheet(
-      context,
-      callerId: member.id,
-      calleeId: 'guardian',
-      peerName: '보호자 ${g.name}',
-      peerPhone: g.phone,
-    );
+    void callGuardian() => AppLinks.openCall(context.read<ShellCubit>(), peer: 'guardian');
     return FbCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -533,29 +502,7 @@ class SmsEntryCard extends StatelessWidget {
       leading: TxLogo(icon: dangerCount > 0 ? FbIcons.alert : FbIcons.sms, blue: dangerCount == 0),
       title: '문자',
       subtitle: sub,
-      onTap: () {
-        final g = context.read<FamilyCubit>().state.snapshot?.guardian;
-        openSmsSheet(
-          context,
-          member.id,
-          onTapPhone: (phone) {
-            Navigator.of(context).maybePop();
-            openCallSheet(
-              context,
-              callerId: member.id,
-              calleeId: 'counterpart',
-              peerPhone: phone,
-            );
-          },
-          onCallGuardian: () => openCallSheet(
-            context,
-            callerId: member.id,
-            calleeId: 'guardian',
-            peerName: g != null ? '보호자 ${g.name}' : '보호자',
-            peerPhone: g?.phone,
-          ),
-        );
-      },
+      onTap: () => AppLinks.openSms(context.read<ShellCubit>()),
     );
   }
 }

@@ -1,10 +1,10 @@
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:feature_call/feature_call.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../app_links.dart';
 import 'easy_home.dart';
 import 'member_widgets.dart';
 
@@ -32,13 +32,7 @@ class SeniorHome extends StatelessWidget {
     final g = data.guardian;
     final help = FraudHelpButton(
       guardianName: g.name,
-      onCallGuardian: () => openCallSheet(
-        context,
-        callerId: member.id,
-        calleeId: 'guardian',
-        peerName: '보호자 ${g.name}',
-        peerPhone: g.phone,
-      ),
+      onCallGuardian: () => AppLinks.openCall(context.read<ShellCubit>(), peer: 'guardian'),
     );
     return FbView(
       children: [
@@ -109,13 +103,7 @@ class ChildHome extends StatelessWidget {
     final g = data.guardian;
     final help = FraudHelpButton(
       guardianName: g.name,
-      onCallGuardian: () => openCallSheet(
-        context,
-        callerId: m.id,
-        calleeId: 'guardian',
-        peerName: '보호자 ${g.name}',
-        peerPhone: g.phone,
-      ),
+      onCallGuardian: () => AppLinks.openCall(context.read<ShellCubit>(), peer: 'guardian'),
     );
     return FbView(
       children: [

@@ -683,7 +683,10 @@ class FakeFamilyRepository implements FamilyRepository {
         };
     callJson['status'] = 'ended';
     callJson['ended_at'] = now.toIso8601String();
-    snapshotJson['active_call'] = null;
+    final active = snapshotJson['active_call'];
+    if (active is Map<String, dynamic> && (active['id'] == callId || callId.isEmpty)) {
+      snapshotJson['active_call'] = null;
+    }
     snapshotJson['calls'] = [callJson];
     return _call('endCall:$callId', CallSession.fromJson(callJson));
   }

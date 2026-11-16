@@ -5,9 +5,10 @@ import 'package:core_api/core_api.dart';
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:feature_call/feature_call.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../app_links.dart';
 
 /// 계좌 조회 시트를 엽니다 (적금·예금 및 대출 진입점).
 Future<void> openAccountsSheet(
@@ -44,16 +45,8 @@ Future<void> openLoanSheet(
   builder: (_) => LoanSheet(memberId: memberId, cardReadDelay: cardReadDelay),
 );
 
-void _callGuardian(BuildContext context, String memberId) {
-  final g = context.read<FamilyCubit>().state.snapshot?.guardian;
-  openCallSheet(
-    context,
-    callerId: memberId,
-    calleeId: 'guardian',
-    peerName: g != null ? '보호자 ${g.name}' : '보호자',
-    peerPhone: g?.phone,
-  );
-}
+void _callGuardian(BuildContext context, String memberId) =>
+    AppLinks.openCall(context.read<ShellCubit>(), peer: 'guardian');
 
 Future<void> _showGlossaryDialog(BuildContext context, String term, String explanation) => showDialog<void>(
   context: context,
