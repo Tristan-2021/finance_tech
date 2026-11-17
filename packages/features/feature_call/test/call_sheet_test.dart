@@ -83,7 +83,7 @@ Future<void> settle(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('dialing transitions from outgoing ringing to active call screen and starts chunk recorder', (tester) async {
+  testWidgets('dialing transitions from outgoing ringing to active call screen, ticks elapsed timer, toggles mute/speaker, and starts chunk recorder', (tester) async {
     final rtc = NoopRtcPeerSession();
     final recorder = NoopChunkRecorder();
     final (repo, family, _) = await pumpCallWidget(
@@ -101,9 +101,10 @@ void main() {
     await settle(tester);
 
     expect(repo.calls, contains('startCall:senior:counterpart:02-0000-1332'));
-    expect(find.text('발신 중...'), findsOneWidget);
+    expect(find.text('발신 중…'), findsOneWidget);
     expect(find.text('금융감독원 민원실(사칭)'), findsOneWidget);
     expect(find.text('02-0000-1332'), findsOneWidget);
+    expect(find.text('AI 실시간 보이스피싱 감지 작동 중'), findsNothing);
     expect(rtc.startedAsCaller, isTrue);
     expect(recorder.started, isFalse);
 
@@ -111,8 +112,31 @@ void main() {
     await family.answerCall(callId);
     await settle(tester);
 
-    expect(find.text('통화 중'), findsOneWidget);
+    expect(find.text('00:00'), findsOneWidget);
     expect(recorder.started, isTrue);
+
+    // answeredAt 기준 경과 시간(예: 03:12)을 표시합니다.
+    final serverNow = DateTime.now().toUtc();
+    repo.snapshotJson['server_time'] = serverNow.toIso8601String();
+    final activeMap = repo.snapshotJson['active_call'] as Map<String, dynamic>;
+    activeMap['answered_at'] = serverNow
+        .subtract(const Duration(minutes: 3, seconds: 12, milliseconds: 500))
+        .toIso8601String();
+    await family.refresh();
+    await settle(tester);
+    expect(find.text('03:12'), findsOneWidget);
+
+    await tester.tap(find.text('소리 끔'));
+    await tester.pump();
+    expect(rtc.muted, isTrue);
+
+    await tester.tap(find.text('스피커'));
+    await tester.pump();
+    expect(rtc.speakerphoneEnabled, isTrue);
+
+    await tester.tap(find.text('소리 끔'));
+    await tester.pump();
+    expect(rtc.muted, isFalse);
   });
 
   testWidgets('recording failure shows voice analysis unavailable text without dropping the call', (tester) async {
@@ -135,7 +159,7 @@ void main() {
     await family.answerCall(callId);
     await settle(tester);
 
-    expect(find.text('통화 중'), findsOneWidget);
+    expect(find.text('00:00'), findsOneWidget);
     expect(find.text('음성 분석을 쓸 수 없어요'), findsOneWidget);
     expect(rtc.closed, isFalse);
   });
@@ -303,14 +327,16 @@ void main() {
     await family.answerCall(callId);
     await settle(tester);
 
-    expect(find.text('통화 중'), findsOneWidget);
+    expect(find.text('00:00'), findsOneWidget);
     expect(find.text(rtcFailedText), findsOneWidget);
-    await tester.tap(find.text('통화 끊기'));
+    await tester.tap(find.text('종료'));
     await settle(tester);
     expect(repo.calls, contains('endCall:$callId'));
+    expect(find.text('통화 종료'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('closing or dismissing call sheet terminates server call session on all paths', (tester) async {
+  testWidgets('ending, popping, or dismissing call sheet terminates server call session on all paths', (tester) async {
     final (repo, family, _) = await pumpCallWidget(
       tester,
       CallSheet(
@@ -325,13 +351,14 @@ void main() {
     await settle(tester);
     final firstCallId = family.state.data.activeCall!.id;
 
-    // 상단 닫기 버튼으로 닫아도 서버 통화 세션이 종료됩니다.
-    await tester.tap(find.byTooltip('닫기'));
+    // 1. 종료 버튼을 누르면 서버 통화 세션을 종료하고 "통화 종료"를 표시합니다.
+    await tester.tap(find.text('종료'));
     await settle(tester);
     expect(repo.calls, contains('endCall:$firstCallId'));
+    expect(find.text('통화 종료'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
 
-    // 시트가 뒤로가기·시트 닫기로 제거(dispose)될 때도 서버 통화 세션을 종료합니다.
-    // 같은 자리에 같은 위젯을 다시 올리면 State가 재사용되므로 먼저 비웁니다.
+    // 2. 라우트 뒤로가기(pop) · 위젯 제거(dispose) 시에도 서버 통화 세션을 종료합니다.
     await tester.pumpWidget(const SizedBox.shrink());
     final (_, family2, _) = await pumpCallWidget(
       tester,
@@ -412,6 +439,10 @@ void main() {
     );
     final uploadBlocker = Completer<void>();
     var chunkCalls = 0;
+    addTearDown(() async {
+      if (!uploadBlocker.isCompleted) uploadBlocker.complete();
+      await recorder.stop();
+    });
 
     await recorder.start(
       onChunk: (_, _) async {
@@ -421,8 +452,15 @@ void main() {
       onFailure: (_) => fail('recorder should not fail'),
     );
 
-    await Future<void>.delayed(const Duration(milliseconds: 130));
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (fakeRecorder.startCount < 3 || chunkCalls < 2) {
+      if (DateTime.now().isAfter(deadline)) {
+        fail('Timed out waiting for chunk rotation (startCount=${fakeRecorder.startCount}, chunkCalls=$chunkCalls)');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
     // 첫 업로드가 아직 끝나지 않았어도 녹음 회전은 타이머 주기에 맞춰 계속 일어납니다.
+    expect(uploadBlocker.isCompleted, isFalse);
     expect(fakeRecorder.startCount, greaterThanOrEqualTo(3));
     expect(chunkCalls, greaterThanOrEqualTo(2));
 
@@ -507,12 +545,12 @@ void main() {
     // 기존 사기 통화 시트가 아래에 남지 않고 보호자 통화 시트 하나만 남아 있어야 합니다.
     expect(find.byType(CallSheet), findsOneWidget);
     expect(find.text('보이스피싱 위험 경고'), findsNothing);
-    expect(find.text('가족 안심 통화 · 통화 내용을 분석하지 않아요'), findsOneWidget);
+    expect(find.text('보호자 김사랑'), findsOneWidget);
+    expect(find.text('가족 안심 통화 · 통화 내용을 분석하지 않아요'), findsNothing);
   });
 
-  testWidgets('CallSheet uses onSwitchCall and onOpenCounterpart callbacks when provided', (tester) async {
+  testWidgets('CallSheet uses onSwitchCall callback when provided', (tester) async {
     String? switchedTarget;
-    var openedCounterpart = false;
     final (_, family, _) = await pumpCallWidget(
       tester,
       CallSheet(
@@ -522,7 +560,6 @@ void main() {
         peerPhone: '02-0000-1332',
         rtcSession: NoopRtcPeerSession(),
         chunkRecorder: NoopChunkRecorder(),
-        onOpenCounterpart: () async => openedCounterpart = true,
         onSwitchCall: ({required callerId, required calleeId, peerName, peerPhone}) async {
           switchedTarget = '$callerId->$calleeId';
         },
@@ -533,12 +570,6 @@ void main() {
     final callId = family.state.data.activeCall!.id;
     await family.answerCall(callId);
     await settle(tester);
-
-    await tester.ensureVisible(find.text('시연 상대 화면 열기'));
-    await settle(tester);
-    await tester.tap(find.text('시연 상대 화면 열기'));
-    await settle(tester);
-    expect(openedCounterpart, isTrue);
 
     await family.sendCallTranscript(callId, text: '금융감독원 적금 해지');
     await settle(tester);
@@ -551,5 +582,63 @@ void main() {
     await settle(tester);
 
     expect(switchedTarget, 'senior->guardian');
+  });
+
+  testWidgets('CallSheet shows 통화 종료 briefly and pops back when call ends', (tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final repo = FakeFamilyRepository(demoSnapshotJson());
+    final family = FamilyCubit(repo, pollInterval: null);
+    await family.start();
+    final shell = ShellCubit();
+    addTearDown(family.close);
+    addTearDown(shell.close);
+
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: family),
+          BlocProvider.value(value: shell),
+        ],
+        child: MaterialApp(
+          theme: FbTheme.build(),
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => openCallSheet(
+                  context,
+                  localParticipantId: 'senior',
+                  callerId: 'senior',
+                  calleeId: 'counterpart',
+                  peerPhone: '02-0000-1332',
+                  peerName: '금융감독원 민원실(사칭)',
+                  rtcSession: NoopRtcPeerSession(),
+                  chunkRecorder: NoopChunkRecorder(),
+                  endedAutoCloseDelay: const Duration(milliseconds: 500),
+                ),
+                child: const Text('통화 열기'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+
+    await tester.tap(find.text('통화 열기'));
+    await settle(tester);
+    expect(find.byType(CallSheet), findsOneWidget);
+
+    await tester.tap(find.text('종료'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('통화 종료'), findsOneWidget);
+    expect(find.byType(CallSheet), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 400));
+    await settle(tester);
+    expect(find.byType(CallSheet), findsNothing);
+    expect(find.text('통화 열기'), findsOneWidget);
   });
 }

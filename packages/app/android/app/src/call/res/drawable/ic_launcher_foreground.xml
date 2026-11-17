@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42.16,51.34 C45.33,57.56 50.44,62.67 56.66,65.84 L61.50,61.00 C62.10,60.40 62.98,60.20 63.75,60.47 C66.21,61.28 68.87,61.72 71.60,61.72 C72.81,61.72 73.80,62.71 73.80,63.92 L73.80,71.60 C73.80,72.81 72.81,73.80 71.60,73.80 C50.94,73.80 34.20,57.06 34.20,36.40 C34.20,35.19 35.19,34.20 36.40,34.20 L44.10,34.20 C45.31,34.20 46.30,35.19 46.30,36.40 C46.30,39.15 46.74,41.79 47.55,44.25 C47.80,45.02 47.62,45.88 47.00,46.50 L42.16,51.34 Z" />
+    <!-- core_ui FbColors.light.blueSoft -->
+    <path
+        android:pathData="M57,43 A9,9 0 0,1 66,52"
+        android:strokeWidth="3.4"
+        android:strokeColor="#E8F3FF"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M57,36 A16,16 0 0,1 73,52"
+        android:strokeWidth="3.4"
+        android:strokeColor="#E8F3FF"
+        android:strokeLineCap="round" />
+</vector>

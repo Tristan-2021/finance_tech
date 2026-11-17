@@ -31,6 +31,10 @@ abstract interface class RtcPeerSession {
 
   Future<void> onSignal(Map<String, dynamic> signal);
 
+  Future<void> setMicrophoneMuted(bool muted);
+
+  Future<void> setSpeakerphoneEnabled(bool enabled);
+
   Future<void> close();
 }
 
@@ -57,11 +61,23 @@ class FlutterWebRtcPeerSession implements RtcPeerSession {
   Map<String, dynamic>? _pendingOffer;
   Map<String, dynamic>? _pendingAnswer;
   final List<RTCIceCandidate> _pendingCandidates = [];
+  bool _muted = false;
+  bool _speakerphone = false;
   bool _closed = false;
 
   void _reportState(String statusText) {
     if (_closed) return;
     _onStateChanged?.call(statusText);
+  }
+
+  Future<void> _applyMuteToStream(MediaStream stream, bool muted) async {
+    for (final track in stream.getAudioTracks()) {
+      try {
+        await Helper.setMicrophoneMute(muted, track);
+      } catch (_) {
+        track.enabled = !muted;
+      }
+    }
   }
 
   Future<RTCPeerConnection?> _preparePeer({
@@ -83,6 +99,9 @@ class FlutterWebRtcPeerSession implements RtcPeerSession {
         return null;
       }
       _localStream = stream;
+      if (_muted) {
+        await _applyMuteToStream(stream, true);
+      }
       final pc = await createPeerConnection(rtcConfiguration);
       if (_closed) {
         await pc.close();
@@ -326,15 +345,43 @@ class FlutterWebRtcPeerSession implements RtcPeerSession {
   }
 
   @override
+  Future<void> setMicrophoneMuted(bool muted) async {
+    if (_closed) return;
+    _muted = muted;
+    final stream = _localStream;
+    if (stream == null) return;
+    await _applyMuteToStream(stream, muted);
+  }
+
+  @override
+  Future<void> setSpeakerphoneEnabled(bool enabled) async {
+    if (_closed) return;
+    _speakerphone = enabled;
+    try {
+      await Helper.setSpeakerphoneOn(enabled);
+    } catch (_) {}
+  }
+
+  @override
   Future<void> close() async {
     _closed = true;
     _pendingOffer = null;
     _pendingAnswer = null;
     _pendingCandidates.clear();
+    if (_speakerphone) {
+      _speakerphone = false;
+      try {
+        await Helper.setSpeakerphoneOn(false);
+      } catch (_) {}
+    }
     final stream = _localStream;
     _localStream = null;
     if (stream != null) {
       try {
+        if (_muted) {
+          _muted = false;
+          await _applyMuteToStream(stream, false);
+        }
         for (final track in stream.getTracks()) {
           await track.stop();
         }
@@ -357,6 +404,8 @@ class NoopRtcPeerSession implements RtcPeerSession {
   bool startedAsCaller = false;
   bool startedAsCallee = false;
   bool closed = false;
+  bool muted = false;
+  bool speakerphoneEnabled = false;
   bool remoteDescriptionSet = false;
   String? lastStatus;
   final List<Map<String, dynamic>> receivedSignals = [];
@@ -504,8 +553,22 @@ class NoopRtcPeerSession implements RtcPeerSession {
   }
 
   @override
+  Future<void> setMicrophoneMuted(bool muted) async {
+    if (closed) return;
+    this.muted = muted;
+  }
+
+  @override
+  Future<void> setSpeakerphoneEnabled(bool enabled) async {
+    if (closed) return;
+    speakerphoneEnabled = enabled;
+  }
+
+  @override
   Future<void> close() async {
     closed = true;
+    muted = false;
+    speakerphoneEnabled = false;
     pendingIceCandidates.clear();
   }
 }

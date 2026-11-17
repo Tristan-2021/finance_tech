@@ -6,10 +6,12 @@ import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:feature_sms/feature_sms.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../app_links.dart';
 import '../companion_app.dart';
+import '../ios/ios_chrome.dart';
 import '../shell/feedback_service.dart';
 
 Future<void> runSmsApp() async {
@@ -30,7 +32,7 @@ Future<void> runSmsApp() async {
   );
 }
 
-/// 핑거벨 문자 앱. 공유된 역할의 대화 목록·말풍선·위험 경고·링크 차단 화면을 전체 화면으로 보여 줍니다.
+/// 핑거벨 문자 앱. iOS 메시지 앱 모양을 흉내 낸 대화 목록·대화 화면·위험 경고·링크 차단 화면을 전체 화면으로 보여 줍니다.
 class SmsApp extends StatefulWidget {
   final FamilyCubit? family;
   final ShellCubit? shell;
@@ -137,24 +139,30 @@ class _SmsAppState extends State<SmsApp> {
       onEvent: _handleEvent,
       onStateSynced: _checkIncomingCall,
       builder: (context, _) {
-        final c = context.fb;
+        final highContrast = context.fb.cardBorder != null;
         final persona = context.select((ShellCubit s) => s.state.persona);
-        final data = context.select((FamilyCubit f) => f.state.data);
+        final familyState = context.watch<FamilyCubit>().state;
+        final data = familyState.data;
         final shell = context.read<ShellCubit>();
         final memberId = _memberIdFor(persona, data);
-        return Scaffold(
-          backgroundColor: c.bg,
-          body: Column(
-            children: [
-              CompanionHeader(title: '핑거벨 문자', roleLabel: persona.label),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const CompanionOfflineBanner(),
-                      SmsSheet(
+        return Theme(
+          data: iosNoSplashTheme(context),
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: SystemUiOverlayStyle.dark,
+            child: Scaffold(
+              backgroundColor: Colors.white,
+              body: SafeArea(
+                bottom: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!familyState.reachable)
+                      IosOfflineNoticeBar(
+                        highContrast: highContrast,
+                        onRetry: context.read<FamilyCubit>().refresh,
+                      ),
+                    Expanded(
+                      child: SmsSheet(
                         memberId: memberId,
                         asScreen: true,
                         initialSenderPhone: _selectedPhone,
@@ -168,11 +176,11 @@ class _SmsAppState extends State<SmsApp> {
                             ? null
                             : () => AppLinks.openCall(shell, peer: 'guardian'),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         );
       },

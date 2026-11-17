@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$Device = 'emulator-5554',
+    [string]$Device = '',
     [string]$Emulator = 'Medium_Phone_API_37.0',
     [ValidateRange(1024, 65535)]
     [int]$ApiPort = 8765,
@@ -17,6 +17,24 @@ if (-not (Test-Path -LiteralPath $flutterExe)) { throw 'Flutter SDK was not foun
 $androidSdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 $adbExe = Join-Path $androidSdk 'platform-tools\adb.exe'
 if (-not (Test-Path -LiteralPath $adbExe)) { throw 'Android SDK platform-tools were not found.' }
+
+if ([string]::IsNullOrWhiteSpace($Device)) {
+    $adbLines = & $adbExe devices
+    if ($LASTEXITCODE -ne 0) { throw 'adb devices failed.' }
+    $readyDevices = @(
+        $adbLines | ForEach-Object {
+            if ($_ -match '^\s*(\S+)\s+device\s*$') { $Matches[1] }
+        }
+    )
+    if ($readyDevices.Count -eq 1) {
+        $Device = $readyDevices[0]
+    } elseif ($readyDevices.Count -eq 0) {
+        $Device = 'emulator-5554'
+    } else {
+        Write-Host ("연결된 기기가 여러 대입니다: {0}. -Device <id> 로 골라 주세요." -f ($readyDevices -join ', '))
+        exit 1
+    }
+}
 
 # Only Android is prepared by this launcher; desktop builds keep their own settings.
 $previousWindowsFlag = $env:FLUTTER_WINDOWS
@@ -83,11 +101,15 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "Build failed: $($app.Flavor)" }
             Write-Host ('BUILD {0}: {1:N2}s' -f $app.Flavor, $build.Elapsed.TotalSeconds)
             $apk = Join-Path $appDirectory "build\app\outputs\flutter-apk\app-$($app.Flavor)-debug.apk"
-            & $adbExe -s $Device install -r $apk
+            $ErrorActionPreference = 'Continue'
+            & $adbExe -s $Device install -r $apk 2>&1 | ForEach-Object { Write-Host "$_" }
+            $ErrorActionPreference = 'Stop'
             if ($LASTEXITCODE -ne 0) { throw "Install failed: $($app.Package)" }
         }
         Write-Host ('BUILD+INSTALL total: {0:N2}s' -f $total.Elapsed.TotalSeconds)
-        & $adbExe -s $Device shell am start -n 'kr.fingersnap.fingerbell/kr.fingersnap.fingerbell.MainActivity'
+        $ErrorActionPreference = 'Continue'
+        & $adbExe -s $Device shell am start -n 'kr.fingersnap.fingerbell/kr.fingersnap.fingerbell.MainActivity' 2>&1 | ForEach-Object { Write-Host "$_" }
+        $ErrorActionPreference = 'Stop'
         if ($LASTEXITCODE -ne 0) { throw 'FingerBell launch failed.' }
         if (-not $NoResident) {
             & $flutterExe attach -d $Device --app-id kr.fingersnap.fingerbell

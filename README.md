@@ -1,6 +1,6 @@
 # 핑거벨 (FingerBell)
 
-**사기 연락(문자·전화)과 그 뒤에 이어지는 금융 행동을 하나의 사건으로 묶어 탐지하고, 피해 직전의 거래를 30분 보류해 보호자와 연결하는 Android 시연용 앱**
+**사기 연락(문자·전화)과 그 뒤에 이어지는 금융 행동을 하나의 사건으로 묶어 탐지하고, 피해 직전의 거래를 30분 보류해 보호자와 연결하는 Android 시연용 앱 묶음(핑거벨 · 핑거벨 문자 · 핑거벨 전화)**
 
 2026 디지털새싹 문제해결 경진대회(CODE) 트랙 1 · 팀 핑거스냅 (한국게임과학고등학교)
 
@@ -23,11 +23,11 @@
 
 ## 대표 시나리오
 
-1. **기관 사칭 문자 수신**: 앱 안의 문자 화면에 사칭 문자가 옵니다. 경고가 붙고, 링크를 누르면 차단 화면이 뜹니다. 주의 모드(24시간)가 시작됩니다.
-2. **문자에 적힌 번호로 통화**: 앱 안에서 상대 역할을 맡은 팀원과 음성 통화가 연결됩니다. 통화 분석이 사기 징후를 잡으면 큰 경고, 진동·경고음, 보호자 즉시 알림, [통화 끊기] 버튼이 나옵니다.
-3. **통화 뒤 적금을 만기 전에 해지하려 함**: AI가 앞선 문자·통화에 맞춘 질문을 큰 버튼 객관식으로 묻습니다.
+1. **기관 사칭 문자 수신**: **핑거벨 문자** 앱에 사칭 문자가 옵니다. 경고가 붙고, 링크를 누르면 차단 화면이 뜹니다. 주의 모드(24시간)가 시작되어 **핑거벨** 앱 홈에도 표시됩니다.
+2. **문자에 적힌 번호로 통화**: 번호를 누르면 **핑거벨 전화** 앱이 열리고, 앱 안에서 시연 상대 역할을 맡은 팀원과 음성 통화가 연결됩니다. 통화 분석이 사기 징후를 잡으면 큰 경고, 진동·경고음, 보호자 즉시 알림, [통화 끊기] 버튼이 나옵니다.
+3. **통화 뒤 핑거벨 앱에서 적금을 만기 전에 해지하려 함**: AI가 앞선 문자·통화에 맞춘 질문을 큰 버튼 객관식으로 묻습니다.
 4. **종합 판정 '위험'**: 해지를 30분 보류하고 보호자에게 알립니다.
-5. **보호자 확인**: 보호자가 위험 근거 요약을 보고 앱 안 통화로 어르신에게 연락한 뒤, 보류를 해제하거나 연장합니다.
+5. **보호자 확인**: 보호자가 위험 근거 요약을 보고 **핑거벨 전화** 앱의 앱 안 통화로 어르신에게 연락한 뒤, 보류를 해제하거나 연장합니다.
 6. **보호자가 답하지 않음**: 30분이 지나도 거래는 저절로 나가지 않습니다. 어르신이 설명을 다시 보고 한 번 더 눌러야 진행됩니다.
 
 ```mermaid
@@ -54,18 +54,19 @@ flowchart LR
 
 | 기능 | 하는 일 | 상태 |
 | :--- | :--- | :--- |
-| **앱 3개 · 역할·설정 공유 (9단계 S1)** | `fingerbell`·`sms`·`call` flavor를 한 명령으로 빌드·설치합니다. 핑거벨에서 바꾼 역할(`Persona`)과 5개 기기 설정(큰 글씨·고대비·음성 안내·경고음·진동)을 기기에 저장하고, 서명 권한 `ContentProvider`로 문자·전화 앱이 시작·resume 때 읽어 반영합니다. | S1 구현됨 (`core_shell` · `SharedPrefsProvider` · `CompanionApp`). 기존 문자·통화 기능은 아직 핑거벨 안의 시트에 있으며 기능 이동·수신 정책은 후속 단계 |
-| **문자 감지** | 휴대폰 문자 앱을 재현한 화면에서 시연 문자의 내용과 링크를 분석합니다(규칙 1차 → OpenRouter LLM 최종). 위험하면 경고와 쉬운 설명을 붙이고 주의 모드를 시작하며 링크를 차단합니다. | 구현됨 (`backend/app/domain/sms.py` · `backend/app/integrations.py` · `feature_sms`) |
-| **통화 감지** | 앱 안 인터넷 음성 통화(WebRTC)의 음성을 글자로 바꿔 실시간으로 분석하고(규칙 1차 → OpenRouter LLM 최종), 사기 징후가 잡히면 통화 중에 큰 경고·진동·경고음·`[통화 끊기]`를 띄우고 보호자에게 알립니다. 시연 상대 화면의 대본 문장 보내기도 지원합니다. | 구현됨 (`backend/app/domain/call.py` · `backend/app/integrations.py` · `feature_call`) |
+| **앱 3개 · 연결 · 설정 공유** | `fingerbell`(**핑거벨**)·`sms`(**핑거벨 문자**)·`call`(**핑거벨 전화**) flavor를 한 명령으로 빌드·설치합니다. 같은 인증서로 서명하고 패키지 이름·설치 이름·런처 아이콘으로 구분합니다. `AppLinks`(`fingerbell://bank\|sms\|call`)로 화면을 열고, 서명 권한 `ContentProvider`(`SharedPrefsProvider`)로 역할과 5개 설정(큰 글씨·고대비·음성 안내·경고음·진동)을 공유합니다. | 구현됨 (`build.gradle.kts` · `MainActivity.kt` · `SharedPrefsProvider.kt` · `app_links.dart` · `CompanionApp`) |
+| **수신 범위** | 문자 알림과 걸려 오는 전화는 세 앱 중 하나가 화면에 떠 있을 때만 받습니다. 앱이 닫혀 있거나 화면이 꺼져 있으면 받지 못하고, 다시 열면 서버 상태로 따라잡습니다. | 구현됨 (`AppShell` · `SmsApp` · `CallApp` · `CompanionApp`) |
+| **문자 감지 (핑거벨 문자 앱)** | **핑거벨 문자** 앱(iOS 메시지 앱 모양을 흉내 낸 모조 앱)에서 시연 문자의 내용과 링크를 분석합니다(규칙 1차 → OpenRouter LLM 최종). 최신순 대화 목록과 받은 문자 말풍선으로 보여 주며, 위험·주의 문자면 말풍선 아래 알림 띠에 경고와 쉬운 설명·`[사기 신고·도움]`을 붙이고 주의 모드를 시작하며 링크를 차단합니다. 말풍선 속 번호나 대화 상단 전화 버튼을 누르면 **핑거벨 전화** 앱으로 연결합니다. | 구현됨 (`backend/app/domain/sms.py` · `backend/app/integrations.py` · `SmsApp` · `feature_sms`) |
+| **통화 감지 (핑거벨 전화 앱)** | **핑거벨 전화** 앱의 인터넷 음성 통화(WebRTC) 음성을 글자로 바꿔 실시간으로 분석하고(규칙 1차 → OpenRouter LLM 최종), 사기 징후가 잡히면 통화 중에 큰 경고·진동·경고음·`[통화 끊기]`를 띄우고 보호자에게 알립니다. 시연 상대 화면의 대본 문장 보내기도 제공합니다. | 구현됨 (`backend/app/domain/call.py` · `backend/app/integrations.py` · `CallApp` · `feature_call`) |
 | **주의 모드** | 위험 문자나 위험 통화가 감지되면 24시간 유지됩니다. 본인은 끌 수 없고 보호자는 끝낼 수 있습니다. | 구현됨 (`backend/app/service.py` · `feature_guardian`) |
 | **확인 질문과 종합 판정** | 주의 모드 중 적금·예금 해지, 큰 금액 송금, 대출 한도 조회·신청을 시도하면 AI가 앞선 연락에 맞춘 질문을 하고, 규칙·점수 1차와 LLM 최종으로 낮음 / 주의 / 위험을 정합니다. | 구현됨 (`backend/app/domain/banking.py` · `backend/app/integrations.py` · `core_ui` · `feature_transfer`) |
 | **거래 보류** | 위험 판정 거래(송금·적금 해지·대출 신청)를 30분 멈춥니다. 보호자는 해제·연장, 본인은 취소할 수 있고, 보호자 응답이 없으면 본인이 다시 확인해야 진행됩니다. | 구현됨 (`backend/app/service.py` · `feature_transfer` · `feature_guardian`) |
-| **보호자 모드** | 위험 근거 요약(시간순), 보류 해제·연장, 앱 안 통화, 주의 모드 해제, 위험 기록(목록→상세), QR·코드 연결 및 동의, 가족 상태·한도·모드 관리. | 구현됨 (`backend/app/service.py` · `feature_guardian` · `packages/app/lib/views/settings_view.dart`) |
+| **보호자 모드** | 위험 근거 요약(시간순), 보류 해제·연장, 가족 전화(**핑거벨 전화** 앱 열기), 주의 모드 해제, 위험 기록(목록→상세), QR·코드 연결 및 동의, 가족 상태·한도·모드 관리. | 구현됨 (`backend/app/service.py` · `feature_guardian` · `packages/app/lib/views/settings_view.dart`) |
 | **가상 은행** | 계좌 조회, 송금, 결제, 거래 내역, 적금·예금 만기 전 해지, 대출 한도 조회·신청(온라인 설명의무 7.2 반영). | 구현됨 (`backend/app/domain/banking.py` · `packages/app/lib/views/banking_sheets.dart`) |
 | **위험 점수(AI FDS)** | 송금마다 설명 가능한 규칙과 Isolation Forest로 0~99점을 매깁니다. 종합 판정의 1차 단계입니다. | 구현됨 (`backend/app/domain/fds.py`) |
-| **SOS 계좌 동결** | 휴대폰을 3초 동안 세게 흔들거나 SOS 버튼을 2초 누르면 모든 계좌의 출금이 24시간 멈추고 보호자에게 알립니다. | 구현됨 (`backend/app/service.py` `freeze()` · `feature_sos`) |
+| **SOS 계좌 동결** | 휴대폰을 3초 동안 세게 흔들거나 SOS 버튼을 2초 누르거나 탭 확인창으로 모든 계좌의 출금을 24시간 멈추고 보호자에게 알립니다. | 구현됨 (`backend/app/service.py` `freeze()` · `feature_sos`) |
 | **아이 모드와 안심 모드** | 등교·병원 모드의 업종(MCC) 화이트리스트로 결제를 제한하고, 수면 안심 시간(23:00~06:00)의 이체는 보호자 확인을 거칩니다. | 구현됨 (`backend/app/domain/catalog.py` · `feature_payment`) |
-| **쉬운 화면과 접근성** | 홈 상단 쉬운 화면 토글·기기 저장·어르신 첫 실행 질문, 스크롤 없는 쉬운 화면 홈, `[사기 신고·도움]`, 설정 › 사용 방법 3장·불편한 점 보내기, 57dp 버튼·명도 대비 3:1 이상·색+글자+아이콘·SOS 탭 확인창·초점·음성 안내. | 구현됨 (`core_ui` · `core_shell` · `packages/app/lib/views/easy_home.dart` · `settings_sheets.dart`) |
+| **쉬운 화면과 접근성** | 홈 상단 쉬운 화면 토글·기기 저장·어르신 첫 실행 질문, 스크롤 없는 쉬운 화면 홈, `[사기 신고·도움]`, 설정 › 사용 방법 3장·불편한 점 보내기, 57dp 버튼·명도 대비 3:1 이상·색+글자+아이콘·초점·음성 안내. | 구현됨 (`core_ui` · `core_shell` · `packages/app/lib/views/easy_home.dart` · `settings_sheets.dart`) |
 
 ### 위험 판정
 
@@ -105,23 +106,41 @@ flowchart LR
 
 ## 시스템 구조
 
+### 앱 3개 구성
+
+한 기기에 아래 세 앱이 모두 설치됩니다. 세 앱은 같은 인증서로 서명하고 패키지 이름·설치 이름·런처 아이콘(`core_ui` 브랜드 색 기반 적응형 아이콘)으로 구분합니다. `packages/app` 안에 진입점 3개가 있지만, **핑거벨** 앱 코드는 `feature_sms`와 `feature_call`을 쓰지 않습니다.
+
+| 앱 | 설치 이름 | 패키지 이름 | 시작 파일 | 아이콘 색 | 담는 것 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 핑거벨 | 핑거벨 | `kr.fingersnap.fingerbell` | `packages/app/lib/main.dart` | 파랑(`#3182F6`) + 흰 종 | 가상 은행(계좌·송금·결제·적금·대출), 확인 질문, 거래 보류, 보호자 모드, SOS 동결, 쉬운 화면·설정, 주의 모드 상태 |
+| 문자 | 핑거벨 문자 | `kr.fingersnap.fingerbell.sms` | `packages/app/lib/main_sms.dart` | 연파랑(`#E8F3FF`) + 파란 말풍선 | iOS 메시지 앱 모양을 흉내 낸 모조 앱(최신순 대화 목록 `메시지`, 받은 문자 말풍선, 위험·주의 알림 띠와 쉬운 설명, 링크 차단 화면, 본문·상단 전화 버튼 클릭 시 전화 앱 연결, `SmsApp` · `feature_sms`) |
+| 전화 | 핑거벨 전화 | `kr.fingersnap.fingerbell.call` | `packages/app/lib/main_call.dart` | 진파랑(`#063B9C`) + 흰 수화기 | iOS 전화 앱 모양을 흉내 낸 모조 앱(최근 기록·연락처·키패드 홈, 어두운 발신/수신/통화 중 화면·스피커·소리 끔·종료·경과 시간, WebRTC 음성 통화, 실시간 위험 경고, 시연 상대 화면, `CallApp` · `feature_call`) |
+
+### 앱 사이 연결 · 설정 공유 · 수신 범위
+
+- **앱 사이 연결**: 앱끼리 코드를 직접 부르지 않고, 각 앱이 같은 서버(`GET /api/v1/state` + `WS /api/v1/ws`)를 따로 봅니다. 핑거벨과 문자·전화 앱 사이 화면 전환은 `MainActivity`의 앱 열기 채널(`kr.fingersnap.fingerbell/apps`)과 `fingerbell://bank|sms|call` 명시적 인텐트로 연결하며, Android 11+ 패키지 가시성(`<queries>`)을 선언했습니다. 대상 앱이 설치돼 있지 않으면 `"핑거벨 문자(또는 전화) 앱이 설치되어 있지 않아 열 수 없어요"`라고 안내합니다.
+- **역할·기기 설정 공유**: 역할·기기 설정 공유는 핑거벨 앱의 서명 권한(`kr.fingersnap.fingerbell.permission.READ_PREFS`) 읽기 전용 `ContentProvider`(`SharedPrefsProvider`, `content://kr.fingersnap.fingerbell.prefs/prefs`)입니다. 핑거벨에서 바꾼 사용자 역할(`Persona`)과 5개 기기 설정(큰 글씨·고대비·음성 안내·경고음·진동)을 문자·전화 앱이 시작과 `resume`에서 읽어 반영합니다. 핑거벨 앱이 없거나 읽기에 실패하면 기본값으로 동작합니다.
+- **수신 범위**: 문자 알림과 걸려 오는 전화는 **세 앱 중 하나가 화면에 떠 있을 때만** 받습니다. 앱이 닫혀 있거나 화면이 꺼져 있으면 받지 못하고, 다시 열면 서버 상태(`GET /api/v1/state`)로 따라잡습니다(닫힌 상태 푸시·백그라운드 서비스는 두지 않음).
+
 ```mermaid
 flowchart TD
-    subgraph App["Android 기기 (Flutter 앱)"]
-        SMS["문자 화면"]
-        CALL["통화 화면 · WebRTC · 시연 상대 화면"]
-        BANK["가상 은행 · SOS"]
-        G["보호자 모드"]
+    subgraph App["Android 기기 (앱 3개)"]
+        BANK["핑거벨 (kr.fingersnap.fingerbell)<br/>가상 은행 · 보호자 모드 · SOS · 설정"]
+        SMS["핑거벨 문자 (.sms)<br/>문자 목록 · 말풍선 · 링크 차단"]
+        CALL["핑거벨 전화 (.call)<br/>통화 화면 · WebRTC · 시연 상대 화면"]
+        BANK -- "fingerbell://sms · call<br/>(AppLinks) + ContentProvider" --> SMS
+        BANK -- "fingerbell://call<br/>(AppLinks) + ContentProvider" --> CALL
+        SMS -- "fingerbell://call<br/>(AppLinks)" --> CALL
     end
     subgraph Server["백엔드 (FastAPI)"]
         INC["사건 · 주의 모드"]
-        JUDGE["판정: 규칙 + FDS 1차, LLM 최종 (문자·통화 구현됨)"]
+        JUDGE["판정: 규칙 + FDS 1차, LLM 최종"]
         HOLD["보류 · 타이머"]
         SOS["SOS 동결 제어"]
         MODE["안심 모드 필터 (MCC)"]
     end
     subgraph Ext["외부 연동"]
-        OR["OpenRouter: LLM · 음성인식 STT (구현됨)"]
+        OR["OpenRouter: LLM · 음성인식 STT"]
         OB["오픈뱅킹 (모의)"]
         PUSH["푸시 · SMS (모의)"]
     end
@@ -132,16 +151,16 @@ flowchart TD
     BANK -- "결제" --> MODE
     BANK -- "비상 신호" --> SOS --> OB
     JUDGE --> OR
-    HOLD --> PUSH --> G
-    Server -. "WebSocket 실시간 이벤트 · WebRTC 신호" .-> App
+    HOLD --> PUSH --> BANK
+    Server -. "WebSocket 실시간 이벤트 · WebRTC 신호<br/>(세 앱 중 화면에 떠 있을 때 수신)" .-> App
 ```
 
 | 구성 요소 | 결정 | 상태 |
 | :--- | :--- | :--- |
-| 앱 | Flutter 모노레포(Pub Workspaces + Melos). 시연 대상은 Android | 구현됨 |
+| 앱 | Flutter 모노레포(Pub Workspaces + Melos). Android 앱 3개(`핑거벨`·`핑거벨 문자`·`핑거벨 전화`) | 구현됨 |
 | 서버 | FastAPI + SQLite. 위험 판정, 타이머, 실시간 이벤트 | 구현됨 |
 | 실시간 | `GET /api/v1/state` + `WS /api/v1/ws` (WebRTC `ready` → `offer` → `answer` → `ice` 신호 전달 포함) | 구현됨 |
-| 통화 | WebRTC 직접 연결 (`flutter_webrtc`, `iceServers: []`, 음성 전용) + 4초 조각 녹음 (`record`) | 구현됨 (`feature_call`, 실기기 미확인) |
+| 통화 | **핑거벨 전화** 앱의 WebRTC 직접 연결 (`flutter_webrtc`, `iceServers: []`, 음성 전용) + 4초 조각 녹음 (`record`) | 구현됨 (`CallApp` · `feature_call`, 실기기 미확인) |
 | 음성인식(STT) | 1순위 OpenRouter(`POST /api/v1/audio/transcriptions`), 2순위 기기 내 음성인식 | 1순위 OpenRouter 구현됨 (`backend/app/integrations.py`) · 2순위 기기 내 음성인식은 미구현 (1단계 스파이크 필요) |
 | LLM | OpenRouter. 인터넷이나 키가 없으면 규칙·점수 판정만 | 문자·통화·확인 질문·사건 종합 판정 구현됨 (`backend/app/integrations.py`) |
 | 외부 연동 | 오픈뱅킹·푸시·SMS 모의 어댑터 | 구현됨 |
@@ -155,8 +174,8 @@ flowchart TD
 - **마이크 동시 사용 충돌 대비**: Android 실기기에서 WebRTC 통화(`flutter_webrtc`)와 조각 녹음(`record`)이 마이크를 동시에 쓰지 못할 수 있습니다. 그래서 **녹음이 실패해도 통화는 끊기지 않도록** 녹음 코드를 `packages/features/feature_call/lib/src/chunk_recorder.dart` 한 파일에 모으고, 실패하면 통화 화면에 `"음성 분석을 쓸 수 없어요"`를 글자로 보여 줍니다.
 - **2순위 기기 내 음성인식**: 통화 중 동작 여부를 실기기에서 확인하지 못해 **미구현(1단계 스파이크 필요)** 상태입니다.
 - **OpenRouter 실제 LLM·STT 호출**: 코드와 HTTP 조립·파싱·실패 대체 테스트(`MockTransport`)는 구현했지만, 실제 `OPENROUTER_API_KEY`를 넣은 실서버 호출 품질은 수동 평가(`backend/scripts/eval_llm.py`)로 확인이 필요합니다.
-- **TalkBack · 실제 경고음 · 카메라 QR**: 시맨틱 트리와 `ToneGenerator` 채널 호출은 위젯 테스트로 확인했으나, 실제 기기에서의 TalkBack 읽기 순서·초점 이동, 실제 경고음 출력, 카메라 QR 스캔(`mobile_scanner`)은 실기기에서 확인하지 못했습니다.
-- **시연 상대 화면의 대본 문장 보내기**: 음성인식이나 마이크 제약에 시연이 막히지 않도록 시연 상대 화면에서 대본 문장을 누르면 음성인식을 거치지 않고 글자 그대로 서버 통화 분석(`POST /api/v1/calls/{call_id}/transcript`)으로 들어갑니다. 화면에는 `"음성인식 없이 문장을 보냅니다"`라고 표시합니다.
+- **TalkBack · 실제 경고음 · 카메라 QR · 3대 실기기 시연**: 시맨틱 트리와 `ToneGenerator` 채널 호출, 앱 3개 간 전환·설정 공유는 위젯 테스트와 에뮬레이터에서 확인했으나, 실제 기기에서의 TalkBack 읽기 순서·초점 이동, 실제 경고음 출력, 카메라 QR 스캔(`mobile_scanner`), 기기 3대 동시 시연(WebRTC 음성 통화 포함)은 실기기에서 확인하지 못했습니다.
+- **시연 상대 화면의 대본 문장 보내기**: 음성인식이나 마이크 제약에 시연이 막히지 않도록 **핑거벨 전화** 앱의 시연 상대 화면에서 대본 문장을 누르면 음성인식을 거치지 않고 글자 그대로 서버 통화 분석(`POST /api/v1/calls/{call_id}/transcript`)으로 들어갑니다. 화면에는 `"음성인식 없이 문장을 보냅니다"`라고 표시합니다.
 - **새로 추가한 패키지 (`feature_call`)**:
   - `flutter_webrtc`: 같은 Wi-Fi 안의 기기끼리 외부 STUN·TURN 없이 음성 통화를 직접 연결하기 위해 추가했습니다.
   - `record`: 분석 대상 통화(어르신·아이 ↔ 시연 상대)에서 마이크 소리를 4초 단위 WAV 조각으로 녹음해 서버로 올리기 위해 추가했습니다.
@@ -165,14 +184,14 @@ flowchart TD
   - `qr_flutter`: 보호자 기기에서 연결 코드 값을 QR 코드 이미지로 그려 보여 주기 위해 추가했습니다.
   - `mobile_scanner`: 어르신 기기에서 카메라로 보호자 QR 코드를 읽기 위해 추가했습니다(카메라를 쓸 수 없는 에뮬레이터를 위해 같은 코드 값을 직접 입력하는 경로도 함께 둡니다).
 
-앱은 서버의 가족 상태(`GET /api/v1/state`)를 그리고, 상태가 바뀌면 WebSocket(`/api/v1/ws`) 이벤트를 받아 다시 불러옵니다. 그래서 **휴대폰 여러 대**(어르신 폰·보호자 폰)로도, 한 화면에서 사용자를 바꿔 가며도 같은 흐름을 시연할 수 있습니다.
+앱은 서버의 가족 상태(`GET /api/v1/state`)를 그리고, 상태가 바뀌면 WebSocket(`/api/v1/ws`) 이벤트를 받아 다시 불러옵니다. 그래서 **휴대폰 여러 대**(어르신·보호자·시연 상대 기기)로도, 한 기기에서 핑거벨의 사용자를 바꿔 가며도 같은 흐름을 시연할 수 있습니다.
 
 외부 연동은 **모의 어댑터**입니다. 실제 API와 같은 형식의 호출 기록을 남기고(설정 › 서버 연동 기록), `backend/app/integrations.py`의 같은 메서드를 가진 클래스로 바꾸면 실제 연동이 됩니다.
 
 ## 저장소 구조
 
 ```
-docs/Prescript/             기획서(AI 구현 프롬프트) · 지침 원문
+docs/Prescript/             기획서(AI 구현 프롬프트) · 지침 원문 · 지침 적용표
 backend/                    FastAPI 서버 · SQLite(기본)/PostgreSQL · AI FDS · 문자 판정 · 테스트
   app/domain/fds.py         규칙 + Isolation Forest 위험도
   app/domain/sms.py         문자 규칙 1차 판정 · 시연 문자 프리셋 · 가상 검증 모음
@@ -182,15 +201,15 @@ backend/                    FastAPI 서버 · SQLite(기본)/PostgreSQL · AI FD
   app/service.py            사건·주의 모드 · 문자 수신/판정 · 통화 세션/분석 · 송금/해지/대출 판정·보류 · 결제 제어 · SOS 동결 · 타이머
   app/integrations.py       오픈뱅킹 · FCM · SMS (모의) · OpenRouter LLM · 음성인식(STT) 게이트웨이 (모의 + 실제)
 packages/
-  app/                      셸: 모바일(하단 메뉴) 레이아웃, 화면 연결
+  app/                      앱 3개 진입점(`main.dart`, `main_sms.dart`, `main_call.dart`) · `AppLinks` · `CompanionApp` · Android flavor/Provider/아이콘
   core/
     core_api/               HTTP · WebSocket 클라이언트 (실시간 이벤트 + WebRTC 신호 전달)
     core_family/            가족 상태 모델 · 저장소 · FamilyCubit (서버와 실시간 동기화)
-    core_shell/             지금 사용자(기기 저장)·탭·화면 설정 · 공유 Provider 읽기 · 피드백 요청 (ShellCubit)
+    core_shell/             지금 사용자(기기 저장)·탭·화면 설정(`MethodChannelPrefsStore` · `ProviderPrefsStore`) · 피드백 요청 (`ShellCubit`)
     core_ui/                디자인 시스템 (파랑·빨강 토큰, 고대비, 공용 위젯)
     core_errors/            공통 Failure
   features/
-    feature_sms/            휴대폰 문자 화면 재현 (대화 목록·말풍선·위험 경고·외부 링크 차단 화면·전화번호 발신 연결)
+    feature_sms/            iOS 메시지 앱 모양 문자 화면 재현 (최신순 대화 목록·말풍선·위험·주의 알림 띠·외부 링크 차단 화면·전화번호 발신 연결)
     feature_call/           휴대폰 통화 화면 재현 (WebRTC 음성 통화·4초 조각 녹음·실시간 경고·시연 상대 화면)
     feature_sos/            흔들기 감지 · SOS 버튼 · 동결 화면
     feature_transfer/       AI 안심 점검·주의 확인·거래 보류·재확인 대기를 거치는 송금 시트
@@ -198,7 +217,7 @@ packages/
     feature_guardian/       위험 근거 요약 · 위험 기록 · QR/코드 연결 및 동의 · 보류 해제·연장 · 주의 모드 해제 · 가족 통화 · 가족 관리
 ```
 
-기능 패키지는 서로 의존하지 않고 `core_*`에만 의존합니다. 기능끼리는 `app`에서만 연결합니다.
+기능 패키지는 서로 의존하지 않고 `core_*`에만 의존합니다. 기능끼리는 `packages/app`에서만 연결하며, 핑거벨 앱 코드는 `feature_sms`·`feature_call`을 쓰지 않고 `AppLinks`로만 문자·전화 앱을 엽니다.
 
 ## 실행하기 (Windows)
 
@@ -210,35 +229,53 @@ packages/
 .\run-backend.ps1
 ```
 
-처음 실행하면 `backend/.venv`를 만들고 패키지를 설치합니다. API 문서는 <http://127.0.0.1:8765/docs> 입니다. `-Reset`을 붙이면 시연 데이터를 처음 상태로 되돌립니다.
+처음 실행하면 `backend/.venv`를 만들고 패키지를 설치합니다. API 문서는 <http://127.0.0.1:8765/docs> 입니다. `-Reset`을 붙이면 시연 데이터를 처음 상태로 되돌립니다. 여러 기기가 같은 Wi-Fi에서 접속하려면 `.\run-backend.ps1 -Lan`을 씁니다(방화벽 허용 필요).
 
-### 2. Android
+### 2. Android (명령 한 번으로 앱 3개 설치)
 
 ```powershell
-.\run-android.ps1
+.\run-android.ps1 -NoResident
 ```
 
-에뮬레이터를 켜고 `flutter pub get`과 `adb reverse tcp:8765 tcp:8765`를 설정한 뒤 세 debug APK를 `--no-pub`로 빌드하고 `adb install -r`로 모두 설치해 핑거벨을 엽니다. USB 실기기에서는 `./run-android.ps1 -Device R3CX10T957B -NoResident`를 씁니다. `-NoResident`를 빼면 설치 뒤 핑거벨에 Flutter 디버거를 연결합니다.
+`run-android.ps1`은 명령 한 번으로 `flutter pub get`, `adb reverse tcp:8765 tcp:8765`, flavor `fingerbell`·`sms`·`call` debug APK 빌드(`--no-pub`) 및 `adb install -r` 설치를 모두 끝낸 뒤 **핑거벨** 앱을 엽니다. `-NoResident`를 빼면 설치 뒤 핑거벨에 Flutter 디버거를 연결(`flutter attach`)합니다.
 
-IntelliJ의 `.run/FingerBell_Android.run.xml`도 같은 스크립트를 실행합니다. 기본 기기는 에뮬레이터이며 실기기는 실행 구성의 Script options에 `-Device R3CX10T957B -NoResident`를 넣습니다. 기존 Cursor / VS Code의 로컬 Flutter 실행 구성은 세 앱 설치 스크립트로 아직 전환하지 않았습니다.
+- `-Device`를 주지 않았을 때:
+  1. 연결(인증)된 기기가 1대면 그 기기를 자동 선택합니다.
+  2. 연결된 기기가 없으면 `Medium_Phone_API_37.0`(`emulator-5554`) 에뮬레이터를 띄웁니다.
+  3. 2대 이상 연결돼 있으면 기기 id 목록을 한 줄로 보여 주고 `-Device <id>`를 고르도록 끝냅니다.
 
-자세한 실행 옵션은 [RUN_LOCAL.ko.md](RUN_LOCAL.ko.md)에 있습니다.
+```powershell
+# 여러 기기가 연결돼 있거나 기기를 직접 고를 때
+.\run-android.ps1 -Device R3CX10T957B -NoResident
+
+# 세 패키지 설치 확인
+adb shell pm list packages | findstr fingersnap
+```
+
+IntelliJ의 `.run/FingerBell_Android.run.xml` (**FingerBell (Android)**)도 `run-android.ps1 -NoResident`를 실행합니다.
+
+자세한 실행 옵션과 문제 해결은 [RUN_LOCAL.ko.md](RUN_LOCAL.ko.md)에 있습니다.
 
 ## 지금 시연할 수 있는 시나리오
 
-아래 기능 시나리오는 현재 핑거벨 안의 기존 화면 기준입니다. 별도 문자·전화 앱에는 역할·설정 공유까지 반영했고, 기능 화면 이동과 세 앱을 오가는 9절 전체 시연은 후속 단계에서 검증합니다.
-
 설정 탭의 **바로 시연해 보기**에서 바로 시작할 수 있습니다.
 
-1. **사칭 문자 받기**: 어르신 문자 화면에 금융감독원 사칭 문자가 도착 → 말풍선에 위험 경고와 쉬운 설명 표시, 24시간 주의 모드 시작(어르신 홈·보호자 화면에 표시) → 문자 속 가짜 링크를 누르면 외부로 열지 않고 `"이 링크를 열지 않았어요"` 차단 화면 표시 → 문자 속 전화번호(`02-0000-1332`)를 누르면 통화 화면(시연 상대에게 발신)으로 연결.
-2. **정상 문자 받기**: 택배·가족·은행 알림 등 정상 문자 도착 → 경고 없이 일반 말풍선으로 표시되고 주의 모드는 켜지지 않음.
-3. **시연 상대 화면 열기**: 은행 기능이 없는 시연 전용 화면 → 사칭·정상 문자 보내기, 걸려 온 전화 받기, 사기 대본(금융감독원 사칭 → 적금 해지 요구)·정상 대본(가족 안부) 표시 및 대본 문장 보내기(`"음성인식 없이 문장을 보냅니다"`) → 사기 문장을 보내면 어르신 통화 화면에 큰 경고·쉬운 설명 한 줄·진동·경고음·`[통화 끊기]` 표시, 보호자 즉시 알림, 주의 모드 시작(또는 연장).
-4. **흔들어서 SOS 동결**: 어르신 화면이 흔들리고 → 전 계좌 출금 동결 → 빨간 동결 화면과 24시간 카운트다운 → 보호자 화면에 "동결 중".
-5. **낯선 계좌로 50만원 송금**: AI 안심 점검이 위험(80점대)으로 판정 → 거래 30분 보류 + 보호자 알림 → 보호자가 해제(즉시 실행)하거나 연장(30분 추가), 또는 30분 동안 응답이 없으면 어르신 본인 재확인 대기(`[그래도 진행]` / `[그만두기]` / `[보호자에게 전화]`).
-6. **등교 모드에서 게임 결제**: 게임 업종(MCC 5816)은 등교 모드 화이트리스트에 없어 차단 → 보호자에게 요청 → 승인되면 결제.
+1. **사칭 문자 받기**: 핑거벨 설정 › 바로 시연해 보기 → 서버 판정 뒤 **핑거벨 문자** 앱이 해당 대화 화면으로 열림 → 말풍선 아래 알림 띠에 `"사기 의심 문자"` 경고와 쉬운 설명·`[사기 신고·도움]` 표시, 24시간 주의 모드 시작(핑거벨 홈·보호자 화면에 표시) → 말풍선 속 파란 밑줄 링크를 누르면 외부로 열지 않고 `"이 링크를 열지 않았어요"` 차단 화면 표시 → 말풍선 속 전화번호(`02-0000-1332`)나 대화 상단 전화 버튼을 누르면 **핑거벨 전화** 앱 발신 화면(시연 상대에게 발신)으로 연결.
+2. **정상 문자 받기**: 서버 판정 뒤 **핑거벨 문자** 앱이 해당 대화로 열리며 택배·가족·은행 알림 등 정상 문자가 경고 띠 없이 회색 말풍선으로 표시되고 주의 모드는 켜지지 않음.
+3. **시연 상대 화면 열기**: 핑거벨 설정 › 바로 시연해 보기 → **핑거벨 전화** 앱의 시연 상대 화면으로 이동 → 사칭·정상 문자 보내기, 걸려 온 전화 받기, 사기 대본(금융감독원 사칭 → 적금 해지 요구)·정상 대본(가족 안부) 표시 및 대본 문장 보내기(`"음성인식 없이 문장을 보냅니다"`) → 사기 문장을 보내면 어르신 기기의 **핑거벨 전화** 앱 통화 화면에 큰 경고·쉬운 설명 한 줄·진동·경고음·`[통화 끊기]` 표시, 화면에 떠 있는 보호자 기기에 즉시 알림, 주의 모드 시작(또는 연장).
+4. **흔들어서 SOS 동결**: 핑거벨 어르신 화면이 흔들리고 → 전 계좌 출금 동결 → 빨간 동결 화면과 24시간 카운트다운 → 보호자 화면에 "동결 중" (`[보호자에게 전화하기]`를 누르면 **핑거벨 전화** 앱으로 연결).
+5. **낯선 계좌로 50만원 송금**: 핑거벨 AI 안심 점검이 위험(80점대)으로 판정 → 거래 30분 보류 + 보호자 알림 → 보호자가 해제(즉시 실행)하거나 연장(30분 추가), 또는 30분 동안 응답이 없으면 어르신 본인 재확인 대기(`[그래도 진행]` / `[그만두기]` / `[보호자에게 전화]` → **핑거벨 전화** 앱 열기).
+6. **등교 모드에서 게임 결제**: 핑거벨에서 게임 업종(MCC 5816)은 등교 모드 화이트리스트에 없어 차단 → 보호자에게 요청 → 승인되면 결제.
 7. **처음 상태로 되돌리기**: 모든 시연 데이터를 초기화해 처음 상태부터 다시 시연.
 
-**두 기기·세 기기 시연**: 어르신·보호자·시연 상대 기기로 역할을 나눈 뒤, 사칭 문자의 번호를 눌러 발신 → 시연 상대 화면에서 전화 받기 → 대본의 사기 문장 보내기 → 어르신 통화 화면 경고 및 보호자 즉시 알림 흐름을 끝까지 시연할 수 있습니다.
+### 기기 3대 기준 시연 준비
+
+시연은 어르신 · 보호자 · 시연 상대 기기 3대(같은 Wi-Fi)를 기준으로 합니다.
+
+1. PC에서 `.\run-backend.ps1 -Lan`으로 백엔드를 띄웁니다(Windows 방화벽에서 포트 `8765` 허용 필요).
+2. 루트 `.env.local.json`에 `{"FINGERBELL_API_URL": "http://<PC_IP>:8765"}`를 적습니다(형식은 `.env.example`).
+3. 세 기기에 **기기마다 한 번씩** `.\run-android.ps1 -Device <기기ID> -NoResident`를 실행해 세 앱(`핑거벨` · `핑거벨 문자` · `핑거벨 전화`)을 모두 설치합니다.
+4. 각 기기의 **핑거벨** 앱 상단 전환기로 역할을 `어르신` / `보호자`로 맞추고, 시연 상대 기기는 설정 › `시연 상대 화면 열기`로 **핑거벨 전화** 앱의 시연 상대 화면을 열어 둡니다. (세 앱은 화면에 떠 있을 때만 실시간 문자·수신 전화를 받으며, 다른 앱에서 돌아올 때는 `resume` 시 서버 상태로 따라잡습니다.)
 
 ## 주요 API (지금 구현된 것)
 
@@ -305,6 +342,7 @@ melos run test
 - 감시 우려(개인정보) 대응 원칙 (기본값은 원문 비저장·요약 기록과 보호자 연결 동의 화면)
 - 탐지 정확도와 오탐의 목표 수치 (현재 규칙 단계 검사는 `pytest`, LLM 평가는 `backend/scripts/eval_llm.py`로 수치 출력)
 - 1단계 통화·음성인식 실기기 스파이크 실패 시 대안 방향 (현재 2순위 기기 내 STT는 미구현)
+- 문자 앱·전화 앱의 설치 이름 (현재 `핑거벨 문자`, `핑거벨 전화`)
 
 ## 알아 둘 점
 

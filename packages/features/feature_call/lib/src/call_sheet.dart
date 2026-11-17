@@ -7,8 +7,8 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'call_colors.dart';
 import 'chunk_recorder.dart';
-import 'counterpart_sheet.dart';
 import 'rtc_session.dart';
 
 /// 휴대폰 통화 화면 시트를 엽니다 (기획서 5.3).
@@ -22,6 +22,7 @@ Future<void> openCallSheet(
   String? initialCallId,
   RtcPeerSession? rtcSession,
   CallChunkRecorder? chunkRecorder,
+  Duration endedAutoCloseDelay = const Duration(milliseconds: 900),
 }) => showFbSheet<void>(
   context,
   builder: (_) => CallSheet(
@@ -33,9 +34,11 @@ Future<void> openCallSheet(
     initialCallId: initialCallId,
     rtcSession: rtcSession,
     chunkRecorder: chunkRecorder,
+    endedAutoCloseDelay: endedAutoCloseDelay,
   ),
 );
 
+/// 일반 전화 앱 모양의 발신·수신·통화 중·위험 경고 화면.
 class CallSheet extends StatefulWidget {
   final String localParticipantId;
   final String callerId;
@@ -45,7 +48,7 @@ class CallSheet extends StatefulWidget {
   final String? initialCallId;
   final RtcPeerSession? rtcSession;
   final CallChunkRecorder? chunkRecorder;
-  final Future<void> Function()? onOpenCounterpart;
+  final Duration endedAutoCloseDelay;
   final Future<void> Function({
     required String callerId,
     required String calleeId,
@@ -63,7 +66,7 @@ class CallSheet extends StatefulWidget {
     this.initialCallId,
     this.rtcSession,
     this.chunkRecorder,
-    this.onOpenCounterpart,
+    this.endedAutoCloseDelay = const Duration(milliseconds: 900),
     this.onSwitchCall,
   });
 
@@ -79,6 +82,8 @@ class _CallSheetState extends State<CallSheet> {
 
   StreamSubscription<FamilyEvent>? _eventSub;
   StreamSubscription<Map<String, dynamic>>? _signalSub;
+  Timer? _elapsedTimer;
+  Timer? _endedTimer;
 
   String? _callId;
   bool _starting = false;
@@ -86,6 +91,10 @@ class _CallSheetState extends State<CallSheet> {
   bool _rtcStarted = false;
   bool _recordingStarted = false;
   bool _serverEnded = false;
+  bool _localEnded = false;
+  bool _endedScheduled = false;
+  bool _muted = false;
+  bool _speakerphone = false;
   String? _rtcStatus;
   String? _recordingError;
   bool _warningAnnounced = false;
@@ -111,6 +120,8 @@ class _CallSheetState extends State<CallSheet> {
         final existing = _family.state.snapshot?.callOrNull(_callId);
         if (existing != null) {
           _syncCallRuntime(existing);
+        } else {
+          _scheduleEndedAutoClose();
         }
       });
     }
@@ -118,6 +129,8 @@ class _CallSheetState extends State<CallSheet> {
 
   @override
   void dispose() {
+    _elapsedTimer?.cancel();
+    _endedTimer?.cancel();
     _eventSub?.cancel();
     _signalSub?.cancel();
     _recorder.stop();
@@ -151,6 +164,27 @@ class _CallSheetState extends State<CallSheet> {
     _rtc.close();
   }
 
+  void _syncElapsedTimer(CallStatus status, DateTime? answeredAt) {
+    if (status == CallStatus.active && answeredAt != null) {
+      _elapsedTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    } else {
+      _elapsedTimer?.cancel();
+      _elapsedTimer = null;
+    }
+  }
+
+  void _scheduleEndedAutoClose() {
+    if (_endedScheduled) return;
+    _endedScheduled = true;
+    _elapsedTimer?.cancel();
+    _elapsedTimer = null;
+    _endedTimer = Timer(widget.endedAutoCloseDelay, () {
+      if (mounted) Navigator.of(context).maybePop();
+    });
+  }
+
   Future<void> _initiateCall() async {
     setState(() => _starting = true);
     final shell = context.read<ShellCubit>();
@@ -175,8 +209,12 @@ class _CallSheetState extends State<CallSheet> {
       _syncCallRuntime(session);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _starting = false);
+      setState(() {
+        _starting = false;
+        _localEnded = true;
+      });
       shell.say(e.message);
+      _scheduleEndedAutoClose();
     }
   }
 
@@ -258,9 +296,12 @@ class _CallSheetState extends State<CallSheet> {
       _announceWarningOnce(exp, callId: call.id);
     }
 
+    _syncElapsedTimer(call.status, call.answeredAt);
+
     if (call.isEnded) {
       _serverEnded = true;
       _stopCallMedia();
+      _scheduleEndedAutoClose();
     }
   }
 
@@ -297,6 +338,7 @@ class _CallSheetState extends State<CallSheet> {
     await _rtc.close();
     if (!mounted) return;
     if (targetId == null) {
+      _localEnded = true;
       Navigator.of(context).maybePop();
       return;
     }
@@ -306,28 +348,32 @@ class _CallSheetState extends State<CallSheet> {
       _serverEnded = true;
       await _family.endCall(targetId);
       if (!mounted) return;
-      setState(() => _busy = false);
-      shell.say('통화를 종료했어요');
+      setState(() {
+        _busy = false;
+        _localEnded = true;
+      });
+      shell.say('통화를 종료했어요', toast: false);
+      _scheduleEndedAutoClose();
     } on ApiException {
       if (!mounted) return;
-      setState(() => _busy = false);
+      setState(() {
+        _busy = false;
+        _localEnded = true;
+      });
+      _scheduleEndedAutoClose();
     }
   }
 
-  Future<void> _close() async {
-    final targetId = _callId;
-    _stopCallMedia();
-    if (targetId != null && !_serverEnded && !_family.isClosed) {
-      _serverEnded = true;
-      try {
-        await _family.endCall(targetId);
-      } on ApiException {
-        // 이미 종료되었거나 실패해도 시트는 닫습니다.
-      }
-    }
-    if (mounted) {
-      Navigator.of(context).maybePop();
-    }
+  void _toggleMute() {
+    final next = !_muted;
+    setState(() => _muted = next);
+    unawaited(_rtc.setMicrophoneMuted(next));
+  }
+
+  void _toggleSpeaker() {
+    final next = !_speakerphone;
+    setState(() => _speakerphone = next);
+    unawaited(_rtc.setSpeakerphoneEnabled(next));
   }
 
   Future<void> _switchToGuardianCall({
@@ -337,6 +383,8 @@ class _CallSheetState extends State<CallSheet> {
   }) async {
     final nav = Navigator.of(context);
     final targetId = callId ?? _callId;
+    _endedTimer?.cancel();
+    _elapsedTimer?.cancel();
     if (mounted) setState(() => _busy = true);
     await _recorder.stop();
     await _rtc.close();
@@ -370,6 +418,16 @@ class _CallSheetState extends State<CallSheet> {
     );
   }
 
+  static String _formatCallDuration(Duration d) {
+    final total = d.isNegative ? 0 : d.inSeconds;
+    final hours = total ~/ 3600;
+    final mins = (total % 3600) ~/ 60;
+    final secs = total % 60;
+    String two(int n) => n.toString().padLeft(2, '0');
+    if (hours > 0) return '$hours:${two(mins)}:${two(secs)}';
+    return '${two(mins)}:${two(secs)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<FamilyCubit, FamilyState>(
@@ -380,41 +438,41 @@ class _CallSheetState extends State<CallSheet> {
         } else if (_callId != null && !_starting) {
           _serverEnded = true;
           _stopCallMedia();
+          _scheduleEndedAutoClose();
         }
       },
       builder: (context, state) {
-        final c = context.fb;
+        final highContrast = context.fb.cardBorder != null;
         final call = state.snapshot?.callOrNull(_callId);
 
-        final status = call?.status ?? (_starting ? CallStatus.ringing : CallStatus.ended);
+        final status = _localEnded
+            ? CallStatus.ended
+            : (call?.status ?? (_starting ? CallStatus.ringing : CallStatus.ended));
         final effectiveCallerId = call?.callerId ?? widget.callerId;
         final effectiveCalleeId = call?.calleeId ?? widget.calleeId;
         final isIncoming = status == CallStatus.ringing &&
             effectiveCalleeId == widget.localParticipantId &&
             effectiveCallerId != widget.localParticipantId;
-        final analyzed = call?.analyzed ??
-            ({effectiveCallerId, effectiveCalleeId}.contains('counterpart') &&
-                ({effectiveCallerId, effectiveCalleeId}.contains('senior') ||
-                    {effectiveCallerId, effectiveCalleeId}.contains('child')));
 
         final String peerName;
         final String peerPhone;
         if (widget.localParticipantId != effectiveCallerId && effectiveCallerId == 'guardian') {
           final g = state.snapshot?.guardian;
           peerName = g != null && g.name.isNotEmpty ? '보호자 ${g.name}' : '보호자';
-          peerPhone = g != null && g.phone.isNotEmpty ? g.phone : '앱 안 통화';
+          peerPhone = g != null && g.phone.isNotEmpty ? g.phone : '';
         } else if (widget.localParticipantId == 'guardian' &&
             (effectiveCallerId == 'senior' || effectiveCallerId == 'child')) {
           final m = state.snapshot?.memberOrNull(effectiveCallerId);
           peerName = m?.label ?? ((call?.peerName.isNotEmpty ?? false) ? call!.peerName : '가족');
-          peerPhone = '앱 안 통화';
+          peerPhone = '';
         } else {
           peerName = (call?.peerName.isNotEmpty ?? false)
               ? call!.peerName
               : (widget.peerName ?? (effectiveCalleeId == 'guardian' ? '보호자' : '시연 상대'));
-          peerPhone = (call?.peerPhone.isNotEmpty ?? false)
+          final rawPhone = (call?.peerPhone.isNotEmpty ?? false)
               ? call!.peerPhone
-              : (widget.peerPhone ?? (effectiveCalleeId == 'guardian' ? '앱 안 통화' : '02-0000-1332'));
+              : (widget.peerPhone ?? (effectiveCalleeId == 'guardian' ? '' : '02-0000-1332'));
+          peerPhone = rawPhone == '앱 안 통화' ? '' : rawPhone;
         }
 
         final hasWarning = (call?.isDanger ?? false) || _eventWarningExplanation != null;
@@ -424,192 +482,431 @@ class _CallSheetState extends State<CallSheet> {
                   '기관을 사칭하거나 적금 해지·안전계좌 이체를 요구하는 보이스피싱 의심 통화예요. 지금 바로 통화를 끊으세요.');
         final warningReasons = (call?.warningReasons.isNotEmpty ?? false) ? call!.warningReasons : _eventWarningReasons;
 
-        final statusTitle = switch (status) {
-          CallStatus.ringing => isIncoming ? '전화가 걸려 왔어요' : '발신 중...',
-          CallStatus.active => '통화 중',
-          CallStatus.ended => '통화가 종료되었어요',
-        };
+        final String statusText;
+        if (_starting) {
+          statusText = '연결 중…';
+        } else {
+          switch (status) {
+            case CallStatus.ringing:
+              statusText = isIncoming ? '휴대전화' : '발신 중…';
+            case CallStatus.active:
+              final answeredAt = call?.answeredAt;
+              statusText = answeredAt != null
+                  ? _formatCallDuration(_family.now().difference(answeredAt))
+                  : '연결 중…';
+            case CallStatus.ended:
+              statusText = '통화 종료';
+          }
+        }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SheetHead(title: '전화', onClose: _close),
-            if (hasWarning) ...[
-              _CallWarningBanner(
-                explanation: warningExplanation,
-                reasons: warningReasons,
-                hangupFocus: _hangupFocus,
-                busy: _busy,
-                onHangup: () => _endCall(call?.id),
-                onCallGuardian: () {
-                  final member = effectiveCallerId == 'counterpart' ? effectiveCalleeId : effectiveCallerId;
-                  _switchToGuardianCall(
-                    callId: call?.id,
-                    memberId: member,
-                    guardian: state.snapshot?.guardian,
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              decoration: BoxDecoration(
-                color: hasWarning ? c.redSoft : c.soft,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: hasWarning ? c.red : c.blueSoft,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      hasWarning ? FbIcons.alert : FbIcons.phone,
-                      size: 30,
-                      color: hasWarning ? Colors.white : c.blueStrong,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Semantics(
-                    liveRegion: true,
-                    child: Text(
-                      statusTitle,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: hasWarning ? c.redStrong : c.blueStrong,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
+        final palette = CallUiColors.of(highContrast: highContrast);
+        final darkBg = palette.callBg;
+        final statusSubColor = palette.callSubText;
+        final nameColor = palette.callNameText;
+        final actionLabelColor = palette.callActionLabel;
+        final endedRedText = palette.callEndedText;
+        final actionBorderColor = palette.callActionBorder;
+
+        final mediaPadding = MediaQuery.paddingOf(context);
+        final topPadding = (77.0 - mediaPadding.top).clamp(24.0, 77.0);
+        final bottomPadding = (47.0 - mediaPadding.bottom).clamp(24.0, 47.0);
+
+        final subStyle = TextStyle(
+          fontSize: 23,
+          fontWeight: FontWeight.w400,
+          height: 1.35,
+          letterSpacing: -0.23,
+          color: status == CallStatus.ended ? endedRedText : statusSubColor,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        );
+        final displayName = peerName.isNotEmpty ? peerName : peerPhone;
+        final subPhone = (peerName.isNotEmpty && peerPhone.isNotEmpty && peerPhone != peerName) ? peerPhone : '';
+
+        final topSection = Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Column(
+              children: [
+                Semantics(
+                  liveRegion: status != CallStatus.active,
+                  label: isIncoming && status == CallStatus.ringing && !_starting
+                      ? '전화가 걸려 왔어요, $statusText'
+                      : null,
+                  excludeSemantics: isIncoming && status == CallStatus.ringing && !_starting,
+                  child: Text(statusText, textAlign: TextAlign.center, style: subStyle),
+                ),
+                if (displayName.isNotEmpty) ...[
+                  const SizedBox(height: 2),
                   Text(
-                    peerName,
+                    displayName,
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: c.ink),
+                    style: TextStyle(
+                      fontSize: 35,
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
+                      color: nameColor,
+                    ),
                   ),
+                ],
+                if (subPhone.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
-                    peerPhone,
+                    subPhone,
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.ink2),
+                    style: TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w400,
+                      height: 1.35,
+                      letterSpacing: -0.23,
+                      color: statusSubColor,
+                    ),
                   ),
-                  const SizedBox(height: 12),
+                ],
+                if (_rtcStatus != null && status != CallStatus.ended) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _rtcStatus!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
+                      color: _rtcStatus == rtcFailedText ? endedRedText : statusSubColor,
+                    ),
+                  ),
+                ],
+                if (_recordingError != null && status != CallStatus.ended) ...[
+                  const SizedBox(height: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
-                      color: c.card,
-                      borderRadius: BorderRadius.circular(99),
+                      color: palette.callActionSurface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: actionBorderColor),
                     ),
                     child: Text(
-                      analyzed ? 'AI 실시간 보이스피싱 감지 작동 중' : '가족 안심 통화 · 통화 내용을 분석하지 않아요',
+                      _recordingError!,
+                      textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 12.6,
-                        fontWeight: FontWeight.w700,
-                        color: analyzed ? c.blueStrong : c.muted,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.85),
                       ),
                     ),
                   ),
-                  if (_rtcStatus != null && status != CallStatus.ended) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _rtcStatus!,
-                      style: TextStyle(
-                        fontSize: 13.0,
-                        fontWeight: FontWeight.w700,
-                        color: _rtcStatus == rtcFailedText ? c.redStrong : c.ink2,
-                      ),
-                    ),
-                  ],
-                  if (_recordingError != null) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: c.card,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: c.line),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(FbIcons.alert, size: 16, color: c.ink2),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              _recordingError!,
-                              style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w700, color: c.ink),
-                            ),
+                ],
+              ],
+            ),
+          ),
+        );
+
+        final actionGradient = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [palette.callActionSurfaceTop, palette.callActionSurfaceBottom],
+        );
+
+        final speakerButton = _CircleCallAction(
+          icon: Icons.volume_up_rounded,
+          label: '스피커',
+          backgroundGradient: _speakerphone ? null : actionGradient,
+          backgroundColor: _speakerphone ? Colors.white : palette.callActionSurface,
+          foregroundColor: _speakerphone ? Colors.black : Colors.white,
+          labelColor: actionLabelColor,
+          circleSize: 78,
+          borderColor: actionBorderColor,
+          toggled: _speakerphone,
+          onPressed: _toggleSpeaker,
+        );
+
+        final muteButton = _CircleCallAction(
+          icon: Icons.mic_off_rounded,
+          label: '소리 끔',
+          backgroundGradient: _muted ? null : actionGradient,
+          backgroundColor: _muted ? Colors.white : palette.callActionSurface,
+          foregroundColor: _muted ? Colors.black : Colors.white,
+          labelColor: actionLabelColor,
+          circleSize: 78,
+          borderColor: actionBorderColor,
+          toggled: _muted,
+          onPressed: _toggleMute,
+        );
+
+        final endButton = _CircleCallAction(
+          icon: Icons.call_end_rounded,
+          label: '종료',
+          backgroundColor: palette.callEndRed,
+          foregroundColor: Colors.white,
+          labelColor: actionLabelColor,
+          circleSize: 78,
+          busy: _busy,
+          onPressed: _busy ? null : () => _endCall(call?.id),
+        );
+
+        final bottomSection = Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 354),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 24),
+              child: Column(
+                children: [
+                  if (status == CallStatus.ringing && isIncoming && call != null)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _CircleCallAction(
+                            icon: Icons.call_end_rounded,
+                            label: '거절',
+                            backgroundColor: palette.callDeclineRed,
+                            foregroundColor: Colors.white,
+                            labelColor: actionLabelColor,
+                            circleSize: 78,
+                            busy: _busy,
+                            onPressed: _busy ? null : () => _endCall(call.id),
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: _CircleCallAction(
+                            icon: Icons.call_rounded,
+                            label: '받기',
+                            backgroundColor: palette.callGreen,
+                            foregroundColor: Colors.white,
+                            labelColor: actionLabelColor,
+                            circleSize: 78,
+                            busy: _busy,
+                            onPressed: _busy ? null : () => _answerCall(call.id),
+                          ),
+                        ),
+                      ],
+                    )
+                  else if (status != CallStatus.ended) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: speakerButton),
+                        const Expanded(child: SizedBox.shrink()),
+                        Expanded(child: muteButton),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Expanded(child: SizedBox.shrink()),
+                        Expanded(child: endButton),
+                        const Expanded(child: SizedBox.shrink()),
+                      ],
                     ),
                   ],
                 ],
               ),
             ),
-            const SizedBox(height: 18),
-            if (status == CallStatus.ringing && isIncoming && call != null)
-              FbButtonRow(
-                children: [
-                  FbButton(
-                    '통화 끊기',
-                    variant: FbButtonVariant.red,
-                    icon: FbIcons.close,
-                    busy: _busy,
-                    onPressed: _busy ? null : () => _endCall(call.id),
-                  ),
-                  FbButton(
-                    '전화 받기',
-                    icon: FbIcons.phone,
-                    busy: _busy,
-                    onPressed: _busy ? null : () => _answerCall(call.id),
-                  ),
-                ],
-              )
-            else if (status != CallStatus.ended) ...[
-              FbButton(
-                '통화 끊기',
-                variant: FbButtonVariant.red,
-                icon: FbIcons.phone,
-                busy: _busy,
-                onPressed: _busy ? null : () => _endCall(call?.id),
-              ),
-              if (analyzed && call != null) ...[
-                const SizedBox(height: 8),
-                FbButton.gray(
-                  '시연 상대 화면 열기',
-                  onPressed: () {
-                    if (widget.onOpenCounterpart != null) {
-                      widget.onOpenCounterpart!();
-                    } else {
-                      openCounterpartSheet(
-                        context,
-                        rtcSession: NoopRtcPeerSession(),
-                        chunkRecorder: NoopChunkRecorder(),
-                      );
-                    }
-                  },
-                ),
-              ],
-            ] else
-              FbButton('닫기', onPressed: _close),
-          ],
+          ),
+        );
+
+        Widget buildWarningCard() => _CallWarningBanner(
+          explanation: warningExplanation,
+          reasons: warningReasons,
+          hangupFocus: _hangupFocus,
+          busy: _busy,
+          redColor: palette.callEndRed,
+          onHangup: () => _endCall(call?.id),
+          onCallGuardian: () {
+            final member = effectiveCallerId == 'counterpart' ? effectiveCalleeId : effectiveCallerId;
+            _switchToGuardianCall(
+              callId: call?.id,
+              memberId: member,
+              guardian: state.snapshot?.guardian,
+            );
+          },
+        );
+
+        return Theme(
+          data: Theme.of(context).copyWith(
+            splashFactory: NoSplash.splashFactory,
+            splashColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+          ),
+          child: ColoredBox(
+            color: darkBg,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (!constraints.hasBoundedHeight) {
+                  return Padding(
+                    padding: EdgeInsets.fromLTRB(14, topPadding, 14, bottomPadding),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (hasWarning) ...[
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: buildWarningCard(),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                        topSection,
+                        bottomSection,
+                      ],
+                    ),
+                  );
+                }
+
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(14, topPadding, 14, bottomPadding),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.max,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              topSection,
+                              bottomSection,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (hasWarning)
+                      Positioned.fill(
+                        child: ColoredBox(
+                          color: Colors.black.withValues(alpha: 0.62),
+                          child: SafeArea(
+                            child: Center(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.all(20),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(maxWidth: 356),
+                                  child: buildWarningCard(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
         );
       },
     );
   }
 }
 
-/// 통화 화면 위에 뜨는 큰 경고 카드 (기획서 5.3, 7.3: 깜박이지 않음, 쉬운 설명 한 줄, 소리와 같은 글자, [통화 끊기]).
+/// iOS 통화 화면의 동그란 아이콘 버튼과 아래 글자 라벨.
+class _CircleCallAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color backgroundColor;
+  final Gradient? backgroundGradient;
+  final Color foregroundColor;
+  final Color labelColor;
+  final double circleSize;
+  final Color? borderColor;
+  final bool? toggled;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  const _CircleCallAction({
+    required this.icon,
+    required this.label,
+    required this.backgroundColor,
+    this.backgroundGradient,
+    required this.foregroundColor,
+    required this.labelColor,
+    this.circleSize = 78,
+    this.borderColor,
+    this.toggled,
+    this.busy = false,
+    this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null && !busy;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      toggled: toggled,
+      label: busy ? '$label, 처리 중' : label,
+      onTap: enabled ? onPressed : null,
+      excludeSemantics: true,
+      child: InkWell(
+        splashFactory: NoSplash.splashFactory,
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        borderRadius: BorderRadius.circular(24),
+        onTap: enabled ? onPressed : null,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 78, minHeight: 78),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Opacity(
+                opacity: enabled || busy ? 1 : 0.45,
+                child: Container(
+                  width: circleSize,
+                  height: circleSize,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: backgroundGradient == null ? backgroundColor : null,
+                    gradient: backgroundGradient,
+                    shape: BoxShape.circle,
+                    border: borderColor != null ? Border.all(color: borderColor!, width: 1) : null,
+                  ),
+                  child: busy
+                      ? SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: CircularProgressIndicator(strokeWidth: 2.5, color: foregroundColor),
+                        )
+                      : Icon(icon, size: 32, color: foregroundColor),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                      height: 1.25,
+                      color: labelColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 통화 화면 위에 뜨는 iOS 스타일 위험 경고 카드 (기획서 5.3, 7.3: 깜박이지 않음, 쉬운 설명 한 줄, [통화 끊기]).
 class _CallWarningBanner extends StatelessWidget {
   final String explanation;
   final List<String> reasons;
   final FocusNode hangupFocus;
   final bool busy;
+  final Color redColor;
   final VoidCallback onHangup;
   final VoidCallback? onCallGuardian;
 
@@ -618,6 +915,7 @@ class _CallWarningBanner extends StatelessWidget {
     required this.reasons,
     required this.hangupFocus,
     required this.busy,
+    required this.redColor,
     required this.onHangup,
     this.onCallGuardian,
   });
@@ -632,11 +930,18 @@ class _CallWarningBanner extends StatelessWidget {
       child: FocusTraversalGroup(
         policy: OrderedTraversalPolicy(),
         child: Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: c.redSoft,
+            color: Colors.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: c.redStrong, width: 2),
+            border: Border.all(color: redColor, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.32),
+                blurRadius: 28,
+                offset: const Offset(0, 12),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -645,7 +950,7 @@ class _CallWarningBanner extends StatelessWidget {
                 children: [
                   Semantics(
                     label: '위험 경고',
-                    child: Icon(FbIcons.alert, size: 24, color: c.redStrong),
+                    child: Icon(FbIcons.alert, size: 26, color: redColor),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -654,7 +959,7 @@ class _CallWarningBanner extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 19,
                         fontWeight: FontWeight.w800,
-                        color: c.redStrong,
+                        color: redColor,
                       ),
                     ),
                   ),
@@ -666,7 +971,7 @@ class _CallWarningBanner extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15.2,
                   height: 1.5,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   color: c.ink,
                 ),
               ),
@@ -678,15 +983,31 @@ class _CallWarningBanner extends StatelessWidget {
                     style: TextStyle(fontSize: 13.4, height: 1.5, color: c.ink2, fontWeight: FontWeight.w600),
                   ),
               ],
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               Focus(
                 focusNode: hangupFocus,
-                child: FbButton(
-                  '통화 끊기',
-                  variant: FbButtonVariant.red,
-                  icon: FbIcons.phone,
-                  busy: busy,
+                child: FilledButton.icon(
                   onPressed: busy ? null : onHangup,
+                  icon: ExcludeSemantics(child: Icon(FbIcons.phone, size: 20, color: Colors.white)),
+                  label: busy
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+                        )
+                      : const Text(
+                          '통화 끊기',
+                          style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: redColor,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: redColor.withValues(alpha: 0.6),
+                    splashFactory: NoSplash.splashFactory,
+                    minimumSize: const Size(57, 57),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
                 ),
               ),
               const SizedBox(height: 10),

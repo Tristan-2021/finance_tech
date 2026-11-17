@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- core_ui FbColors.light.blueSoft -->
+    <color name="ic_launcher_background">#E8F3FF</color>
+</resources>

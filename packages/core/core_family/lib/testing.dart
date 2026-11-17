@@ -600,6 +600,25 @@ class FakeFamilyRepository implements FamilyRepository {
     '구속영장',
   ];
 
+  void _upsertCall(Map<String, dynamic> callJson, {bool closeOthers = false, DateTime? now}) {
+    final existing = (snapshotJson['calls'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
+    final id = callJson['id'];
+    final next = <Map<String, dynamic>>[callJson];
+    for (final c in existing) {
+      if (c['id'] == id) continue;
+      if (closeOthers && c['status'] != 'ended') {
+        next.add({
+          ...c,
+          'status': 'ended',
+          'ended_at': c['ended_at'] ?? (now ?? DateTime.now().toUtc()).toIso8601String(),
+        });
+      } else {
+        next.add(c);
+      }
+    }
+    snapshotJson['calls'] = next;
+  }
+
   @override
   Future<CallSession> startCall({
     required String callerId,
@@ -634,7 +653,7 @@ class FakeFamilyRepository implements FamilyRepository {
       'created_at': now.toIso8601String(),
     };
     snapshotJson['active_call'] = callJson;
-    snapshotJson['calls'] = [callJson];
+    _upsertCall(callJson, closeOthers: true, now: now);
     return _call('startCall:$callerId:$calleeId:$phone', CallSession.fromJson(callJson));
   }
 
@@ -659,7 +678,7 @@ class FakeFamilyRepository implements FamilyRepository {
     callJson['status'] = 'active';
     callJson['answered_at'] = now.toIso8601String();
     snapshotJson['active_call'] = callJson;
-    snapshotJson['calls'] = [callJson];
+    _upsertCall(callJson);
     return _call('answerCall:$callId', CallSession.fromJson(callJson));
   }
 
@@ -687,7 +706,7 @@ class FakeFamilyRepository implements FamilyRepository {
     if (active is Map<String, dynamic> && (active['id'] == callId || callId.isEmpty)) {
       snapshotJson['active_call'] = null;
     }
-    snapshotJson['calls'] = [callJson];
+    _upsertCall(callJson);
     return _call('endCall:$callId', CallSession.fromJson(callJson));
   }
 
@@ -756,7 +775,7 @@ class FakeFamilyRepository implements FamilyRepository {
       callJson['warning_reasons'] = reasons;
       callJson['warning_explanation'] = explanation;
       snapshotJson['active_call'] = callJson;
-      snapshotJson['calls'] = [callJson];
+      _upsertCall(callJson);
       final memberId = (callJson['member_id'] as String?) ?? 'senior';
       final members = snapshotJson['members'];
       if (members is List) {

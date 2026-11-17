@@ -1,11 +1,16 @@
+import 'dart:ui';
+
 import 'package:core_family/core_family.dart';
 import 'package:core_shell/core_shell.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'sms_bubble.dart';
+import 'sms_format.dart';
+
 /// 휴대폰 문자 화면 시트를 엽니다 (기획서 5.2).
-/// [initialSenderPhone]을 주면 해당 발신 번호의 대화를 먼저 보여 줍니다.
+/// [initialSenderPhone]을 주면 해당 발신 번호의 대화를 바로 보여 줍니다.
 Future<void> openSmsSheet(
   BuildContext context,
   String memberId, {
@@ -22,6 +27,7 @@ Future<void> openSmsSheet(
   ),
 );
 
+/// iOS 메시지 앱 모양의 대화 목록 · 대화 화면 · 링크 차단 안내 화면.
 class SmsSheet extends StatefulWidget {
   final String memberId;
   final String? initialSenderPhone;
@@ -57,10 +63,26 @@ class _SmsSheetState extends State<SmsSheet> {
   @override
   void didUpdateWidget(SmsSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initialSenderPhone != oldWidget.initialSenderPhone || widget.selectionTick != oldWidget.selectionTick) {
+    if (widget.memberId != oldWidget.memberId ||
+        widget.initialSenderPhone != oldWidget.initialSenderPhone ||
+        widget.selectionTick != oldWidget.selectionTick) {
       _selectedPhone = widget.initialSenderPhone;
       _blocked = null;
     }
+  }
+
+  void _openConversation(String senderPhone) {
+    setState(() {
+      _selectedPhone = senderPhone;
+      _blocked = null;
+    });
+  }
+
+  void _closeConversation() {
+    setState(() {
+      _selectedPhone = null;
+      _blocked = null;
+    });
   }
 
   void _openBlockedLink(SmsMessage message, String url) {
@@ -81,222 +103,324 @@ class _SmsSheetState extends State<SmsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final highContrast = context.fb.cardBorder != null;
+    final palette = SmsPalette.of(highContrast: highContrast);
+
     return BlocBuilder<FamilyCubit, FamilyState>(
       builder: (context, state) {
         if (!state.isReady) {
           return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator()));
         }
         final member = state.data.memberOrNull(widget.memberId);
-        if (member == null) return const EmptyText('사용자를 찾을 수 없어요');
+        if (member == null) {
+          return Center(
+            child: Text(
+              '메시지 없음',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: palette.ink2),
+            ),
+          );
+        }
+
         final now = context.read<FamilyCubit>().now();
+        final conversations = sortSmsConversationsNewestFirst(member.smsConversations);
+        final active = _selectedPhone == null
+            ? null
+            : conversations.where((c) => c.senderPhone == _selectedPhone).firstOrNull;
         final blocked = _blocked;
+        final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+
+        final Widget child;
+        if (blocked != null) {
+          child = KeyedSubtree(
+            key: ValueKey('blocked-${blocked.url}'),
+            child: BlockedLinkView(
+              url: blocked.url,
+              message: blocked.message,
+              onBack: _closeBlockedLink,
+              onCallGuardian: widget.onCallGuardian,
+              showClose: !widget.asScreen,
+            ),
+          );
+        } else if (active != null) {
+          child = KeyedSubtree(
+            key: ValueKey('thread-${active.senderPhone}'),
+            child: _ConversationThreadView(
+              conversation: active,
+              now: now,
+              palette: palette,
+              onBack: _closeConversation,
+              onOpenBlockedLink: _openBlockedLink,
+              onTapPhone: widget.onTapPhone,
+              onCallGuardian: widget.onCallGuardian,
+            ),
+          );
+        } else {
+          child = KeyedSubtree(
+            key: const ValueKey('conversation-list'),
+            child: _ConversationListView(
+              conversations: conversations,
+              now: now,
+              palette: palette,
+              onSelectConversation: (conv) => _openConversation(conv.senderPhone),
+            ),
+          );
+        }
+
         return PopScope(
-          canPop: !widget.asScreen || blocked == null,
+          canPop: !widget.asScreen || (blocked == null && active == null),
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop && blocked != null) {
+            if (didPop) return;
+            if (blocked != null) {
               _closeBlockedLink();
+            } else if (active != null) {
+              _closeConversation();
             }
           },
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            child: blocked != null
-                ? KeyedSubtree(
-                    key: ValueKey('blocked-${blocked.url}'),
-                    child: BlockedLinkView(
-                      url: blocked.url,
-                      message: blocked.message,
-                      onBack: _closeBlockedLink,
-                      onCallGuardian: widget.onCallGuardian,
-                      showClose: !widget.asScreen,
-                    ),
-                  )
-                : KeyedSubtree(
-                    key: const ValueKey('conversations'),
-                    child: _conversationAndMessages(context, member, now),
-                  ),
+            duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 180),
+            child: child,
           ),
         );
       },
     );
   }
+}
 
-  Widget _conversationAndMessages(BuildContext context, Member member, DateTime now) {
-    final c = context.fb;
-    final conversations = member.smsConversations;
-    if (conversations.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.asScreen)
-            const Greeting('문자')
-          else
-            const SheetHead(title: '문자'),
-          const EmptyText('아직 받은 문자가 없어요'),
-        ],
-      );
-    }
+class _ConversationListView extends StatelessWidget {
+  final List<SmsConversation> conversations;
+  final DateTime now;
+  final SmsPalette palette;
+  final ValueChanged<SmsConversation> onSelectConversation;
 
-    final active = conversations.where((x) => x.senderPhone == _selectedPhone).firstOrNull ?? conversations.first;
+  const _ConversationListView({
+    required this.conversations,
+    required this.now,
+    required this.palette,
+    required this.onSelectConversation,
+  });
 
-    return Column(
+  @override
+  Widget build(BuildContext context) {
+    final bottomClearance = MediaQuery.paddingOf(context).bottom + 16;
+
+    final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.asScreen) ...[
-          Greeting('문자', sub: '${member.name}님 · 사기 문자를 자동으로 살펴봐요'),
-          const SizedBox(height: 12),
-        ] else
-          const SheetHead(title: '문자'),
-        Text('대화 목록', style: FbText.label(c)),
-        const SizedBox(height: 8),
-        for (final conv in conversations)
-          _ConversationTile(
-            key: ValueKey('conv-${conv.senderPhone}'),
-            conversation: conv,
-            selected: conv.senderPhone == active.senderPhone,
-            now: now,
-            onTap: () => setState(() => _selectedPhone = conv.senderPhone),
-          ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(color: c.soft, borderRadius: BorderRadius.circular(14)),
-          child: Row(
-            children: [
-              Icon(FbIcons.sms, size: 18, color: c.ink2),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  active.senderName.isNotEmpty
-                      ? '${active.senderName} (${active.senderPhone})'
-                      : active.senderPhone,
-                  style: TextStyle(fontSize: 14.2, fontWeight: FontWeight.w700, color: c.ink),
-                ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+          child: Semantics(
+            header: true,
+            child: Text(
+              '메시지',
+              style: TextStyle(
+                fontSize: 34,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                color: palette.ink,
               ),
-            ],
+            ),
           ),
         ),
-        const SizedBox(height: 12),
-        for (final msg in active.messages) ...[
-          SmsBubble(
-            key: ValueKey('sms-${msg.id}'),
-            message: msg,
-            now: now,
-            onTapLink: (url) => _openBlockedLink(msg, url),
-            onTapPhone: widget.onTapPhone,
-            onCallGuardian: widget.onCallGuardian,
-          ),
-          const SizedBox(height: 10),
-        ],
+        Divider(height: 1, color: palette.divider),
       ],
+    );
+
+    return ColoredBox(
+      color: Colors.white,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (!constraints.hasBoundedHeight) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                header,
+                if (conversations.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    child: Center(
+                      child: Text(
+                        '메시지 없음',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: palette.ink2),
+                      ),
+                    ),
+                  )
+                else
+                  for (var i = 0; i < conversations.length; i++) ...[
+                    _ConversationRow(
+                      key: ValueKey('conv-${conversations[i].senderPhone}'),
+                      conversation: conversations[i],
+                      now: now,
+                      palette: palette,
+                      onTap: () => onSelectConversation(conversations[i]),
+                    ),
+                    if (i + 1 < conversations.length)
+                      Divider(height: 1, indent: 78, color: palette.divider),
+                  ],
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              Expanded(
+                child: conversations.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: EdgeInsets.only(bottom: bottomClearance),
+                          child: Text(
+                            '메시지 없음',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w400,
+                              color: palette.ink2,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: EdgeInsets.only(bottom: bottomClearance),
+                        itemCount: conversations.length,
+                        separatorBuilder: (_, _) =>
+                            Divider(height: 1, indent: 78, color: palette.divider),
+                        itemBuilder: (context, index) {
+                          final conv = conversations[index];
+                          return _ConversationRow(
+                            key: ValueKey('conv-${conv.senderPhone}'),
+                            conversation: conv,
+                            now: now,
+                            palette: palette,
+                            onTap: () => onSelectConversation(conv),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
 
-class _ConversationTile extends StatelessWidget {
+class _ConversationRow extends StatelessWidget {
   final SmsConversation conversation;
-  final bool selected;
   final DateTime now;
+  final SmsPalette palette;
   final VoidCallback onTap;
 
-  const _ConversationTile({
+  const _ConversationRow({
     super.key,
     required this.conversation,
-    required this.selected,
     required this.now,
+    required this.palette,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = context.fb;
-    final danger = conversation.hasDanger;
-    final borderColor = danger
-        ? c.redStrong
-        : selected
-        ? c.blue
-        : c.line;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: danger
-            ? c.redSoft
-            : selected
-            ? c.blueSoft
-            : c.card,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: borderColor, width: selected || danger ? 1.5 : 1),
-            ),
+    final hasDanger = conversation.hasDanger;
+    final hasCaution =
+        !hasDanger &&
+        (conversation.lastMessage.isCaution || conversation.messages.any((m) => m.isCaution));
+    final whenText = formatSmsListWhen(conversation.lastMessage.at, now);
+    final riskLabel = hasDanger ? ', 위험' : (hasCaution ? ', 주의' : '');
+
+    return Semantics(
+      button: true,
+      label: '${conversation.displaySender}$riskLabel, $whenText, ${conversation.lastMessage.body}',
+      onTap: onTap,
+      excludeSemantics: true,
+      child: InkWell(
+        splashFactory: NoSplash.splashFactory,
+        splashColor: Colors.transparent,
+        highlightColor: const Color(0x0D000000),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 72),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                if (danger)
-                  Semantics(
-                    label: '위험 대화',
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(color: c.card, shape: BoxShape.circle),
-                      child: Icon(FbIcons.alert, size: 19, color: c.redStrong),
-                    ),
-                  )
-                else
-                  TxLogo.initial(conversation.displaySender, blue: selected),
-                const SizedBox(width: 12),
+                _SmsAvatar(name: conversation.senderName, size: 44, palette: palette),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: Text(
-                              conversation.displaySender,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 14.6,
-                                fontWeight: FontWeight.w700,
-                                color: danger ? c.redStrong : c.ink,
-                              ),
+                            child: Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 6,
+                              runSpacing: 2,
+                              children: [
+                                Text(
+                                  conversation.displaySender,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 16.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: palette.ink,
+                                  ),
+                                ),
+                                if (hasDanger || hasCaution)
+                                  _RiskBadge(danger: hasDanger, palette: palette),
+                              ],
                             ),
                           ),
-                          Text(formatWhen(conversation.lastMessage.at, now), style: FbText.small(c)),
+                          const SizedBox(width: 8),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 120),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    whenText,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w400,
+                                      color: palette.ink2,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                ExcludeSemantics(
+                                  child: Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 18,
+                                    color: palette.ink2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
                         conversation.lastMessage.body,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: FbText.rowSub(c),
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          height: 1.35,
+                          color: palette.ink2,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                if (danger) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: c.redStrong, borderRadius: BorderRadius.circular(99)),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(FbIcons.alert, size: 13, color: Colors.white),
-                        SizedBox(width: 3),
-                        Text(
-                          '위험',
-                          style: TextStyle(fontSize: 11.8, fontWeight: FontWeight.w800, color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -306,135 +430,31 @@ class _ConversationTile extends StatelessWidget {
   }
 }
 
-/// 문자 말풍선 한 개 (기획서 5.2, 7.3).
-/// 위험 문자는 색 + 글자 + 아이콘으로 경고와 쉬운 설명을 붙이고, 정상 문자는 경고 없이 보여 줍니다.
-class SmsBubble extends StatelessWidget {
-  final SmsMessage message;
-  final DateTime now;
-  final ValueChanged<String> onTapLink;
-  final ValueChanged<String>? onTapPhone;
-  final VoidCallback? onCallGuardian;
+class _RiskBadge extends StatelessWidget {
+  final bool danger;
+  final SmsPalette palette;
 
-  const SmsBubble({
-    super.key,
-    required this.message,
-    required this.now,
-    required this.onTapLink,
-    this.onTapPhone,
-    this.onCallGuardian,
-  });
-
-  static String _stripLinks(String body, List<String> links) {
-    var result = body;
-    for (final link in links) {
-      result = result.replaceAll(link, '').replaceAll('  ', ' ');
-    }
-    return result.trim();
-  }
+  const _RiskBadge({required this.danger, required this.palette});
 
   @override
   Widget build(BuildContext context) {
-    final c = context.fb;
-    final danger = message.isDanger;
-    final caution = message.isCaution;
-    final cleanBody = _stripLinks(message.body, message.links);
-
+    final fg = danger ? palette.redText : palette.amber;
+    final bg = danger ? palette.redSoft : palette.amberSoft;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: danger ? c.redSoft : c.soft,
-        borderRadius: BorderRadius.circular(18),
-        border: danger ? Border.all(color: c.redStrong, width: 1.5) : null,
+        color: bg,
+        borderRadius: BorderRadius.circular(99),
+        border: palette.highContrast ? Border.all(color: fg, width: 1) : null,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (danger || caution) ...[
-            Row(
-              children: [
-                Semantics(
-                  label: danger ? '위험 경고' : '주의',
-                  child: Icon(FbIcons.alert, size: 19, color: c.redStrong),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    danger ? '위험 문자 경고' : '주의가 필요한 문자예요',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: c.redStrong),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
-          if (cleanBody.isNotEmpty)
-            Text(
-              cleanBody,
-              style: TextStyle(fontSize: 14.6, height: 1.55, color: c.ink),
-            ),
-          if (message.links.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            for (final link in message.links)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: _SmsLinkButton(
-                  url: link,
-                  danger: danger,
-                  onTap: () => onTapLink(link),
-                ),
-              ),
-          ],
-          if (message.phones.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                for (final phone in message.phones)
-                  _SmsPhoneDisplay(
-                    phone: phone,
-                    onTapPhone: onTapPhone,
-                  ),
-              ],
-            ),
-          ],
-          if ((danger || caution) && message.explanation.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: c.card,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    message.explanation,
-                    style: TextStyle(
-                      fontSize: 13.6,
-                      fontWeight: FontWeight.w700,
-                      height: 1.5,
-                      color: danger ? c.redStrong : c.ink,
-                    ),
-                  ),
-                  if (message.reasons.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    for (final reason in message.reasons)
-                      BulletText(reason, style: TextStyle(fontSize: 12.8, height: 1.55, color: c.ink2)),
-                  ],
-                ],
-              ),
-            ),
-          ],
-          if (danger || caution) ...[
-            const SizedBox(height: 10),
-            FraudHelpButton(onCallGuardian: onCallGuardian),
-          ],
-          const SizedBox(height: 6),
+          Icon(Icons.warning_amber_rounded, size: 13, color: fg),
+          const SizedBox(width: 3),
           Text(
-            '${message.displaySender} · ${formatWhen(message.at, now)}',
-            style: FbText.small(c),
+            danger ? '위험' : '주의',
+            style: TextStyle(fontSize: 11.8, fontWeight: FontWeight.w700, color: fg),
           ),
         ],
       ),
@@ -442,109 +462,266 @@ class SmsBubble extends StatelessWidget {
   }
 }
 
-class _SmsLinkButton extends StatelessWidget {
-  final String url;
-  final bool danger;
-  final VoidCallback onTap;
+class _SmsAvatar extends StatelessWidget {
+  final String name;
+  final double size;
+  final SmsPalette palette;
 
-  const _SmsLinkButton({
-    required this.url,
-    required this.danger,
-    required this.onTap,
-  });
+  const _SmsAvatar({required this.name, required this.size, required this.palette});
 
   @override
   Widget build(BuildContext context) {
-    final c = context.fb;
-    return Semantics(
-      button: true,
-      label: '문자 속 인터넷 주소 $url',
-      child: Material(
-        color: c.card,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: danger ? c.redStrong : c.blue, width: 1.2),
-            ),
-            child: Row(
-              children: [
-                Icon(FbIcons.linkOff, size: 17, color: danger ? c.redStrong : c.blue),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    url,
-                    style: TextStyle(
-                      fontSize: 13.4,
-                      fontWeight: FontWeight.w700,
-                      decoration: TextDecoration.underline,
-                      color: danger ? c.redStrong : c.blue,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+    final trimmed = name.trim();
+    return ExcludeSemantics(
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: palette.avatarBg,
+          shape: BoxShape.circle,
+          border: palette.highContrast
+              ? Border.all(color: const Color(0xFF1B1F24), width: 1.5)
+              : null,
         ),
+        child: trimmed.isNotEmpty
+            ? Text(
+                trimmed.characters.first,
+                style: TextStyle(
+                  fontSize: size * 0.39,
+                  fontWeight: FontWeight.w600,
+                  color: palette.avatarFg,
+                ),
+              )
+            : Icon(Icons.person_rounded, size: size * 0.55, color: palette.avatarFg),
       ),
     );
   }
 }
 
-/// 문자 속 전화번호 표시 (기획서 5.2).
-/// [onTapPhone] 콜백이 주어지면 통화 화면 발신 버튼으로 표시하고,
-/// 주어지지 않으면(`onTapPhone == null`) 누를 수 없는 일반 글자로 보여 줍니다.
-class _SmsPhoneDisplay extends StatelessWidget {
-  final String phone;
+class _ConversationThreadView extends StatelessWidget {
+  final SmsConversation conversation;
+  final DateTime now;
+  final SmsPalette palette;
+  final VoidCallback onBack;
+  final void Function(SmsMessage message, String url) onOpenBlockedLink;
   final ValueChanged<String>? onTapPhone;
+  final VoidCallback? onCallGuardian;
 
-  const _SmsPhoneDisplay({
-    required this.phone,
+  const _ConversationThreadView({
+    required this.conversation,
+    required this.now,
+    required this.palette,
+    required this.onBack,
+    required this.onOpenBlockedLink,
     this.onTapPhone,
+    this.onCallGuardian,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = context.fb;
-    final callback = onTapPhone;
-    if (callback == null) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Text(
-          '전화번호 $phone',
-          style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w600, color: c.ink2),
+    final sorted = sortSmsMessagesChronological(conversation.messages);
+    final messages = sorted.isNotEmpty
+        ? sorted
+        : (conversation.lastMessage.body.isNotEmpty ? [conversation.lastMessage] : const <SmsMessage>[]);
+    final bottomClearance = MediaQuery.paddingOf(context).bottom + 24;
+
+    final topBar = ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          decoration: BoxDecoration(
+            color: palette.navBg,
+            border: Border(
+              bottom: BorderSide(
+                color: palette.navBorder,
+                width: palette.highContrast ? 1.5 : 0.8,
+              ),
+            ),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 68),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _NavBackButton(
+                    key: const ValueKey('conversation-back-button'),
+                    color: palette.blue,
+                    onTap: onBack,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _SmsAvatar(
+                          name: conversation.senderName,
+                          size: 40,
+                          palette: palette,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          conversation.displaySender,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: palette.ink,
+                          ),
+                        ),
+                        if (conversation.senderName.trim().isNotEmpty &&
+                            conversation.senderPhone.trim().isNotEmpty)
+                          Text(
+                            conversation.senderPhone,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w400,
+                              color: palette.ink2,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  if (onTapPhone != null && conversation.senderPhone.trim().isNotEmpty)
+                    Tooltip(
+                      message: '전화',
+                      child: Semantics(
+                        button: true,
+                        label: '전화',
+                        onTap: () => onTapPhone!(conversation.senderPhone),
+                        excludeSemantics: true,
+                        child: InkWell(
+                          key: const ValueKey('conversation-call-button'),
+                          splashFactory: NoSplash.splashFactory,
+                          splashColor: Colors.transparent,
+                          highlightColor: const Color(0x14000000),
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => onTapPhone!(conversation.senderPhone),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                            child: Center(
+                              child: Icon(Icons.phone_outlined, size: 24, color: palette.blue),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(width: 57, height: 57),
+                ],
+              ),
+            ),
+          ),
         ),
+      ),
+    );
+
+    Widget buildMessageItem(int i) {
+      final msg = messages[i];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (shouldShowThreadTimestamp(messages, i))
+            Padding(
+              padding: EdgeInsets.only(top: i == 0 ? 4 : 14, bottom: 10),
+              child: Text(
+                formatSmsThreadWhen(msg.at, now),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: palette.ink2,
+                ),
+              ),
+            ),
+          SmsBubble(
+            key: ValueKey('sms-${msg.id}'),
+            message: msg,
+            now: now,
+            onTapLink: (url) => onOpenBlockedLink(msg, url),
+            onTapPhone: onTapPhone,
+            onCallGuardian: onCallGuardian,
+          ),
+          if (i + 1 < messages.length) const SizedBox(height: 8),
+        ],
       );
     }
-    return Semantics(
-      button: true,
-      label: '$phone 번호로 통화',
-      child: Material(
-        color: c.blueSoft,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => callback(phone),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Row(
+
+    return ColoredBox(
+      color: palette.threadBg,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (!constraints.hasBoundedHeight) {
+            return Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(FbIcons.phone, size: 15, color: c.blueStrong),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
-                    phone,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.w700, color: c.blueStrong),
+                topBar,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < messages.length; i++) buildMessageItem(i),
+                    ],
                   ),
                 ),
               ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              topBar,
+              Expanded(
+                child: ListView.builder(
+                  padding: EdgeInsets.fromLTRB(18, 12, 18, bottomClearance),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) => buildMessageItem(index),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _NavBackButton extends StatelessWidget {
+  final Color color;
+  final VoidCallback onTap;
+
+  const _NavBackButton({super.key, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: '뒤로',
+      child: Semantics(
+        button: true,
+        label: '뒤로',
+        onTap: onTap,
+        excludeSemantics: true,
+        child: InkWell(
+          splashFactory: NoSplash.splashFactory,
+          splashColor: Colors.transparent,
+          highlightColor: const Color(0x14000000),
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+            child: Center(
+              child: Icon(Icons.chevron_left_rounded, size: 32, color: color),
             ),
           ),
         ),
@@ -594,52 +771,233 @@ class _BlockedLinkViewState extends State<BlockedLinkView> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.fb;
+    final highContrast = context.fb.cardBorder != null;
+    final palette = SmsPalette.of(highContrast: highContrast);
     final reasonTitle = widget.message.explanation.isNotEmpty
         ? widget.message.explanation
         : '사기 사이트나 악성 앱 설치로 이어질 수 있는 위험한 링크예요.';
     final reasons = widget.message.reasons.isNotEmpty
         ? widget.message.reasons
         : const ['문자 속 인터넷 주소는 공식 기관 주소가 아닐 수 있어요'];
-    return Column(
+    final bottomClearance = MediaQuery.paddingOf(context).bottom + 28;
+
+    final topBar = Container(
+      decoration: BoxDecoration(
+        color: palette.navBg,
+        border: Border(
+          bottom: BorderSide(
+            color: palette.navBorder,
+            width: palette.highContrast ? 1.5 : 0.8,
+          ),
+        ),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 57),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Row(
+            children: [
+              _NavBackButton(color: palette.blue, onTap: widget.onBack),
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    '링크 차단 안내',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: palette.ink),
+                  ),
+                ),
+              ),
+              if (widget.showClose)
+                Tooltip(
+                  message: '닫기',
+                  child: Semantics(
+                    button: true,
+                    label: '닫기',
+                    onTap: () => Navigator.of(context).maybePop(),
+                    excludeSemantics: true,
+                    child: InkWell(
+                      splashFactory: NoSplash.splashFactory,
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => Navigator.of(context).maybePop(),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 57, minHeight: 57),
+                        child: Center(
+                          child: Icon(Icons.close_rounded, size: 22, color: palette.ink2),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                const SizedBox(width: 57, height: 57),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SheetHead(title: '링크 차단 안내', onBack: widget.onBack, showClose: widget.showClose),
         Focus(
           focusNode: _focus,
-          child: const CenterBlock(
-            icon: ResultIcon(FbIcons.shield, tone: ResultTone.red),
-            title: '이 링크를 열지 않았어요',
-            body: '핑거벨이 어르신을 보호하기 위해 문자 속 인터넷 주소를 외부로 열지 않고 안전하게 막았어요.',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              children: [
+                ExcludeSemantics(
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(color: palette.red, shape: BoxShape.circle),
+                    child: const Icon(Icons.shield_outlined, size: 28, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    '이 링크를 열지 않았어요',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: palette.ink),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 304),
+                  child: Text(
+                    '위험한 인터넷 주소로 연결되지 않도록 외부로 열지 않고 안전하게 막았어요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14.5, height: 1.5, color: palette.ink2),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(color: c.soft, borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: palette.divider,
+              width: palette.highContrast ? 1.5 : 1,
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('차단한 주소', style: FbText.small(c)),
+              Text('차단한 주소', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: palette.ink2)),
               const SizedBox(height: 4),
               Text(
                 widget.url,
-                style: TextStyle(fontSize: 13.6, fontWeight: FontWeight.w700, color: c.ink),
+                style: TextStyle(fontSize: 13.6, fontWeight: FontWeight.w700, color: palette.ink),
               ),
             ],
           ),
         ),
         const SizedBox(height: 12),
-        RiskBox(
-          title: reasonTitle,
-          danger: true,
-          items: reasons,
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: palette.highContrast ? palette.red : palette.red.withValues(alpha: 0.42),
+              width: palette.highContrast ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Semantics(
+                    label: '위험 경고',
+                    child: Icon(Icons.warning_amber_rounded, size: 19, color: palette.red),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      reasonTitle,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        height: 1.45,
+                        color: palette.red,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              for (final reason in reasons)
+                BulletText(
+                  reason,
+                  style: TextStyle(fontSize: 13.1, height: 1.6, color: palette.ink2),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
         FraudHelpButton(onCallGuardian: widget.onCallGuardian),
         const SizedBox(height: 10),
-        FbButton('문자로 돌아가기', onPressed: widget.onBack),
+        FilledButton(
+          onPressed: widget.onBack,
+          style: FilledButton.styleFrom(
+            backgroundColor: palette.blue,
+            foregroundColor: Colors.white,
+            splashFactory: NoSplash.splashFactory,
+            minimumSize: const Size(57, 57),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            elevation: 0,
+          ),
+          child: const Text(
+            '문자로 돌아가기',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+        ),
       ],
+    );
+
+    return ColoredBox(
+      color: palette.threadBg,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (!constraints.hasBoundedHeight) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                topBar,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+                  child: body,
+                ),
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              topBar,
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(20, 16, 20, bottomClearance),
+                  child: body,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
